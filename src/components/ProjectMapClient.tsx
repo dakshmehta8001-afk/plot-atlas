@@ -51,6 +51,7 @@ export function ProjectMapClient({
   });
   const [autoSentNotice, setAutoSentNotice] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("map");
+  const [drilldownStage, setDrilldownStage] = useState<"site" | "floor-select" | "floor-view">("site");
   const [zoneColourMode, setZoneColourMode] = useState(false);
   const [selectedZone, setSelectedZone] = useState<string | null>(null);
 
@@ -96,7 +97,11 @@ export function ProjectMapClient({
     setZoneColourMode(true);
   }
 
-  const showMapChrome = activeTab === "map";
+  // Once drilled into a building, BuildingDrilldown shows its own back-
+  // buttons and a "Tower A · 3rd Floor" breadcrumb in roughly the same
+  // corner as this header/stats/legend overlay — showing both collides, so
+  // this chrome steps aside until the viewer backs out to the full site.
+  const showMapChrome = activeTab === "map" && drilldownStage === "site";
 
   return (
     <div className="relative h-[640px] w-full overflow-hidden rounded-xl border border-white/10 bg-[#0b1f2e]">
@@ -177,6 +182,7 @@ export function ProjectMapClient({
             colorMode={zoneColourMode ? "zone" : "status"}
             zones={zones}
             highlightZone={selectedZone}
+            onStageChange={setDrilldownStage}
           />
         )}
       </div>
