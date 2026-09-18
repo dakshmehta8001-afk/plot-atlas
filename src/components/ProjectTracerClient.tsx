@@ -12,27 +12,33 @@ import { useRouter } from "next/navigation";
 import { PolygonTracer, type TracerShape } from "@/components/PolygonTracer";
 import { UnitFormModal } from "@/components/UnitFormModal";
 import { BuildingFormModal } from "@/components/BuildingFormModal";
-import { UNIT_STATUS_STYLES, type Building, type PolygonPoint, type Unit } from "@/lib/types";
+import { RoadFormModal } from "@/components/RoadFormModal";
+import { deleteRoad } from "@/lib/actions/roads";
+import { UNIT_STATUS_STYLES, type Building, type PolygonPoint, type Road, type Unit } from "@/lib/types";
 
 export function ProjectTracerClient({
   projectId,
   planImageUrl,
   plots,
   buildings,
+  roads,
 }: {
   projectId: string;
   planImageUrl: string;
   plots: Unit[];
   buildings: Building[];
+  roads: Road[];
 }) {
   const [newPlotPolygon, setNewPlotPolygon] = useState<PolygonPoint[] | null>(null);
   const [newBuildingPolygon, setNewBuildingPolygon] = useState<PolygonPoint[] | null>(null);
+  const [newRoadPath, setNewRoadPath] = useState<PolygonPoint[] | null>(null);
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
   const router = useRouter();
 
   function handleSaved() {
     setNewPlotPolygon(null);
     setNewBuildingPolygon(null);
+    setNewRoadPath(null);
     setEditingUnit(null);
     router.refresh();
   }
@@ -52,12 +58,28 @@ export function ProjectTracerClient({
       stroke: "#6366f1",
       label: building.name,
     })),
+    ...roads.map((road) => ({
+      id: road.id,
+      points: road.path_points,
+      fill: "none",
+      stroke: "#f5c94b",
+      label: `${road.width_label} road`,
+      kind: "line" as const,
+    })),
   ];
 
-  function handleSelectShape(id: string) {
+  async function handleSelectShape(id: string) {
     const plot = plots.find((p) => p.id === id);
     if (plot) {
       setEditingUnit(plot);
+      return;
+    }
+    const road = roads.find((r) => r.id === id);
+    if (road) {
+      if (confirm(`Delete this ${road.width_label} road? Trace it again with a new width if you need to correct it.`)) {
+        await deleteRoad(road.id, projectId);
+        router.refresh();
+      }
       return;
     }
     // Buildings are managed on their own page (floors + flats live there),
@@ -74,6 +96,7 @@ export function ProjectTracerClient({
         traceActions={[
           { label: "+ Trace new plot", onComplete: setNewPlotPolygon },
           { label: "+ Trace new building", onComplete: setNewBuildingPolygon },
+          { label: "+ Trace road", shapeKind: "line", onComplete: setNewRoadPath },
         ]}
       />
 
@@ -93,6 +116,15 @@ export function ProjectTracerClient({
           projectId={projectId}
           polygonPoints={newBuildingPolygon}
           onClose={() => setNewBuildingPolygon(null)}
+          onSaved={handleSaved}
+        />
+      )}
+
+      {newRoadPath && (
+        <RoadFormModal
+          projectId={projectId}
+          pathPoints={newRoadPath}
+          onClose={() => setNewRoadPath(null)}
           onSaved={handleSaved}
         />
       )}

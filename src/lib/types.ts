@@ -65,6 +65,19 @@ export interface PolygonPoint {
 
 export const MAP_VIEWBOX_SIZE = 1000;
 
+// Common road widths a sub-admin picks from when tracing a road, per the
+// user's spec — a road that doesn't match one of these still works, since
+// width_label is free text; this list is just what the picker offers first.
+export const ROAD_WIDTH_PRESETS = ["30 ft", "40 ft", "60 ft", "100 ft", "150 ft", "200 ft"];
+
+export interface Road {
+  id: string;
+  project_id: string;
+  width_label: string;
+  path_points: PolygonPoint[];
+  created_at: string;
+}
+
 export interface Building {
   id: string;
   project_id: string;

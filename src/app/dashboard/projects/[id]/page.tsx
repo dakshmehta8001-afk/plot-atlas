@@ -14,7 +14,7 @@ import { MediaManager } from "@/components/MediaManager";
 import { PublishToggle } from "@/components/PublishToggle";
 import { ProjectDetailsForm } from "@/components/ProjectDetailsForm";
 import { StatusBadge, CategoryBadge } from "@/components/StatusBadge";
-import type { Building, Project, ProjectMedia, Unit } from "@/lib/types";
+import type { Building, Project, ProjectMedia, Road, Unit } from "@/lib/types";
 
 export default async function ManageProjectPage(props: PageProps<"/dashboard/projects/[id]">) {
   const { id } = await props.params;
@@ -23,9 +23,10 @@ export default async function ManageProjectPage(props: PageProps<"/dashboard/pro
   const { data: project } = await supabase.from("projects").select("*").eq("id", id).single();
   if (!project) notFound();
 
-  const [{ data: units }, { data: buildings }, { data: media }] = await Promise.all([
+  const [{ data: units }, { data: buildings }, { data: roads }, { data: media }] = await Promise.all([
     supabase.from("units").select("*").eq("project_id", id).order("unit_number"),
     supabase.from("buildings").select("*").eq("project_id", id).order("name"),
+    supabase.from("roads").select("*").eq("project_id", id).order("created_at"),
     supabase.from("project_media").select("*").eq("project_id", id).order("sort_order"),
   ]);
 
@@ -34,6 +35,7 @@ export default async function ManageProjectPage(props: PageProps<"/dashboard/pro
   const plots = allUnits.filter((u) => u.unit_type === "plot");
   const flats = allUnits.filter((u) => u.unit_type === "flat");
   const typedBuildings = (buildings ?? []) as Building[];
+  const typedRoads = (roads ?? []) as Road[];
   const typedMedia = (media ?? []) as ProjectMedia[];
 
   return (
@@ -46,7 +48,7 @@ export default async function ManageProjectPage(props: PageProps<"/dashboard/pro
         </div>
       </div>
       <p className="mb-6 text-gray-500">
-        {plots.length} plot(s) · {typedBuildings.length} building(s) · {flats.length} flat(s) traced
+        {plots.length} plot(s) · {typedBuildings.length} building(s) · {flats.length} flat(s) · {typedRoads.length} road(s) traced
       </p>
 
       {typedProject.plan_image_url ? (
@@ -55,6 +57,7 @@ export default async function ManageProjectPage(props: PageProps<"/dashboard/pro
           planImageUrl={typedProject.plan_image_url}
           plots={plots}
           buildings={typedBuildings}
+          roads={typedRoads}
         />
       ) : (
         <PlanImageUpload projectId={id} />

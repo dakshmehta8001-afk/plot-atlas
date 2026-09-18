@@ -17,7 +17,7 @@ import { Compass } from "@/components/Compass";
 import { UnitInfoCard } from "@/components/UnitInfoCard";
 import { PENDING_ENQUIRY_KEY } from "@/lib/useEnquiryFlow";
 import { createLead } from "@/lib/actions/leads";
-import { distinctZones, zoneColorFor, type Project, type ProjectMedia, type Unit } from "@/lib/types";
+import { distinctZones, zoneColorFor, type Project, type ProjectMedia, type Road, type Unit } from "@/lib/types";
 
 type Tab = "map" | "media" | "about";
 
@@ -25,6 +25,7 @@ export function ProjectMapClient({
   project,
   plots,
   buildings,
+  roads,
   unitsByFloor,
   allUnits,
   media,
@@ -34,6 +35,7 @@ export function ProjectMapClient({
   project: Project;
   plots: Unit[];
   buildings: BuildingWithFloors[];
+  roads: Road[];
   unitsByFloor: Record<string, Unit[]>;
   allUnits: Unit[];
   media: ProjectMedia[];
@@ -176,6 +178,7 @@ export function ProjectMapClient({
             planImageUrl={project.plan_image_url}
             plots={plots}
             buildings={buildings}
+            roads={roads}
             unitsByFloor={unitsByFloor}
             onPlotClick={setSelectedUnit}
             onFlatClick={setSelectedUnit}

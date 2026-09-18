@@ -18,22 +18,29 @@ const VB = MAP_VIEWBOX_SIZE;
 
 // A single already-traced shape to render read-only underneath whatever the
 // sub-admin is currently drawing — e.g. every existing plot/building while
-// tracing a new one, so they can trace around what's already there.
+// tracing a new one, so they can trace around what's already there. Most
+// shapes are closed polygons (a plot/building/flat outline); a road is an
+// open polyline traced along its centerline instead, so it renders as a
+// line rather than a filled/closed area.
 export interface TracerShape {
   id: string;
   points: PolygonPoint[];
   fill: string;
   stroke: string;
   label: string;
+  kind?: "polygon" | "line";
 }
 
 // One "start tracing" option offered to the sub-admin — the master site
-// plan offers two (plot, building), a floor's plan offers just one (flat).
-// Keeping this as a list rather than a single onPolygonComplete callback is
-// what lets one tracer instance/canvas serve both cases without the caller
-// juggling two separate <svg> elements over the same image.
+// plan offers three (plot, building, road), a floor's plan offers just one
+// (flat). Keeping this as a list rather than a single onPolygonComplete
+// callback is what lets one tracer instance/canvas serve all these cases
+// without the caller juggling several separate <svg> elements over the
+// same image. `shapeKind: "line"` traces an open road centerline (minimum
+// 2 points, not closed) instead of a closed shape (minimum 3 points).
 export interface TraceAction {
   label: string;
+  shapeKind?: "polygon" | "line";
   onComplete: (points: PolygonPoint[]) => void;
 }
 
@@ -53,6 +60,8 @@ export function PolygonTracer({
   const svgRef = useRef<SVGSVGElement>(null);
   const aspectRatio = useImageAspectRatio(planImageUrl);
   const drawing = activeActionIndex !== null;
+  const activeShapeKind = activeActionIndex !== null ? traceActions[activeActionIndex].shapeKind ?? "polygon" : "polygon";
+  const minPoints = activeShapeKind === "line" ? 2 : 3;
 
   function handleSvgClick(event: React.MouseEvent<SVGSVGElement>) {
     if (!drawing || !svgRef.current) return;
@@ -77,7 +86,7 @@ export function PolygonTracer({
   }
 
   function finishShape() {
-    if (points.length < 3 || activeActionIndex === null) return;
+    if (points.length < minPoints || activeActionIndex === null) return;
     traceActions[activeActionIndex].onComplete(points);
     setActiveActionIndex(null);
     setPoints([]);
@@ -114,10 +123,10 @@ export function PolygonTracer({
             <button
               type="button"
               onClick={finishShape}
-              disabled={points.length < 3}
+              disabled={points.length < minPoints}
               className="rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-50"
             >
-              Finish shape
+              Finish {activeShapeKind === "line" ? "road" : "shape"}
             </button>
             <button type="button" onClick={cancelDrawing} className="text-sm text-gray-500 hover:underline">
               Cancel
@@ -140,14 +149,18 @@ export function PolygonTracer({
           <image href={planImageUrl} x={0} y={0} width={VB} height={VB} preserveAspectRatio="none" />
 
           {shapes.map((shape) => {
-            if (shape.points.length < 3) return null;
+            const isLine = shape.kind === "line";
+            if (shape.points.length < (isLine ? 2 : 3)) return null;
+            const Tag = isLine ? "polyline" : "polygon";
             return (
-              <polygon
+              <Tag
                 key={shape.id}
                 points={toSvgPoints(shape.points)}
-                fill={shape.fill}
+                fill={isLine ? "none" : shape.fill}
                 stroke={shape.stroke}
-                strokeWidth={VB * 0.002}
+                strokeWidth={isLine ? VB * 0.012 : VB * 0.002}
+                strokeLinecap={isLine ? "round" : undefined}
+                opacity={isLine ? 0.5 : 1}
                 className={drawing ? "" : "cursor-pointer hover:opacity-80"}
                 onClick={(e) => {
                   if (drawing) return;
@@ -156,7 +169,7 @@ export function PolygonTracer({
                 }}
               >
                 <title>{shape.label}</title>
-              </polygon>
+              </Tag>
             );
           })}
 

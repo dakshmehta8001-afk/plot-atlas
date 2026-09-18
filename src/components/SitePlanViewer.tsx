@@ -17,7 +17,7 @@
 // pill to filter. Buildings always render in a neutral indigo "structure"
 // style since they aren't themselves bought/sold.
 import { useEffect, useMemo, useState } from "react";
-import { MAP_VIEWBOX_SIZE, UNIT_STATUS_STYLES, zoneColorFor, type Building, type Unit } from "@/lib/types";
+import { MAP_VIEWBOX_SIZE, UNIT_STATUS_STYLES, zoneColorFor, type Building, type Road, type Unit } from "@/lib/types";
 import { useImageAspectRatio } from "@/lib/useImageAspectRatio";
 import { toSvgPoints, boundingBoxCenter } from "@/lib/svgPolygon";
 
@@ -25,10 +25,20 @@ const VB = MAP_VIEWBOX_SIZE;
 const ZOOM_SCALE = 4;
 export const BUILDING_ZOOM_TRANSITION_MS = 650;
 
+// The road's middle traced vertex, rather than its bounding-box center —
+// a road is an open path (often diagonal or bent), so a bounding-box
+// center can land off the path entirely, while the middle vertex is
+// guaranteed to be a point the sub-admin actually clicked on it.
+function pathMidpoint(points: { x: number; y: number }[]): { x: number; y: number } {
+  const p = points[Math.floor((points.length - 1) / 2)];
+  return { x: p.x * VB, y: p.y * VB };
+}
+
 export function SitePlanViewer({
   planImageUrl,
   plots,
   buildings,
+  roads = [],
   onPlotClick,
   onBuildingSettled,
   colorMode = "status",
@@ -39,6 +49,7 @@ export function SitePlanViewer({
   planImageUrl: string;
   plots: Unit[];
   buildings: Building[];
+  roads?: Road[];
   onPlotClick: (unit: Unit) => void;
   onBuildingSettled: (building: Building) => void;
   colorMode?: "status" | "zone";
@@ -128,6 +139,44 @@ export function SitePlanViewer({
             }}
           >
             <image href={planImageUrl} x={0} y={0} width={VB} height={VB} preserveAspectRatio="none" />
+
+            {roads.map((road) => {
+              if (road.path_points.length < 2) return null;
+              const mid = pathMidpoint(road.path_points);
+              return (
+                <g key={road.id} className="pointer-events-none">
+                  <polyline
+                    points={toSvgPoints(road.path_points)}
+                    fill="none"
+                    stroke="#f5c94b"
+                    strokeWidth={VB * 0.012}
+                    strokeLinecap="round"
+                    opacity={0.35}
+                  />
+                  {/* A backing rect behind the label so a road's width stays
+                      legible over whatever the plan image looks like underneath. */}
+                  <rect
+                    x={mid.x - road.width_label.length * (VB * 0.0055)}
+                    y={mid.y - VB * 0.013}
+                    width={road.width_label.length * (VB * 0.011)}
+                    height={VB * 0.022}
+                    rx={VB * 0.004}
+                    fill="#0f2436"
+                    opacity={0.85}
+                  />
+                  <text
+                    x={mid.x}
+                    y={mid.y + VB * 0.003}
+                    textAnchor="middle"
+                    fontSize={VB * 0.014}
+                    fill="#f5c94b"
+                    className="select-none font-medium"
+                  >
+                    {road.width_label}
+                  </text>
+                </g>
+              );
+            })}
 
             {plots.map((unit) => {
               if (unit.polygon_points.length < 3) return null;
