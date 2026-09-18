@@ -12,6 +12,7 @@ import { ProjectTracerClient } from "@/components/ProjectTracerClient";
 import { PlanImageUpload } from "@/components/PlanImageUpload";
 import { MediaManager } from "@/components/MediaManager";
 import { PublishToggle } from "@/components/PublishToggle";
+import { ProjectDetailsForm } from "@/components/ProjectDetailsForm";
 import { StatusBadge, CategoryBadge } from "@/components/StatusBadge";
 import type { Building, Project, ProjectMedia, Unit } from "@/lib/types";
 
@@ -39,7 +40,10 @@ export default async function ManageProjectPage(props: PageProps<"/dashboard/pro
     <div>
       <div className="mb-1 flex items-center justify-between">
         <h1 className="text-2xl font-semibold">{typedProject.name}</h1>
-        <PublishToggle projectId={id} status={typedProject.status} />
+        <div className="flex gap-2">
+          <ProjectDetailsForm project={typedProject} />
+          <PublishToggle projectId={id} status={typedProject.status} />
+        </div>
       </div>
       <p className="mb-6 text-gray-500">
         {plots.length} plot(s) · {typedBuildings.length} building(s) · {flats.length} flat(s) traced

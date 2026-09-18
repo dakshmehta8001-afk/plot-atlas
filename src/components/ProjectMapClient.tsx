@@ -190,6 +190,7 @@ export function ProjectMapClient({
       {selectedUnit && (
         <UnitInfoCard
           unit={selectedUnit}
+          project={project}
           isSignedIn={isSignedIn}
           projectSlug={project.slug}
           onClose={() => setSelectedUnit(null)}

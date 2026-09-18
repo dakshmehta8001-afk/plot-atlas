@@ -80,10 +80,21 @@ export async function updateProject(projectId: string, formData: FormData): Prom
   const description = String(formData.get("description") ?? "").trim() || null;
   const location = String(formData.get("location") ?? "").trim() || null;
   const developerName = String(formData.get("developer_name") ?? "").trim() || null;
+  const contactPhone = String(formData.get("contact_phone") ?? "").trim() || null;
+  const contactWhatsapp = String(formData.get("contact_whatsapp") ?? "").trim() || null;
+  const contactEmail = String(formData.get("contact_email") ?? "").trim() || null;
 
   const { error } = await supabase
     .from("projects")
-    .update({ name, description, location, developer_name: developerName })
+    .update({
+      name,
+      description,
+      location,
+      developer_name: developerName,
+      contact_phone: contactPhone,
+      contact_whatsapp: contactWhatsapp,
+      contact_email: contactEmail,
+    })
     .eq("id", projectId);
 
   if (error) return { error: error.message };

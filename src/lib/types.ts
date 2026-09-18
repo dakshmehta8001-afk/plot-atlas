@@ -39,6 +39,12 @@ export interface Project {
   plan_image_url: string | null;
   map_bounds: MapBounds | null;
   status: ProjectStatus;
+  // The developer's own published business contact info (opt-in, shown as
+  // quick-contact icons on a unit's info card) — not the same thing as a
+  // user's private email/phone, which RLS keeps unreadable to the public.
+  contact_phone: string | null;
+  contact_whatsapp: string | null;
+  contact_email: string | null;
   created_at: string;
 }
 
