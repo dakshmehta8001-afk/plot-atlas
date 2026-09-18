@@ -25,13 +25,36 @@ const VB = MAP_VIEWBOX_SIZE;
 const ZOOM_SCALE = 4;
 export const BUILDING_ZOOM_TRANSITION_MS = 650;
 
-// The road's middle traced vertex, rather than its bounding-box center —
-// a road is an open path (often diagonal or bent), so a bounding-box
-// center can land off the path entirely, while the middle vertex is
-// guaranteed to be a point the sub-admin actually clicked on it.
+// The point exactly halfway along a road's traced length — a road is an
+// open path (often just two endpoints, sometimes bent), so a bounding-box
+// center can land off the path entirely, and picking the middle VERTEX by
+// array index is wrong too: a straight two-point road has no middle
+// vertex, only its two endpoints, which is the common case this needs to
+// get right. Walking the path by cumulative length instead works for any
+// point count, including two.
 function pathMidpoint(points: { x: number; y: number }[]): { x: number; y: number } {
-  const p = points[Math.floor((points.length - 1) / 2)];
-  return { x: p.x * VB, y: p.y * VB };
+  const px = points.map((p) => p.x * VB);
+  const py = points.map((p) => p.y * VB);
+  if (px.length === 1) return { x: px[0], y: py[0] };
+
+  const segmentLengths: number[] = [];
+  let totalLength = 0;
+  for (let i = 1; i < px.length; i++) {
+    const d = Math.hypot(px[i] - px[i - 1], py[i] - py[i - 1]);
+    segmentLengths.push(d);
+    totalLength += d;
+  }
+  if (totalLength === 0) return { x: px[0], y: py[0] };
+
+  let remaining = totalLength / 2;
+  for (let i = 0; i < segmentLengths.length; i++) {
+    if (remaining <= segmentLengths[i]) {
+      const t = remaining / segmentLengths[i];
+      return { x: px[i] + (px[i + 1] - px[i]) * t, y: py[i] + (py[i + 1] - py[i]) * t };
+    }
+    remaining -= segmentLengths[i];
+  }
+  return { x: px[px.length - 1], y: py[px.length - 1] };
 }
 
 export function SitePlanViewer({
