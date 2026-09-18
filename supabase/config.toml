@@ -1,0 +1,36 @@
+project_id = "plot-atlas"
+
+# Only site_url/additional_redirect_urls are intentionally changed from this
+# project's original hosted defaults (needed for the OAuth/email-confirmation
+# redirect to /auth/callback to be accepted on the live domain). Every other
+# value here is set explicitly to match what the project already had, since
+# `supabase config push` replaces the whole [auth] section — an earlier push
+# with a bare-minimum file silently flipped enable_confirmations and the MFA
+# enroll/verify flags to their config.toml defaults (false) instead of
+# leaving them alone. Restoring those here undoes that side effect.
+[auth]
+enabled = true
+site_url = "https://plot-atlas.vercel.app"
+additional_redirect_urls = ["https://plot-atlas.vercel.app/auth/callback", "http://127.0.0.1:3000/auth/callback"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+
+[auth.mfa]
+max_enrolled_factors = 10
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
+[auth.mfa.phone]
+enroll_enabled = false
+verify_enabled = false
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = true
+secure_password_change = false
+max_frequency = "1m0s"
+otp_length = 8
+otp_expiry = 3600
