@@ -1,13 +1,24 @@
 project_id = "plot-atlas"
 
-# Only site_url/additional_redirect_urls are intentionally changed from this
-# project's original hosted defaults (needed for the OAuth/email-confirmation
-# redirect to /auth/callback to be accepted on the live domain). Every other
-# value here is set explicitly to match what the project already had, since
-# `supabase config push` replaces the whole [auth] section — an earlier push
-# with a bare-minimum file silently flipped enable_confirmations and the MFA
-# enroll/verify flags to their config.toml defaults (false) instead of
-# leaving them alone. Restoring those here undoes that side effect.
+# Every value here is spelled out explicitly, not left to config.toml
+# defaults, because `supabase config push` replaces the WHOLE [auth]
+# section wholesale — an earlier push with a bare-minimum file silently
+# flipped enable_confirmations and the MFA enroll/verify flags to their
+# schema defaults (false) instead of leaving the remote project's actual
+# values alone. Diff against the live project before changing anything
+# here, not just the field you meant to touch.
+#
+# enable_confirmations is deliberately false (2026-09-19): Supabase's
+# default/shared email sender has a very low rate limit (a handful of
+# emails/hour) on a fresh project, which was silently failing real sign-ups
+# (the client got a generic "Invalid login credentials" on the *next*
+# login attempt, with no account ever created — the signup call itself
+# failed on the confirmation-email send). Admin approval (see
+# lib/actions/admin.ts) is the real gate on a sub-admin account actually
+# being usable, so skipping email confirmation doesn't remove the
+# substantive security check. Revisit this once custom SMTP is configured
+# in the Supabase Dashboard (Authentication → Emails → SMTP Settings) —
+# then this can go back to true.
 [auth]
 enabled = true
 site_url = "https://plot-atlas.vercel.app"
@@ -29,7 +40,7 @@ verify_enabled = false
 [auth.email]
 enable_signup = true
 double_confirm_changes = true
-enable_confirmations = true
+enable_confirmations = false
 secure_password_change = false
 max_frequency = "1m0s"
 otp_length = 8
