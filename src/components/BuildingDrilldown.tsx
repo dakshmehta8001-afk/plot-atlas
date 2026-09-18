@@ -66,7 +66,7 @@ export function BuildingDrilldown({
           building footprint is still visible (softly dimmed) behind the
           floor selector / floor view overlays — it reads as "we're now
           inside that building" rather than a jarring page swap. */}
-      <div className={stage.kind === "site" ? "h-full w-full" : "h-full w-full opacity-40"}>
+      <div className={stage.kind === "site" ? "h-full w-full" : "h-full w-full opacity-40 pointer-events-none"}>
         <SitePlanViewer
           planImageUrl={planImageUrl}
           plots={plots}

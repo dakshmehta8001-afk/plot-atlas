@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
+  <rect x="0" y="0" width="800" height="600" fill="#f5f5f0"/>
+  <rect x="0" y="0" width="800" height="600" fill="none" stroke="#3a3f4b" stroke-width="4"/>
+  <!-- central corridor -->
+  <rect x="380" y="0" width="40" height="600" fill="#e2e2da"/>
+  <rect x="0" y="280" width="800" height="40" fill="#e2e2da"/>
+
+  <g stroke="#8a9b7a" stroke-width="2" fill="none">
+    <rect x="40" y="40" width="340" height="240"/>
+    <rect x="420" y="40" width="340" height="240"/>
+    <rect x="40" y="320" width="340" height="240"/>
+    <rect x="420" y="320" width="340" height="240"/>
+  </g>
+  <text x="180" y="165" text-anchor="middle" font-size="18" fill="#3a3f4b" font-family="Arial">Flat 1</text>
+  <text x="590" y="165" text-anchor="middle" font-size="18" fill="#3a3f4b" font-family="Arial">Flat 2</text>
+  <text x="180" y="445" text-anchor="middle" font-size="18" fill="#3a3f4b" font-family="Arial">Flat 3</text>
+  <text x="590" y="445" text-anchor="middle" font-size="18" fill="#3a3f4b" font-family="Arial">Flat 4</text>
+</svg>

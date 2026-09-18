@@ -1,0 +1,1 @@
+select (select count(*) from public.projects) as projects, (select count(*) from public.buildings) as buildings, (select count(*) from public.floors) as floors, (select count(*) from public.units where unit_type='plot') as plots, (select count(*) from public.units where unit_type='flat') as flats;
