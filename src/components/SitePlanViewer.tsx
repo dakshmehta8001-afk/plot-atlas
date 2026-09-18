@@ -19,7 +19,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { MAP_VIEWBOX_SIZE, UNIT_STATUS_STYLES, zoneColorFor, type Building, type Road, type Unit } from "@/lib/types";
 import { useImageAspectRatio } from "@/lib/useImageAspectRatio";
-import { toSvgPoints, boundingBoxCenter } from "@/lib/svgPolygon";
+import { toSvgPoints, toSvgPathD, boundingBoxCenter } from "@/lib/svgPolygon";
 
 const VB = MAP_VIEWBOX_SIZE;
 const ZOOM_SCALE = 4;
@@ -163,19 +163,61 @@ export function SitePlanViewer({
           >
             <image href={planImageUrl} x={0} y={0} width={VB} height={VB} preserveAspectRatio="none" />
 
-            {roads.map((road) => {
+            {roads.map((road, index) => {
               if (road.path_points.length < 2) return null;
               const mid = pathMidpoint(road.path_points);
+              const motionPathId = `road-motion-${road.id}`;
+              // Varying the duration a little per road, rather than one
+              // fixed number, is what keeps several cars on screen at once
+              // from all being in lockstep.
+              const driveDuration = 7 + (index % 4) * 1.5;
               return (
                 <g key={road.id} className="pointer-events-none">
+                  {/* Rendered as real road styling (asphalt + lane markings),
+                      not just a highlight — this is what makes a traced road
+                      look like a road on ANY uploaded image, not only one
+                      that already has road artwork drawn into it. */}
                   <polyline
                     points={toSvgPoints(road.path_points)}
                     fill="none"
-                    stroke="#f5c94b"
-                    strokeWidth={VB * 0.012}
+                    stroke="#3a4552"
+                    strokeWidth={VB * 0.026}
                     strokeLinecap="round"
-                    opacity={0.35}
                   />
+                  <polyline
+                    points={toSvgPoints(road.path_points)}
+                    fill="none"
+                    stroke="#e8eaed"
+                    strokeWidth={VB * 0.0018}
+                    strokeDasharray={`${VB * 0.014} ${VB * 0.01}`}
+                    strokeLinecap="round"
+                    opacity={0.8}
+                  />
+
+                  {/* An invisible copy of the same path, purely so the car
+                      below has something to run animateMotion along —
+                      <mpath> only works off a real <path>, not a <polyline>. */}
+                  <path id={motionPathId} d={toSvgPathD(road.path_points)} fill="none" stroke="none" />
+                  <g>
+                    <rect
+                      x={-VB * 0.011}
+                      y={-VB * 0.0055}
+                      width={VB * 0.022}
+                      height={VB * 0.011}
+                      rx={VB * 0.0025}
+                      fill={index % 2 === 0 ? "#d7473f" : "#e7e7e2"}
+                    />
+                    <animateMotion
+                      dur={`${driveDuration}s`}
+                      repeatCount="indefinite"
+                      rotate="auto"
+                      keyPoints="0;1;0"
+                      keyTimes="0;0.5;1"
+                      calcMode="linear"
+                    >
+                      <mpath href={`#${motionPathId}`} />
+                    </animateMotion>
+                  </g>
                   {/* A backing rect behind the label so a road's width stays
                       legible over whatever the plan image looks like underneath. */}
                   <rect

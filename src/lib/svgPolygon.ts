@@ -10,6 +10,13 @@ export function toSvgPoints(points: PolygonPoint[]): string {
   return points.map((p) => `${p.x * VB},${p.y * VB}`).join(" ");
 }
 
+// A `<path d="...">` equivalent of the same points — needed for anything a
+// `<polyline>`/`<polygon>` can't do, like being the motion path an
+// `<animateMotion>` follows via `<mpath>` (that only works off a `<path>`).
+export function toSvgPathD(points: PolygonPoint[]): string {
+  return points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x * VB},${p.y * VB}`).join(" ");
+}
+
 export function boundingBoxCenter(points: PolygonPoint[]): { x: number; y: number } {
   const xs = points.map((p) => p.x * VB);
   const ys = points.map((p) => p.y * VB);
