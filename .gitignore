@@ -45,3 +45,6 @@ next-env.d.ts
 
 # supabase CLI local cache
 /supabase/.temp
+
+# scratch staging area for one-off storage uploads/queries, not app source
+/.seed
