@@ -6,6 +6,7 @@
 // footprints are traced against.
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { uploadPlanImageFile } from "@/lib/uploadPlanImage";
 import type { ActionResult } from "./auth";
 
 export async function createFloor(
@@ -27,14 +28,9 @@ export async function createFloor(
 
   let planImageUrl: string | null = null;
   if (planImage instanceof File && planImage.size > 0) {
-    const path = `${user.id}/${Date.now()}-${planImage.name}`;
-    const { error: uploadError } = await supabase.storage
-      .from("plan-images")
-      .upload(path, planImage, { contentType: planImage.type });
-    if (uploadError) return { error: `Floor plan upload failed: ${uploadError.message}` };
-
-    const { data: publicUrl } = supabase.storage.from("plan-images").getPublicUrl(path);
-    planImageUrl = publicUrl.publicUrl;
+    const result = await uploadPlanImageFile(supabase, user.id, planImage);
+    if (result.error) return { error: `Floor plan upload failed: ${result.error}` };
+    planImageUrl = result.url!;
   }
 
   const { error } = await supabase.from("floors").insert({

@@ -68,11 +68,11 @@ export function FloorFormModal({
         </div>
 
         <label className="block text-sm">
-          Floor plan image
+          Floor plan image (image or PDF)
           <input
             type="file"
             name="plan_image"
-            accept="image/*"
+            accept="image/*,application/pdf"
             className="mt-1 w-full text-sm"
           />
         </label>

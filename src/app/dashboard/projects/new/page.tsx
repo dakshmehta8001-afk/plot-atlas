@@ -57,8 +57,8 @@ export default function NewProjectPage() {
           />
         </label>
         <label className="block text-sm">
-          Master site-plan image
-          <input name="plan_image" type="file" accept="image/*" className="mt-1 w-full text-sm" />
+          Master site-plan image (image or PDF)
+          <input name="plan_image" type="file" accept="image/*,application/pdf" className="mt-1 w-full text-sm" />
         </label>
         {error && <p className="text-sm text-red-600">{error}</p>}
         <button

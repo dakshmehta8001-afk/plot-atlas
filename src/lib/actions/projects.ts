@@ -9,6 +9,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { uploadPlanImageFile } from "@/lib/uploadPlanImage";
 import type { MapBounds } from "@/lib/types";
 import type { ActionResult } from "./auth";
 
@@ -43,14 +44,9 @@ export async function createProject(formData: FormData): Promise<ActionResult> {
 
   let planImageUrl: string | null = null;
   if (planImage instanceof File && planImage.size > 0) {
-    const path = `${user.id}/${Date.now()}-${planImage.name}`;
-    const { error: uploadError } = await supabase.storage
-      .from("plan-images")
-      .upload(path, planImage, { contentType: planImage.type });
-    if (uploadError) return { error: `Plan image upload failed: ${uploadError.message}` };
-
-    const { data: publicUrl } = supabase.storage.from("plan-images").getPublicUrl(path);
-    planImageUrl = publicUrl.publicUrl;
+    const result = await uploadPlanImageFile(supabase, user.id, planImage);
+    if (result.error) return { error: `Plan image upload failed: ${result.error}` };
+    planImageUrl = result.url!;
   }
 
   const { data: project, error } = await supabase
@@ -127,17 +123,12 @@ export async function uploadPlanImage(projectId: string, file: File): Promise<Ac
   } = await supabase.auth.getUser();
   if (!user) return { error: "You must be signed in." };
 
-  const path = `${user.id}/${Date.now()}-${file.name}`;
-  const { error: uploadError } = await supabase.storage
-    .from("plan-images")
-    .upload(path, file, { contentType: file.type });
-  if (uploadError) return { error: uploadError.message };
-
-  const { data: publicUrl } = supabase.storage.from("plan-images").getPublicUrl(path);
+  const result = await uploadPlanImageFile(supabase, user.id, file);
+  if (result.error) return { error: result.error };
 
   const { error } = await supabase
     .from("projects")
-    .update({ plan_image_url: publicUrl.publicUrl })
+    .update({ plan_image_url: result.url })
     .eq("id", projectId);
   if (error) return { error: error.message };
 
