@@ -16,7 +16,7 @@
 // that doesn't match `highlightZone` when the viewer has clicked a legend
 // pill to filter. Buildings always render in a neutral indigo "structure"
 // style since they aren't themselves bought/sold.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MAP_VIEWBOX_SIZE, UNIT_STATUS_STYLES, zoneColorFor, type Building, type Unit } from "@/lib/types";
 import { useImageAspectRatio } from "@/lib/useImageAspectRatio";
 import { toSvgPoints, boundingBoxCenter } from "@/lib/svgPolygon";
@@ -49,6 +49,18 @@ export function SitePlanViewer({
 }) {
   const [zoomedId, setZoomedId] = useState<string | null>(null);
   const aspectRatio = useImageAspectRatio(planImageUrl);
+
+  // resetSignal only ever changes to a new value (never re-fires the same
+  // one), so this only runs when the parent actually wants us reset — e.g.
+  // BuildingDrilldown backing out of a floor view. Without this, zoomedId
+  // stayed stuck on the last-clicked building/plot: the parent could swap
+  // back to showing this component in full, but it would still render
+  // zoomed into wherever that stale id pointed, with a stray "Back to full
+  // view" button, since nothing here was actually watching resetSignal.
+  useEffect(() => {
+    if (resetSignal !== undefined) setZoomedId(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately keyed only on the signal, not on its own identity
+  }, [resetSignal]);
 
   const zoomedShapePoints = useMemo(() => {
     const plot = plots.find((p) => p.id === zoomedId);
@@ -110,7 +122,7 @@ export function SitePlanViewer({
         <svg viewBox={`0 0 ${VB} ${VB}`} preserveAspectRatio="none" className="h-full w-full bg-[#0b1f2e]">
           <g
             style={{
-              transform: resetSignal !== undefined && !zoomedId ? "translate(0px, 0px) scale(1)" : transform,
+              transform,
               transformOrigin: "0 0",
               transition: "transform 600ms ease",
             }}

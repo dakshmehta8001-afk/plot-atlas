@@ -163,7 +163,7 @@ export function UnitFormModal(props: CreateProps | EditProps) {
               className="mt-1 w-full rounded-md border border-gray-300 p-2 dark:border-gray-700 dark:bg-gray-800"
             />
           </label>
-          {unitType === "flat" ? (
+          {unitType === "flat" && (
             <label className="block text-sm">
               Carpet area (sq ft)
               <input
@@ -173,18 +173,18 @@ export function UnitFormModal(props: CreateProps | EditProps) {
                 className="mt-1 w-full rounded-md border border-gray-300 p-2 dark:border-gray-700 dark:bg-gray-800"
               />
             </label>
-          ) : (
-            <label className="block text-sm">
-              Dimensions
-              <input
-                value={dimensions ?? ""}
-                onChange={(e) => setDimensions(e.target.value)}
-                placeholder="e.g. 20' x 30'"
-                className="mt-1 w-full rounded-md border border-gray-300 p-2 dark:border-gray-700 dark:bg-gray-800"
-              />
-            </label>
           )}
         </div>
+
+        <label className="block text-sm">
+          Dimensions
+          <input
+            value={dimensions ?? ""}
+            onChange={(e) => setDimensions(e.target.value)}
+            placeholder="e.g. 20' x 30'"
+            className="mt-1 w-full rounded-md border border-gray-300 p-2 dark:border-gray-700 dark:bg-gray-800"
+          />
+        </label>
 
         <div className="grid grid-cols-2 gap-3">
           <label className="block text-sm">
@@ -217,7 +217,7 @@ export function UnitFormModal(props: CreateProps | EditProps) {
               className="mt-1 w-full rounded-md border border-gray-300 p-2 dark:border-gray-700 dark:bg-gray-800"
             />
           </label>
-          {props.mode === "edit" ? (
+          {props.mode === "edit" && (
             <label className="block text-sm">
               Status
               <select
@@ -232,18 +232,6 @@ export function UnitFormModal(props: CreateProps | EditProps) {
                 ))}
               </select>
             </label>
-          ) : (
-            unitType === "flat" && (
-              <label className="block text-sm">
-                Dimensions
-                <input
-                  value={dimensions ?? ""}
-                  onChange={(e) => setDimensions(e.target.value)}
-                  placeholder="e.g. 40' x 35'"
-                  className="mt-1 w-full rounded-md border border-gray-300 p-2 dark:border-gray-700 dark:bg-gray-800"
-                />
-              </label>
-            )
           )}
         </div>
 
