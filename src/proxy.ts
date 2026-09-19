@@ -35,36 +35,23 @@ export async function proxy(request: NextRequest) {
     .single();
 
   // A transient failure reading the profile (network blip, momentary
-  // Supabase hiccup) must NOT be treated the same as "wrong role" — doing
-  // so silently bounced a real, correctly-authenticated sub-admin off of
-  // /dashboard/projects/new mid-submit with no visible error (found by
-  // testing actual project creation end-to-end, not just reading the
-  // code): profile came back null, `profile?.role !== "sub_admin"` was
-  // therefore true, and the user got redirected away for a reason that had
-  // nothing to do with their actual role. RLS is the real authorization
-  // boundary regardless (see the module comment above), so failing open
-  // here — letting the request through to be re-checked by RLS — is safe;
-  // failing closed here is not, since it has no way to tell "wrong role"
-  // apart from "couldn't check."
-  const debugHeader = JSON.stringify({ userId: user.id, profile, profileErrorMessage: profileError?.message ?? null });
-
-  if (profileError) {
-    response.headers.set("x-debug-proxy", debugHeader);
-    return response;
-  }
+  // Supabase hiccup) must not be treated the same as "wrong role" — the
+  // checks below can't tell "profile is null because the role really is
+  // wrong" apart from "profile is null because the lookup itself failed",
+  // so failing open (letting the request through) on an actual query error
+  // is the safe choice. RLS is the real authorization boundary regardless
+  // (see the module comment above), so this can't be used to bypass
+  // anything — it only stops an unrelated lookup failure from punishing a
+  // legitimate user.
+  if (profileError) return response;
 
   if (path.startsWith("/admin") && profile?.role !== "admin") {
-    const redirectResponse = NextResponse.redirect(new URL("/", request.url));
-    redirectResponse.headers.set("x-debug-proxy", debugHeader);
-    return redirectResponse;
+    return NextResponse.redirect(new URL("/", request.url));
   }
   if (path.startsWith("/dashboard") && profile?.role !== "sub_admin") {
-    const redirectResponse = NextResponse.redirect(new URL("/", request.url));
-    redirectResponse.headers.set("x-debug-proxy", debugHeader);
-    return redirectResponse;
+    return NextResponse.redirect(new URL("/", request.url));
   }
 
-  response.headers.set("x-debug-proxy", debugHeader);
   return response;
 }
 

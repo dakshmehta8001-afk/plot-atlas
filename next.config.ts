@@ -16,7 +16,13 @@ const nextConfig: NextConfig = {
   // needs to be told about explicitly or it's silently missing from the
   // deployed serverless bundle (worked locally, 404s in production).
   outputFileTracingIncludes: {
-    "/*": ["node_modules/pdfjs-dist/standard_fonts/**/*"],
+    "/*": [
+      "node_modules/pdfjs-dist/standard_fonts/**/*",
+      // pdfjs's Node "fake worker" locates its own worker script by a
+      // runtime-resolved path (GlobalWorkerOptions.workerSrc in
+      // pdfToImage.ts), not a static import Next's tracer can follow.
+      "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+    ],
   },
 };
 

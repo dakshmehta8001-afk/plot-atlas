@@ -22,59 +22,52 @@ function slugify(name: string): string {
 }
 
 export async function createProject(formData: FormData): Promise<ActionResult> {
-  try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return { error: "You must be signed in." };
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "You must be signed in." };
 
-    const name = String(formData.get("name") ?? "").trim();
-    const description = String(formData.get("description") ?? "").trim() || null;
-    const location = String(formData.get("location") ?? "").trim() || null;
-    const developerName = String(formData.get("developer_name") ?? "").trim() || null;
-    const planImage = formData.get("plan_image");
+  const name = String(formData.get("name") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim() || null;
+  const location = String(formData.get("location") ?? "").trim() || null;
+  const developerName = String(formData.get("developer_name") ?? "").trim() || null;
+  const planImage = formData.get("plan_image");
 
-    if (!name) return { error: "Project name is required." };
+  if (!name) return { error: "Project name is required." };
 
-    // Slugs must be globally unique (see the `unique` constraint on
-    // projects.slug); appending a short random suffix keeps two sub-admins
-    // from colliding on e.g. "green-valley" without asking them to pick a
-    // slug by hand.
-    const slug = `${slugify(name)}-${Math.random().toString(36).slice(2, 7)}`;
+  // Slugs must be globally unique (see the `unique` constraint on
+  // projects.slug); appending a short random suffix keeps two sub-admins
+  // from colliding on e.g. "green-valley" without asking them to pick a
+  // slug by hand.
+  const slug = `${slugify(name)}-${Math.random().toString(36).slice(2, 7)}`;
 
-    let planImageUrl: string | null = null;
-    if (planImage instanceof File && planImage.size > 0) {
-      const result = await uploadPlanImageFile(supabase, user.id, planImage);
-      if (result.error) return { error: `Plan image upload failed: ${result.error}` };
-      planImageUrl = result.url!;
-    }
-
-    const { data: project, error } = await supabase
-      .from("projects")
-      .insert({
-        sub_admin_id: user.id,
-        name,
-        slug,
-        description,
-        location,
-        developer_name: developerName,
-        plan_image_url: planImageUrl,
-      })
-      .select("id")
-      .single();
-
-    if (error) return { error: `DEBUG insert error: ${JSON.stringify(error)}` };
-    if (!project) return { error: "DEBUG: insert returned no error but no project either" };
-    if (!project.id) return { error: `DEBUG: project has no id: ${JSON.stringify(project)}` };
-
-    revalidatePath("/dashboard");
-    redirect(`/dashboard/projects/${project.id}`);
-  } catch (err: unknown) {
-    const digest = (err as { digest?: string })?.digest;
-    if (digest?.startsWith("NEXT_REDIRECT")) throw err;
-    return { error: `DEBUG caught exception: ${err instanceof Error ? err.stack : String(err)}` };
+  let planImageUrl: string | null = null;
+  if (planImage instanceof File && planImage.size > 0) {
+    const result = await uploadPlanImageFile(supabase, user.id, planImage);
+    if (result.error) return { error: `Plan image upload failed: ${result.error}` };
+    planImageUrl = result.url!;
   }
+
+  const { data: project, error } = await supabase
+    .from("projects")
+    .insert({
+      sub_admin_id: user.id,
+      name,
+      slug,
+      description,
+      location,
+      developer_name: developerName,
+      plan_image_url: planImageUrl,
+    })
+    .select("id")
+    .single();
+
+  if (error) return { error: error.message };
+  if (!project) return { error: "Project could not be created." };
+
+  revalidatePath("/dashboard");
+  redirect(`/dashboard/projects/${project.id}`);
 }
 
 export async function updateProject(projectId: string, formData: FormData): Promise<ActionResult> {

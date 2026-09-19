@@ -32,6 +32,16 @@ import { createCanvas, DOMMatrix, ImageData, Path2D } from "@napi-rs/canvas";
 const STANDARD_FONT_DATA_URL =
   path.join(process.cwd(), "node_modules/pdfjs-dist/standard_fonts").split(path.sep).join("/") + "/";
 
+// pdfjs-dist has no real Web Worker in Node, so it runs a "fake worker" —
+// but it still locates that fake-worker module by importing a worker
+// script path, which it otherwise guesses relative to its own (bundler-
+// transformed) location. That guess breaks once Turbopack/webpack has
+// repackaged the code, throwing "Cannot find module .../pdf.worker.mjs" in
+// the deployed bundle even though local dev's unbundled node_modules
+// layout hides the problem. Pointing this at the file's real on-disk path
+// explicitly avoids relying on that guess.
+const PDF_WORKER_SRC = path.join(process.cwd(), "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs");
+
 // @napi-rs/canvas's DOMMatrix/ImageData/Path2D are runtime-compatible with
 // what pdfjs-dist expects, but their TypeScript types don't structurally
 // match lib.dom.d.ts's browser versions (different property lists) — this
@@ -55,6 +65,7 @@ export async function renderPdfFirstPageToPng(pdfBytes: Uint8Array): Promise<{
   height: number;
 }> {
   const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_WORKER_SRC;
 
   const doc = await pdfjsLib.getDocument({ data: pdfBytes, standardFontDataUrl: STANDARD_FONT_DATA_URL }).promise;
   const page = await doc.getPage(1);
