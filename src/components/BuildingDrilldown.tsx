@@ -17,7 +17,7 @@
 // "Back" steps out one stage at a time; leaving floor-view or floor-select
 // resets SitePlanViewer's zoom back to the full site via `resetSignal`.
 import { useEffect, useState } from "react";
-import type { Building, Floor, Road, Unit } from "@/lib/types";
+import type { Building, Floor, Road, SiteFeature, Unit } from "@/lib/types";
 import { floorLabel, sortFloors } from "@/lib/types";
 import { SitePlanViewer } from "@/components/SitePlanViewer";
 import { FloorPlanViewer } from "@/components/FloorPlanViewer";
@@ -36,6 +36,7 @@ export function BuildingDrilldown({
   plots,
   buildings,
   roads = [],
+  features = [],
   unitsByFloor,
   onPlotClick,
   onFlatClick,
@@ -48,6 +49,7 @@ export function BuildingDrilldown({
   plots: Unit[];
   buildings: BuildingWithFloors[];
   roads?: Road[];
+  features?: SiteFeature[];
   unitsByFloor: Record<string, Unit[]>;
   onPlotClick: (unit: Unit) => void;
   onFlatClick: (unit: Unit) => void;
@@ -84,6 +86,7 @@ export function BuildingDrilldown({
           plots={plots}
           buildings={buildings}
           roads={roads}
+          features={features}
           onPlotClick={onPlotClick}
           onBuildingSettled={(building) => {
             const withFloors = buildings.find((b) => b.id === building.id);

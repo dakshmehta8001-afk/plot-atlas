@@ -24,6 +24,28 @@ const nextConfig: NextConfig = {
       "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
     ],
   },
+
+  // @techstark/opencv-js's UMD bundle (loaded client-side for the
+  // auto-digitize feature, src/lib/digitize/opencvLoader.ts) contains a
+  // Node-only branch (`if (ENVIRONMENT_IS_NODE) require("fs")`, etc.) that
+  // never runs in a browser but that Turbopack still statically tries to
+  // resolve when bundling for the client, failing the build with "Can't
+  // resolve 'fs'" otherwise. The package's own README asks for the
+  // webpack-specific `resolve.fallback` equivalent of this; `resolveAlias`
+  // is Turbopack's version of the same idea — see browserNodeShim.ts.
+  //
+  // Scoped to the `browser` resolve condition specifically (not a bare
+  // string alias) so this only affects CLIENT bundling — server-side code
+  // in this app and in node_modules (pdfToImage.ts's real "node:path"
+  // usage, Supabase's SSR helpers, etc.) still resolves the real Node
+  // builtins normally.
+  turbopack: {
+    resolveAlias: {
+      fs: { browser: "./src/lib/digitize/browserNodeShim.ts" },
+      path: { browser: "./src/lib/digitize/browserNodeShim.ts" },
+      crypto: { browser: "./src/lib/digitize/browserNodeShim.ts" },
+    },
+  },
 };
 
 export default nextConfig;

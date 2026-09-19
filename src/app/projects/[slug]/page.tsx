@@ -6,7 +6,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ProjectMapClient } from "@/components/ProjectMapClient";
-import type { Building, Floor, Project, ProjectMedia, Road, Unit } from "@/lib/types";
+import type { Building, Floor, Project, ProjectMedia, Road, SiteFeature, Unit } from "@/lib/types";
 import type { BuildingWithFloors } from "@/components/BuildingDrilldown";
 
 export default async function ProjectPage(props: PageProps<"/projects/[slug]">) {
@@ -16,12 +16,22 @@ export default async function ProjectPage(props: PageProps<"/projects/[slug]">) 
   const { data: project } = await supabase.from("projects").select("*").eq("slug", slug).single();
   if (!project) notFound();
 
-  const [{ data: units }, { data: buildings }, { data: floors }, { data: roads }, { data: media }, { data: userData }, { data: ownerName }] =
+  const [
+    { data: units },
+    { data: buildings },
+    { data: floors },
+    { data: roads },
+    { data: features },
+    { data: media },
+    { data: userData },
+    { data: ownerName },
+  ] =
     await Promise.all([
       supabase.from("units").select("*").eq("project_id", project.id).order("unit_number"),
       supabase.from("buildings").select("*").eq("project_id", project.id).order("name"),
       supabase.from("floors").select("*, buildings!inner(project_id)").eq("buildings.project_id", project.id),
       supabase.from("roads").select("*").eq("project_id", project.id),
+      supabase.from("site_features").select("*").eq("project_id", project.id),
       supabase.from("project_media").select("*").eq("project_id", project.id).order("sort_order"),
       supabase.auth.getUser(),
       // A SECURITY DEFINER function, not a plain users(name) embed — RLS has
@@ -58,6 +68,7 @@ export default async function ProjectPage(props: PageProps<"/projects/[slug]">) 
         plots={plots}
         buildings={buildingsWithFloors}
         roads={(roads ?? []) as Road[]}
+        features={(features ?? []) as SiteFeature[]}
         unitsByFloor={unitsByFloor}
         allUnits={allUnits}
         media={(media ?? []) as ProjectMedia[]}

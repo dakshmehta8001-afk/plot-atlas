@@ -203,6 +203,47 @@ export function distinctZones(units: Pick<Unit, "category">[]): string[] {
   return Array.from(new Set(units.map((u) => u.category).filter((c): c is string => !!c))).sort();
 }
 
+// Non-sellable amenities/landmarks a site plan often shows alongside plots
+// and roads — traced the same way as a building footprint (closed polygon
+// on the master plan image), but with no sale status of their own.
+export type SiteFeatureKind =
+  | "park"
+  | "temple"
+  | "gate"
+  | "clubhouse"
+  | "common_area"
+  | "water_body"
+  | "other";
+
+export interface SiteFeature {
+  id: string;
+  project_id: string;
+  kind: SiteFeatureKind;
+  label: string;
+  polygon_points: PolygonPoint[];
+  created_at: string;
+}
+
+export const SITE_FEATURE_STYLES: Record<SiteFeatureKind, { label: string; fill: string; border: string }> = {
+  park: { label: "Park", fill: "rgba(34,197,94,0.25)", border: "#15803d" },
+  temple: { label: "Temple", fill: "rgba(249,115,22,0.3)", border: "#c2410c" },
+  gate: { label: "Gate", fill: "rgba(100,116,139,0.35)", border: "#334155" },
+  clubhouse: { label: "Clubhouse", fill: "rgba(168,85,247,0.3)", border: "#7e22ce" },
+  common_area: { label: "Common area", fill: "rgba(20,184,166,0.25)", border: "#0f766e" },
+  water_body: { label: "Water body", fill: "rgba(59,130,246,0.3)", border: "#1d4ed8" },
+  other: { label: "Other", fill: "rgba(148,163,184,0.3)", border: "#475569" },
+};
+
+export const SITE_FEATURE_KIND_OPTIONS: SiteFeatureKind[] = [
+  "park",
+  "temple",
+  "gate",
+  "clubhouse",
+  "common_area",
+  "water_body",
+  "other",
+];
+
 // Human-friendly ordering for a floor list: Ground first, then ascending.
 export function sortFloors(floors: Floor[]): Floor[] {
   return [...floors].sort((a, b) => a.floor_number - b.floor_number);

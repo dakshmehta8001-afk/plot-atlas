@@ -17,7 +17,16 @@
 // pill to filter. Buildings always render in a neutral indigo "structure"
 // style since they aren't themselves bought/sold.
 import { useEffect, useMemo, useState } from "react";
-import { MAP_VIEWBOX_SIZE, UNIT_STATUS_STYLES, zoneColorFor, type Building, type Road, type Unit } from "@/lib/types";
+import {
+  MAP_VIEWBOX_SIZE,
+  SITE_FEATURE_STYLES,
+  UNIT_STATUS_STYLES,
+  zoneColorFor,
+  type Building,
+  type Road,
+  type SiteFeature,
+  type Unit,
+} from "@/lib/types";
 import { useImageAspectRatio } from "@/lib/useImageAspectRatio";
 import { toSvgPoints, toSvgPathD, boundingBoxCenter } from "@/lib/svgPolygon";
 
@@ -62,6 +71,7 @@ export function SitePlanViewer({
   plots,
   buildings,
   roads = [],
+  features = [],
   onPlotClick,
   onBuildingSettled,
   colorMode = "status",
@@ -73,6 +83,7 @@ export function SitePlanViewer({
   plots: Unit[];
   buildings: Building[];
   roads?: Road[];
+  features?: SiteFeature[];
   onPlotClick: (unit: Unit) => void;
   onBuildingSettled: (building: Building) => void;
   colorMode?: "status" | "zone";
@@ -286,6 +297,37 @@ export function SitePlanViewer({
                     className="pointer-events-none select-none font-semibold"
                   >
                     {building.name}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* Parks/temples/gates/etc — informational only, no click-to-zoom
+                (same lighter interaction level as buildings get relative to
+                plots, since a feature isn't itself a sellable unit). */}
+            {features.map((feature) => {
+              if (feature.polygon_points.length < 3) return null;
+              const style = SITE_FEATURE_STYLES[feature.kind];
+              const center = boundingBoxCenter(feature.polygon_points);
+              return (
+                <g key={feature.id} className="pointer-events-none">
+                  <polygon
+                    points={toSvgPoints(feature.polygon_points)}
+                    fill={style.fill}
+                    stroke={style.border}
+                    strokeWidth={VB * 0.002}
+                  >
+                    <title>{feature.label}</title>
+                  </polygon>
+                  <text
+                    x={center.x}
+                    y={center.y}
+                    textAnchor="middle"
+                    fontSize={VB * 0.016}
+                    fill="#f8fafc"
+                    className="select-none font-medium"
+                  >
+                    {feature.label}
                   </text>
                 </g>
               );

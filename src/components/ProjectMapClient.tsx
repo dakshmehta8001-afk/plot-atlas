@@ -17,7 +17,16 @@ import { Compass } from "@/components/Compass";
 import { UnitInfoCard } from "@/components/UnitInfoCard";
 import { PENDING_ENQUIRY_KEY } from "@/lib/useEnquiryFlow";
 import { createLead } from "@/lib/actions/leads";
-import { distinctZones, zoneColorFor, type Project, type ProjectMedia, type Road, type Unit } from "@/lib/types";
+import {
+  distinctZones,
+  SITE_FEATURE_STYLES,
+  zoneColorFor,
+  type Project,
+  type ProjectMedia,
+  type Road,
+  type SiteFeature,
+  type Unit,
+} from "@/lib/types";
 
 type Tab = "map" | "media" | "about";
 
@@ -26,6 +35,7 @@ export function ProjectMapClient({
   plots,
   buildings,
   roads,
+  features = [],
   unitsByFloor,
   allUnits,
   media,
@@ -36,6 +46,7 @@ export function ProjectMapClient({
   plots: Unit[];
   buildings: BuildingWithFloors[];
   roads: Road[];
+  features?: SiteFeature[];
   unitsByFloor: Record<string, Unit[]>;
   allUnits: Unit[];
   media: ProjectMedia[];
@@ -82,6 +93,7 @@ export function ProjectMapClient({
   }, []);
 
   const zones = distinctZones(allUnits);
+  const featureKindsPresent = Array.from(new Set(features.map((f) => f.kind)));
   const counts = {
     total: allUnits.length,
     available: allUnits.filter((u) => u.status === "available").length,
@@ -154,6 +166,24 @@ export function ProjectMapClient({
             </div>
           )}
 
+          {featureKindsPresent.length > 0 && (
+            <div className="absolute left-4 top-[11.5rem] z-[600] flex flex-wrap items-center gap-2">
+              {featureKindsPresent.map((kind) => {
+                const style = SITE_FEATURE_STYLES[kind];
+                return (
+                  <span
+                    key={kind}
+                    className="flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium"
+                    style={{ borderColor: style.border, color: style.border }}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: style.border }} />
+                    {style.label}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
           <Compass />
         </>
       )}
@@ -179,6 +209,7 @@ export function ProjectMapClient({
             plots={plots}
             buildings={buildings}
             roads={roads}
+            features={features}
             unitsByFloor={unitsByFloor}
             onPlotClick={setSelectedUnit}
             onFlatClick={setSelectedUnit}

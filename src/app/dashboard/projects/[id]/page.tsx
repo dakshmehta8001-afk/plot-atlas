@@ -14,7 +14,7 @@ import { MediaManager } from "@/components/MediaManager";
 import { PublishToggle } from "@/components/PublishToggle";
 import { ProjectDetailsForm } from "@/components/ProjectDetailsForm";
 import { StatusBadge, CategoryBadge } from "@/components/StatusBadge";
-import type { Building, Project, ProjectMedia, Road, Unit } from "@/lib/types";
+import type { Building, Project, ProjectMedia, Road, SiteFeature, Unit } from "@/lib/types";
 
 export default async function ManageProjectPage(props: PageProps<"/dashboard/projects/[id]">) {
   const { id } = await props.params;
@@ -23,10 +23,11 @@ export default async function ManageProjectPage(props: PageProps<"/dashboard/pro
   const { data: project } = await supabase.from("projects").select("*").eq("id", id).single();
   if (!project) notFound();
 
-  const [{ data: units }, { data: buildings }, { data: roads }, { data: media }] = await Promise.all([
+  const [{ data: units }, { data: buildings }, { data: roads }, { data: features }, { data: media }] = await Promise.all([
     supabase.from("units").select("*").eq("project_id", id).order("unit_number"),
     supabase.from("buildings").select("*").eq("project_id", id).order("name"),
     supabase.from("roads").select("*").eq("project_id", id).order("created_at"),
+    supabase.from("site_features").select("*").eq("project_id", id).order("created_at"),
     supabase.from("project_media").select("*").eq("project_id", id).order("sort_order"),
   ]);
 
@@ -36,6 +37,7 @@ export default async function ManageProjectPage(props: PageProps<"/dashboard/pro
   const flats = allUnits.filter((u) => u.unit_type === "flat");
   const typedBuildings = (buildings ?? []) as Building[];
   const typedRoads = (roads ?? []) as Road[];
+  const typedFeatures = (features ?? []) as SiteFeature[];
   const typedMedia = (media ?? []) as ProjectMedia[];
 
   return (
@@ -48,8 +50,24 @@ export default async function ManageProjectPage(props: PageProps<"/dashboard/pro
         </div>
       </div>
       <p className="mb-6 text-gray-500">
-        {plots.length} plot(s) · {typedBuildings.length} building(s) · {flats.length} flat(s) · {typedRoads.length} road(s) traced
+        {plots.length} plot(s) · {typedBuildings.length} building(s) · {flats.length} flat(s) · {typedRoads.length} road(s) ·{" "}
+        {typedFeatures.length} area(s) traced
       </p>
+
+      <div className="mb-4 flex items-center justify-between rounded-lg border border-dashed border-gray-300 p-4 dark:border-gray-700">
+        <div>
+          <p className="text-sm font-medium">Have a photographed or scanned plan?</p>
+          <p className="text-xs text-gray-500">
+            Auto-digitize it: automatic plot/road/area detection you can then review and correct, instead of tracing by hand.
+          </p>
+        </div>
+        <Link
+          href={`/dashboard/projects/${id}/digitize`}
+          className="shrink-0 rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 dark:bg-white dark:text-gray-900"
+        >
+          Auto-digitize a plan
+        </Link>
+      </div>
 
       {typedProject.plan_image_url ? (
         <ProjectTracerClient
