@@ -28,11 +28,25 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from("users")
     .select("role")
     .eq("id", user.id)
     .single();
+
+  // A transient failure reading the profile (network blip, momentary
+  // Supabase hiccup) must NOT be treated the same as "wrong role" — doing
+  // so silently bounced a real, correctly-authenticated sub-admin off of
+  // /dashboard/projects/new mid-submit with no visible error (found by
+  // testing actual project creation end-to-end, not just reading the
+  // code): profile came back null, `profile?.role !== "sub_admin"` was
+  // therefore true, and the user got redirected away for a reason that had
+  // nothing to do with their actual role. RLS is the real authorization
+  // boundary regardless (see the module comment above), so failing open
+  // here — letting the request through to be re-checked by RLS — is safe;
+  // failing closed here is not, since it has no way to tell "wrong role"
+  // apart from "couldn't check."
+  if (profileError) return response;
 
   if (path.startsWith("/admin") && profile?.role !== "admin") {
     return NextResponse.redirect(new URL("/", request.url));
