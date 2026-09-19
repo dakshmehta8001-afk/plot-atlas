@@ -14,7 +14,23 @@
 // binaries for the platforms this app actually runs on — the local Windows
 // dev machine and Vercel's Linux serverless functions — without needing a
 // C++ build toolchain at install time.
+import path from "node:path";
 import { createCanvas, DOMMatrix, ImageData, Path2D } from "@napi-rs/canvas";
+
+// Without this, pdfjs silently falls back to garbled placeholder glyphs for
+// any text using a standard (non-embedded) font — which is most PDFs, and
+// exactly the kind of plot-number/road-label text a real site plan is full
+// of. `process.cwd()` is the deployed function's root in both local dev and
+// Vercel's Node serverless runtime, with node_modules alongside it — see
+// next.config.ts's outputFileTracingIncludes for why these particular
+// files (not imported by any JS, so untraced by default) make it into the
+// deployed bundle at all.
+// pdfjs treats this as a URL string, not an OS path — it specifically
+// requires a trailing forward slash regardless of platform, so path.sep
+// (backslash on Windows) doesn't satisfy it; path.join's separators need
+// normalizing to "/" for the same reason.
+const STANDARD_FONT_DATA_URL =
+  path.join(process.cwd(), "node_modules/pdfjs-dist/standard_fonts").split(path.sep).join("/") + "/";
 
 // @napi-rs/canvas's DOMMatrix/ImageData/Path2D are runtime-compatible with
 // what pdfjs-dist expects, but their TypeScript types don't structurally
@@ -40,7 +56,7 @@ export async function renderPdfFirstPageToPng(pdfBytes: Uint8Array): Promise<{
 }> {
   const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
-  const doc = await pdfjsLib.getDocument({ data: pdfBytes }).promise;
+  const doc = await pdfjsLib.getDocument({ data: pdfBytes, standardFontDataUrl: STANDARD_FONT_DATA_URL }).promise;
   const page = await doc.getPage(1);
   const viewport = page.getViewport({ scale: RENDER_SCALE });
 
