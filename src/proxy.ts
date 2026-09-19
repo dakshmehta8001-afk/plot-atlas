@@ -46,6 +46,10 @@ export async function proxy(request: NextRequest) {
   // here — letting the request through to be re-checked by RLS — is safe;
   // failing closed here is not, since it has no way to tell "wrong role"
   // apart from "couldn't check."
+  if (path.startsWith("/dashboard") && request.method === "POST") {
+    console.log("[proxy debug]", JSON.stringify({ path, method: request.method, userId: user.id, profile, profileError }));
+  }
+
   if (profileError) return response;
 
   if (path.startsWith("/admin") && profile?.role !== "admin") {
