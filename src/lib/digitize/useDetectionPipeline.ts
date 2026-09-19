@@ -91,6 +91,9 @@ export function useDetectionPipeline() {
         // failure with nothing to show for it.
         console.error("OCR failed:", ocrErr);
       }
+      // TEMP DIAGNOSTIC — remove once OCR-to-shape matching is verified.
+      console.log("DIGITIZE_DEBUG words:", JSON.stringify(words));
+      console.log("DIGITIZE_DEBUG plotShapes:", JSON.stringify(plotShapes.map((s) => s.points)));
 
       setStage("building-map");
       const shapes = matchOcrToShapes([...plotShapes, ...roadShapes], words);
