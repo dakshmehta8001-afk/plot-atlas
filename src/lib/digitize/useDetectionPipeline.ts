@@ -60,11 +60,18 @@ export function useDetectionPipeline() {
       setStage("detecting-layout");
       const edges = track(autoCanny(cv, contrasted));
 
+      // Captured before disposal below — `resized` itself is deleted along
+      // with every other tracked Mat, so its `.cols`/`.rows` getters can't
+      // be read again after that point (an Emscripten binding throws
+      // "cannot call ... getter on deleted object", not a silent undefined).
+      const analysisWidth = resized.cols;
+      const analysisHeight = resized.rows;
+
       setStage("detecting-roads");
-      const roadShapes = detectRoadSegments(cv, edges, resized.cols, resized.rows);
+      const roadShapes = detectRoadSegments(cv, edges, analysisWidth, analysisHeight);
 
       setStage("detecting-plots");
-      const plotShapes = detectPlotContours(cv, edges, resized.cols, resized.rows);
+      const plotShapes = detectPlotContours(cv, edges, analysisWidth, analysisHeight);
 
       // OCR runs on the contrast-enhanced, already-resized copy (faster
       // than the full-resolution original, and the contrast step generally
@@ -77,7 +84,7 @@ export function useDetectionPipeline() {
       setStage("reading-labels");
       let words: Awaited<ReturnType<typeof recognizeWords>> = [];
       try {
-        words = await recognizeWords(ocrCanvas, resized.cols, resized.rows);
+        words = await recognizeWords(ocrCanvas, analysisWidth, analysisHeight);
       } catch (ocrErr) {
         // OCR failing shouldn't block the whole pipeline — the reviewer
         // just gets unlabeled shapes to fill in by hand instead of a hard
