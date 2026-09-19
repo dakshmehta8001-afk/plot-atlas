@@ -6,6 +6,16 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
+// Server Actions inherit the maxDuration of the route segment they're
+// invoked from. Vercel's default (10s on a serverless function) is easily
+// exceeded by a PDF plan-image upload (lib/pdfToImage.ts): the first
+// invocation on a fresh function instance has to cold-start @napi-rs/canvas's
+// native binary and pdfjs-dist's WASM/JS internals on top of the actual
+// parse+render+encode work. Every PDF upload path (new project, replacing a
+// project's plan image, adding a floor's plan image) lives under
+// /dashboard/*, so setting this once here covers all three.
+export const maxDuration = 60;
+
 export default async function DashboardLayout({ children }: LayoutProps<"/dashboard">) {
   const supabase = await createClient();
   const {
