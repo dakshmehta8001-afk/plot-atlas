@@ -17,10 +17,20 @@ export interface PlotDetectionOptions {
   minSolidity: number;
 }
 
+// Loosened from an initial pass tuned only against a clean, bold-stroke
+// synthetic test image — a real scanned/photographed plan has thinner,
+// sometimes dashed/dotted lines and imperfectly-traced (slightly concave
+// after simplification, or triangular) plots, which the original stricter
+// thresholds rejected outright (confirmed against a real user-submitted
+// scan: 0 plots detected at all under the original settings). Erring
+// toward finding MORE candidates is the right tradeoff here — a false
+// positive costs the reviewer one deletion; a false negative (a real plot
+// never proposed at all) costs them tracing it from scratch, which is
+// exactly the manual-tracer work this feature exists to reduce.
 export const DEFAULT_PLOT_OPTIONS: PlotDetectionOptions = {
-  minAreaFraction: 0.0006,
-  maxAreaFraction: 0.35,
-  minSolidity: 0.7,
+  minAreaFraction: 0.0002,
+  maxAreaFraction: 0.4,
+  minSolidity: 0.55,
 };
 
 export function detectPlotContours(
@@ -30,11 +40,15 @@ export function detectPlotContours(
   imageHeight: number,
   options: PlotDetectionOptions = DEFAULT_PLOT_OPTIONS,
 ): DetectedShape[] {
-  // A small morphological close bridges the tiny gaps a hand-drawn or
+  // A morphological close bridges the gaps a hand-drawn, dashed/dotted, or
   // slightly-blurred boundary line leaves in the edge map — findContours
-  // needs a genuinely closed loop to treat something as one shape, and real
-  // photographed plans rarely have perfectly unbroken lines.
-  const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
+  // needs a genuinely closed loop to treat something as one shape,  and a
+  // real scanned plan's boundary lines are often thin and broken by scan
+  // noise or an intentionally dashed/dotted line style (common for
+  // "proposed road" or setback lines specifically). 5x5 rather than 3x3:
+  // large enough to bridge a dashed line's actual gaps, still small enough
+  // not to fuse two genuinely separate nearby plots into one blob.
+  const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
   const closed = new cv.Mat();
   cv.morphologyEx(edges, closed, cv.MORPH_CLOSE, kernel);
   kernel.delete();
@@ -85,7 +99,10 @@ export function detectPlotContours(
     cv.approxPolyDP(contour, approx, 0.02 * perimeter, true);
 
     const vertexCount = approx.rows;
-    if (vertexCount < 4 || vertexCount > 12) {
+    // >= 3 (not 4): real layouts routinely have triangular corner plots —
+    // excluding them outright was an oversight in the original thresholds,
+    // not a deliberate choice.
+    if (vertexCount < 3 || vertexCount > 14) {
       contour.delete();
       approx.delete();
       continue;

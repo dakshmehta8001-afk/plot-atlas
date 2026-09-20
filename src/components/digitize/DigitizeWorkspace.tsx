@@ -190,7 +190,7 @@ export function DigitizeWorkspace({
   if (stage === "processing" || pipelineStage === "error") {
     if (pipelineStage === "error") {
       return (
-        <div className="flex h-full flex-col items-center justify-center gap-4 rounded-lg border border-gray-200 bg-white p-10 text-center dark:border-gray-800 dark:bg-gray-900">
+        <div className="flex min-h-[500px] flex-col items-center justify-center gap-4 rounded-lg border border-gray-200 bg-white p-10 text-center dark:border-gray-800 dark:bg-gray-900">
           <p className="font-medium text-red-600">{pipelineError ?? "Detection failed."}</p>
           <button
             type="button"
@@ -210,7 +210,7 @@ export function DigitizeWorkspace({
 
   if (stage === "done") {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 rounded-lg border border-gray-200 bg-white p-10 text-center dark:border-gray-800 dark:bg-gray-900">
+      <div className="flex min-h-[500px] flex-col items-center justify-center gap-3 rounded-lg border border-gray-200 bg-white p-10 text-center dark:border-gray-800 dark:bg-gray-900">
         <p className="text-lg font-medium">Saved {savedCount} shape(s) to the project.</p>
         <p className="text-sm text-gray-500">They now appear alongside anything traced manually — from here they work exactly the same way.</p>
         <a href={`/dashboard/projects/${projectId}`} className="mt-2 rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-gray-900">
@@ -224,7 +224,7 @@ export function DigitizeWorkspace({
   if (!sourceCanvas) return null;
 
   return (
-    <div className="flex h-full flex-col gap-3">
+    <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <CountsHeader shapes={shapesState.value} />
         <SearchPlotNumber shapes={shapesState.value} onFound={handleFound} />
@@ -271,7 +271,7 @@ export function DigitizeWorkspace({
         <Legend />
       </div>
 
-      <div className="grid min-h-[500px] flex-1 grid-cols-1 gap-3 lg:grid-cols-[1fr_280px]">
+      <div className="grid h-[600px] grid-cols-1 gap-3 lg:grid-cols-[1fr_280px]">
         <ReviewCanvas
           ref={canvasRef}
           sourceCanvas={sourceCanvas}

@@ -72,7 +72,7 @@ export function CornerWarpTool({
   }
 
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-4 rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
+    <div className="flex min-h-[500px] flex-col items-center justify-center gap-4 rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
       <div className="max-w-md text-center">
         <h3 className="text-lg font-medium">Straighten a tilted photo (optional)</h3>
         <p className="mt-1 text-sm text-gray-500">

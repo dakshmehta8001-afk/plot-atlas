@@ -17,7 +17,14 @@ export default async function DigitizePage(props: PageProps<"/dashboard/projects
   if (!project) notFound();
 
   return (
-    <div className="flex h-[calc(100vh-140px)] min-h-[640px] flex-col">
+    // A fixed viewport-relative height + overflow-hidden here used to clip
+    // the workspace with no way to scroll to whatever didn't fit (the exact
+    // amount of browser chrome above this varies — window size, zoom level,
+    // OS chrome — so any fixed calc() is a guess that's wrong for some
+    // viewports). Letting the page flow and scroll normally, with the
+    // canvas itself given a comfortable fixed height below, works
+    // regardless of viewport size.
+    <div className="flex flex-col">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Auto-digitize: {project.name}</h1>
@@ -27,9 +34,7 @@ export default async function DigitizePage(props: PageProps<"/dashboard/projects
           ← Back to project
         </Link>
       </div>
-      <div className="flex-1 overflow-hidden">
-        <DigitizeWorkspaceLoader projectId={id} projectName={project.name} hasExistingPlanImage={!!project.plan_image_url} />
-      </div>
+      <DigitizeWorkspaceLoader projectId={id} projectName={project.name} hasExistingPlanImage={!!project.plan_image_url} />
     </div>
   );
 }

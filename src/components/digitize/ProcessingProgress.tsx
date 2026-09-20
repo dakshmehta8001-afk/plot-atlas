@@ -16,7 +16,7 @@ export function ProcessingProgress({ stage }: { stage: PipelineStage }) {
   const currentIndex = STAGE_ORDER.indexOf(stage);
 
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-6 rounded-lg border border-gray-200 bg-white p-10 text-center dark:border-gray-800 dark:bg-gray-900">
+    <div className="flex min-h-[500px] flex-col items-center justify-center gap-6 rounded-lg border border-gray-200 bg-white p-10 text-center dark:border-gray-800 dark:bg-gray-900">
       <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-gray-900 dark:border-gray-700 dark:border-t-white" />
       <div>
         <p className="text-lg font-medium">{STAGE_COPY[stage]}</p>

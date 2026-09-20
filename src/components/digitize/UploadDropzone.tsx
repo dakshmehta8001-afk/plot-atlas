@@ -39,7 +39,7 @@ export function UploadDropzone({ onStart }: { onStart: (file: File) => void }) {
   }, [file]);
 
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-6 rounded-lg border border-gray-200 bg-white p-10 dark:border-gray-800 dark:bg-gray-900">
+    <div className="flex min-h-[500px] flex-col items-center justify-center gap-6 rounded-lg border border-gray-200 bg-white p-10 dark:border-gray-800 dark:bg-gray-900">
       <div className="text-center">
         <h2 className="text-xl font-semibold">Upload your layout plan</h2>
         <p className="mt-1 text-sm text-gray-500">Upload a site plan, plot map, brochure map, or scanned layout.</p>
