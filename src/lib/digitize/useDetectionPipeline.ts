@@ -12,8 +12,7 @@ import { denoise, enhanceContrast, MAX_EDGE_PX, resizeToMaxEdge, toGrayscale } f
 import { autoCanny } from "./detection/edges";
 import { detectPlotContours } from "./detection/plots";
 import { detectRoadSegments } from "./detection/roads";
-import { matchOcrToShapes } from "./detection/ocrMatch";
-import { recognizeWords } from "./ocrWorker";
+import { labelShapesWithOcr } from "./detection/ocrLabels";
 import { renderPdfFirstPageToCanvas } from "./pdfToImageClient";
 import type { DetectionResult, PipelineStage } from "./types";
 
@@ -73,30 +72,27 @@ export function useDetectionPipeline() {
       setStage("detecting-plots");
       const plotShapes = detectPlotContours(cv, edges, analysisWidth, analysisHeight);
 
-      // OCR runs on the contrast-enhanced, already-resized copy (faster
-      // than the full-resolution original, and the contrast step generally
-      // helps Tesseract more than it hurts).
-      const ocrCanvas = document.createElement("canvas");
-      cv.imshow(ocrCanvas, contrasted);
-
       owned.forEach((m) => m.delete());
 
       setStage("reading-labels");
-      let words: Awaited<ReturnType<typeof recognizeWords>> = [];
+      // OCR reads each shape's OWN cropped interior (from the full-resolution
+      // sourceCanvas, for the sharpest possible crop) rather than one pass
+      // over the whole image — see ocrWorker.ts's doc comment for why a
+      // whole-image pass reliably misread everything as garbage, confirmed
+      // via extensive isolated testing, not assumed.
+      let shapes = [...plotShapes, ...roadShapes];
+      let ocrFailed = false;
       try {
-        words = await recognizeWords(ocrCanvas, analysisWidth, analysisHeight);
+        shapes = await labelShapesWithOcr(shapes, sourceCanvas);
       } catch (ocrErr) {
         // OCR failing shouldn't block the whole pipeline — the reviewer
         // just gets unlabeled shapes to fill in by hand instead of a hard
         // failure with nothing to show for it.
         console.error("OCR failed:", ocrErr);
+        ocrFailed = true;
       }
-      // TEMP DIAGNOSTIC — remove once OCR-to-shape matching is verified.
-      console.log("DIGITIZE_DEBUG words:", JSON.stringify(words));
-      console.log("DIGITIZE_DEBUG plotShapes:", JSON.stringify(plotShapes.map((s) => s.points)));
 
       setStage("building-map");
-      const shapes = matchOcrToShapes([...plotShapes, ...roadShapes], words);
 
       const warnings: string[] = [];
       if (plotShapes.length === 0 && roadShapes.length === 0) {
@@ -104,7 +100,7 @@ export function useDetectionPipeline() {
           "No plot or road boundaries were detected automatically — use Draw Plot/Draw Road to trace them by hand, or retry with a straighter, better-lit photo.",
         );
       }
-      if (words.length === 0) {
+      if (ocrFailed || shapes.every((s) => !s.label)) {
         warnings.push("No readable text was found — plot numbers and road widths will need to be entered manually.");
       }
 

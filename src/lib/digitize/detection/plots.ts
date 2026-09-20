@@ -41,7 +41,14 @@ export function detectPlotContours(
 
   const contours = new cv.MatVector();
   const hierarchy = new cv.Mat();
-  cv.findContours(closed, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+  // RETR_EXTERNAL (only outermost contours), not RETR_LIST — a boundary
+  // drawn as a stroke has both an inner and outer edge, which RETR_LIST
+  // would surface as two near-duplicate nested contours per real plot; it
+  // would also pick up small stray contours from anything drawn INSIDE a
+  // plot (e.g. its own number/text), which are never plot candidates
+  // themselves. Confirmed empirically: RETR_LIST produced ~4x as many
+  // "plot" candidates as actually existed in a real test image.
+  cv.findContours(closed, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
   closed.delete();
   hierarchy.delete();
 

@@ -8,15 +8,19 @@
 // based on the browser's WASM feature support, and appends `${lang}.
 // traineddata.gz` to langPath itself — see getCore.js/worker-script/index.js
 // in node_modules/tesseract.js for exactly how those paths get built.
-import { createWorker, OEM } from "tesseract.js";
-import type { PolygonPoint } from "@/lib/types";
-
-export interface OcrWord {
-  text: string;
-  confidence: number;
-  /** Fractional (0..1) center of the word's bounding box, in the SAME coordinate space as everything else in this app (relative to the image OCR ran on). */
-  center: PolygonPoint;
-}
+//
+// Reads a small CROPPED region per detected shape (see detection/ocrLabels.ts)
+// rather than one OCR pass over the whole plan image. That wasn't a minor
+// tuning choice — it's the fix for a real bug found via extensive isolated
+// testing: running OCR on the whole image, or on a shape's crop with the
+// default AUTO or SPARSE_TEXT page-segmentation mode, consistently
+// misread every label as short garbage strings (Tesseract's layout
+// analysis appears to conflate plot-boundary border lines with text and/or
+// fails to segment isolated large labels scattered across mostly-blank
+// space). The SAME crop, OCR'd with PSM.SINGLE_BLOCK — "treat this as one
+// block of text", the right assumption once we've already cropped down to
+// just one shape's label — reads correctly at 90%+ confidence.
+import { createWorker, OEM, PSM } from "tesseract.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let workerPromise: Promise<any> | null = null;
@@ -29,39 +33,25 @@ function getWorker() {
       langPath: "/tesseract/lang-data",
       gzip: true,
       cacheMethod: "none",
+    }).then(async (worker) => {
+      await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK });
+      return worker;
     });
   }
   return workerPromise;
 }
 
-// Runs OCR over a full plan image and returns every recognized word's text,
-// confidence, and center point — matching a word to the nearest detected
-// shape (detection/ocrMatch.ts) is the caller's job, not this module's.
-export async function recognizeWords(
-  image: HTMLCanvasElement,
-  imageWidth: number,
-  imageHeight: number,
-): Promise<OcrWord[]> {
-  const worker = await getWorker();
-  const { data } = await worker.recognize(image, {}, { blocks: true });
+export interface OcrCropResult {
+  text: string;
+  confidence: number;
+}
 
-  const words: OcrWord[] = [];
-  for (const block of data.blocks ?? []) {
-    for (const paragraph of block.paragraphs ?? []) {
-      for (const line of paragraph.lines ?? []) {
-        for (const word of line.words ?? []) {
-          if (!word.text.trim()) continue;
-          words.push({
-            text: word.text.trim(),
-            confidence: word.confidence,
-            center: {
-              x: (word.bbox.x0 + word.bbox.x1) / 2 / imageWidth,
-              y: (word.bbox.y0 + word.bbox.y1) / 2 / imageHeight,
-            },
-          });
-        }
-      }
-    }
-  }
-  return words;
+// Recognizes a single small crop (one detected shape's interior, or a
+// small box around a road's midpoint) and returns its best-guess text.
+// Confidence gating (deciding whether a result is trustworthy enough to
+// auto-fill) is the caller's job — see detection/ocrLabels.ts.
+export async function recognizeCrop(canvas: HTMLCanvasElement): Promise<OcrCropResult> {
+  const worker = await getWorker();
+  const { data } = await worker.recognize(canvas, {}, { text: true });
+  return { text: data.text.trim(), confidence: data.confidence };
 }
