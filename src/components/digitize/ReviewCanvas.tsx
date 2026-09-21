@@ -53,7 +53,18 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
   const imageHref = useMemo(() => sourceCanvas.toDataURL("image/png"), [sourceCanvas]);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
+  // Coordinate lookups (click-to-fraction, wheel-zoom-toward-cursor) go
+  // through THIS element — the pan/zoom-transformed inner <g>, not the
+  // outer <svg> (found from a real user report: "draw/split work at Fit,
+  // not once I zoom in"). The outer <svg> sits ABOVE the pan/zoom
+  // transform applied to this inner <g>; its own getScreenCTM() never
+  // reflects that transform, so at Fit (pan/zoom = identity) the two
+  // happen to agree, but the moment the reviewer zooms or pans they
+  // diverge and clicks land in the wrong place. ShapeLayer/VertexHandle
+  // never had this bug — they compute coordinates off a shape/vertex
+  // element that's already INSIDE this group, so getScreenCTM() on those
+  // always picks up the full transform chain correctly.
+  const contentGroupRef = useRef<SVGGElement>(null);
   const [view, setView] = useState({ tx: 0, ty: 0, scale: 1 });
   const [drawPoints, setDrawPoints] = useState<PolygonPoint[]>([]);
   const [cursorPos, setCursorPos] = useState<PolygonPoint | null>(null);
@@ -121,9 +132,9 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
 
   function handleWheel(e: React.WheelEvent<SVGSVGElement>) {
     e.preventDefault();
-    const svg = svgRef.current;
-    if (!svg) return;
-    const local = clientPointToLocalFraction(svg, e.clientX, e.clientY, VB);
+    const group = contentGroupRef.current;
+    if (!group) return;
+    const local = clientPointToLocalFraction(group, e.clientX, e.clientY, VB);
     if (!local) return;
     const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
     setView((prev) => {
@@ -179,16 +190,16 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
   }
 
   function handleCanvasClick(e: React.MouseEvent<SVGSVGElement>) {
-    if (!svgRef.current) return;
+    if (!contentGroupRef.current) return;
 
     if (isDrawMode) {
-      const local = clientPointToLocalFraction(svgRef.current, e.clientX, e.clientY, VB);
+      const local = clientPointToLocalFraction(contentGroupRef.current, e.clientX, e.clientY, VB);
       if (local) setDrawPoints((prev) => [...prev, local]);
       return;
     }
 
     if (isSplitMode) {
-      const local = clientPointToLocalFraction(svgRef.current, e.clientX, e.clientY, VB);
+      const local = clientPointToLocalFraction(contentGroupRef.current, e.clientX, e.clientY, VB);
       if (!local) return;
       if (cutPoints.length === 0) {
         setSplitError(null);
@@ -218,14 +229,14 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
   // render-triggered loop) — guarded to do nothing outside draw/split
   // modes, or before there's a first point to draw a line FROM.
   function handleCanvasMouseMove(e: React.MouseEvent<SVGSVGElement>) {
-    if (!svgRef.current) return;
+    if (!contentGroupRef.current) return;
     if (isDrawMode && drawPoints.length > 0) {
-      const local = clientPointToLocalFraction(svgRef.current, e.clientX, e.clientY, VB);
+      const local = clientPointToLocalFraction(contentGroupRef.current, e.clientX, e.clientY, VB);
       if (local) setCursorPos(local);
       return;
     }
     if (isSplitMode) {
-      const local = clientPointToLocalFraction(svgRef.current, e.clientX, e.clientY, VB);
+      const local = clientPointToLocalFraction(contentGroupRef.current, e.clientX, e.clientY, VB);
       if (!local) return;
       if (cutPoints.length > 0) setCursorPos(local);
       const hovered = shapes.find((s) => s.kind !== "road" && s.points.length >= 3 && pointInPolygon(local, s.points));
@@ -269,7 +280,6 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden rounded-lg border border-gray-200 bg-[#0b1f2e] dark:border-gray-800">
       <svg
-        ref={svgRef}
         viewBox={`0 0 ${VB} ${VB}`}
         preserveAspectRatio="none"
         className="h-full w-full"
@@ -282,7 +292,10 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
         onClick={handleCanvasClick}
         onDoubleClick={finishDrawing}
       >
-        <g style={{ transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`, transformOrigin: "0 0" }}>
+        <g
+          ref={contentGroupRef}
+          style={{ transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`, transformOrigin: "0 0" }}
+        >
           {showOriginal && (
             <image href={imageHref} x={0} y={0} width={VB} height={VB} preserveAspectRatio="none" opacity={originalOpacity} />
           )}
