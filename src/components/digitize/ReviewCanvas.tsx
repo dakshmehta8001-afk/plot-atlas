@@ -17,11 +17,13 @@ import { clientPointToLocalFraction } from "./svgCoords";
 import type { ToolMode } from "./Toolbar";
 
 const VB = MAP_VIEWBOX_SIZE;
-const MIN_DRAW_POINTS: Record<"draw-plot" | "draw-road" | "draw-area", number> = {
+type DrawMode = "draw-plot" | "draw-road" | "draw-area";
+const MIN_DRAW_POINTS: Record<DrawMode, number> = {
   "draw-plot": 3,
   "draw-road": 2,
   "draw-area": 3,
 };
+const DRAW_MODE_LABEL: Record<DrawMode, string> = { "draw-plot": "plot", "draw-road": "road", "draw-area": "area" };
 
 export interface ReviewCanvasHandle {
   /** Pans/zooms so the given shape's bounding-box center is centered on screen — used by SearchPlotNumber to satisfy "search → zoom to it → highlight it." */
@@ -38,10 +40,12 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
   onAddShape: (kind: "plot" | "road" | "feature", points: PolygonPoint[]) => void;
   /** Replaces one shape with two, the result of the Split tool cutting it along a line. */
   onSplitShape: (id: string, parts: [PolygonPoint[], PolygonPoint[]]) => void;
+  /** Lets the "Resume drawing" banner switch back to whichever draw tool a parked draft belongs to. */
+  onModeChange: (mode: ToolMode) => void;
   showOriginal: boolean;
   originalOpacity: number;
 }>(function ReviewCanvas(
-  { sourceCanvas, shapes, selectedId, onSelect, mode, onUpdateShape, onAddShape, onSplitShape, showOriginal, originalOpacity },
+  { sourceCanvas, shapes, selectedId, onSelect, mode, onUpdateShape, onAddShape, onSplitShape, onModeChange, showOriginal, originalOpacity },
   ref,
 ) {
   const aspectRatio = sourceCanvas.width / sourceCanvas.height;
@@ -71,26 +75,52 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
   const [cutPoints, setCutPoints] = useState<PolygonPoint[]>([]);
   const [splitHoverId, setSplitHoverId] = useState<string | null>(null);
   const [splitError, setSplitError] = useState<string | null>(null);
+  // A draw tool's in-progress points, parked here when the reviewer
+  // switches to a DIFFERENT tool before finishing — see the mode-change
+  // effect below for why this exists and isn't just cleared outright.
+  const [pendingDraft, setPendingDraft] = useState<{ mode: DrawMode; points: PolygonPoint[] } | null>(null);
   const isDrawMode = mode === "draw-plot" || mode === "draw-road" || mode === "draw-area";
   const isSplitMode = mode === "split-plot";
+  const prevModeRef = useRef(mode);
 
-  // There was no way to back out of a draw once started — a misclick had no
-  // recovery besides finishing a shape you didn't want (found from a real
-  // user getting stuck mid-drawing with 24 stray points and no way to clear
-  // them). Switching tools now implicitly cancels any in-progress draw
-  // (this effect), Escape cancels it explicitly without switching tools,
-  // and a visible "Cancel" button (below) covers reviewers who don't know
-  // the Escape shortcut. Previously, switching tools only stopped the
-  // preview from RENDERING (isDrawMode became false) without actually
-  // clearing `drawPoints` — the stray points would silently reappear if
-  // the reviewer picked the same draw tool again later.
+  // Switching tools used to unconditionally clear `drawPoints` — the fix
+  // for an earlier real bug (a reviewer stuck with 24 stray misplaced
+  // points and no way to cancel them). But a real user then lost a
+  // deliberately-traced 15-point shape the SAME way, just by clicking a
+  // different toolbar button mid-trace — unconditionally discarding
+  // everything conflated "a couple of accidental stray clicks" with "real,
+  // effortful work," which are not the same thing and shouldn't be treated
+  // the same way.
+  //
+  // Now: leaving a draw mode with 0-1 points (almost certainly accidental)
+  // still discards silently, same as before. Leaving one with 2+ points
+  // (real, deliberate tracing) instead PARKS it as `pendingDraft`, tied to
+  // the specific draw tool it belongs to — switching back to that same
+  // tool resumes it automatically, and the banner below (visible in any
+  // mode) offers an explicit Resume or Discard rather than either losing
+  // it silently or having it silently reappear unannounced.
   useEffect(() => {
-    setDrawPoints([]);
-    setCursorPos(null);
+    const prevMode = prevModeRef.current;
+    prevModeRef.current = mode;
+    const prevWasDraw = prevMode === "draw-plot" || prevMode === "draw-road" || prevMode === "draw-area";
+
+    if (prevWasDraw && prevMode !== mode) {
+      if (drawPoints.length >= 2) {
+        setPendingDraft({ mode: prevMode as DrawMode, points: drawPoints });
+      }
+      setDrawPoints([]);
+      setCursorPos(null);
+    }
+
+    if ((mode === "draw-plot" || mode === "draw-road" || mode === "draw-area") && pendingDraft?.mode === mode) {
+      setDrawPoints(pendingDraft.points);
+      setPendingDraft(null);
+    }
+
     setCutPoints([]);
     setSplitHoverId(null);
     setSplitError(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately keyed only on `mode`, not on drawPoints/cutPoints themselves
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately keyed only on `mode`; drawPoints/pendingDraft are read at their current value on each mode change, not tracked as triggers themselves
   }, [mode]);
 
   useEffect(() => {
@@ -368,6 +398,28 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
           ⛶
         </button>
       </div>
+
+      {pendingDraft && !(isDrawMode && drawPoints.length > 0) && (
+        <div className="absolute left-3 top-3 flex items-center gap-2 rounded-md bg-amber-600/90 px-3 py-1.5 text-xs text-white">
+          <span>
+            Unfinished {DRAW_MODE_LABEL[pendingDraft.mode]} draft ({pendingDraft.points.length} points)
+          </span>
+          <button
+            type="button"
+            onClick={() => onModeChange(pendingDraft.mode)}
+            className="rounded bg-white/20 px-2 py-0.5 font-medium hover:bg-white/30"
+          >
+            Resume
+          </button>
+          <button
+            type="button"
+            onClick={() => setPendingDraft(null)}
+            className="rounded bg-red-500/80 px-2 py-0.5 font-medium hover:bg-red-500"
+          >
+            Discard
+          </button>
+        </div>
+      )}
 
       {isDrawMode && drawPoints.length > 0 && (
         <div className="absolute left-3 top-3 flex items-center gap-2 rounded-md bg-black/60 px-3 py-1.5 text-xs text-white">

@@ -299,6 +299,7 @@ export function DigitizeWorkspace({
           onUpdateShape={handleUpdatePoints}
           onAddShape={handleAddShape}
           onSplitShape={handleSplitShape}
+          onModeChange={setMode}
           showOriginal={showOriginal}
           originalOpacity={originalOpacity}
         />
