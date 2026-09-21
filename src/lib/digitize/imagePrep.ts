@@ -16,7 +16,14 @@ import type { Cv } from "./opencvLoader";
 // image's width/height is identical to its fraction of the original image's
 // width/height — which is exactly the coordinate contract every detected
 // shape needs to satisfy (see src/lib/types.ts's PolygonPoint doc comment).
-export const MAX_EDGE_PX = 1600;
+// Raised from 1600: real-world testing against an actual user-submitted
+// plan (a vector-style CAD layout with hairline-thin dividing walls between
+// tightly-packed plots) showed the internal boundary lines becoming too
+// faint to survive edge detection at all after downscaling that far —
+// the whole plot cluster merged into one shape instead of dozens of
+// separate ones. More analysis pixels per line directly helps a thin line
+// survive resize/blur/Canny with enough contrast left to trace.
+export const MAX_EDGE_PX = 2200;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function resizeToMaxEdge(cv: Cv, src: any, maxEdge = MAX_EDGE_PX): any {
@@ -39,10 +46,20 @@ export function toGrayscale(cv: Cv, src: any): any {
 // and paper texture while keeping the plot/road LINES themselves sharp,
 // which matters more here than in most denoising use cases — a blurred
 // line is a line findContours/HoughLinesP can miss entirely.
+//
+// Kept deliberately gentle (d=5, not the initially-tried d=9): a real test
+// against an actual scanned/vector-rendered plan with hairline-thin
+// dividing walls showed even bilateral filtering's edge-preserving blur
+// softening those specific lines enough to break edge detection — a 9px
+// filter diameter is large relative to a 1px line. This plan format (a
+// vector CAD layout rasterized to an image, not a grainy phone photo) has
+// little real photographic noise to remove in the first place, so erring
+// toward a lighter touch costs little for genuinely noisy photos while
+// meaningfully helping thin-line preservation for cleaner scans.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function denoise(cv: Cv, gray: any): any {
   const dst = new cv.Mat();
-  cv.bilateralFilter(gray, dst, 9, 75, 75, cv.BORDER_DEFAULT);
+  cv.bilateralFilter(gray, dst, 5, 40, 40, cv.BORDER_DEFAULT);
   return dst;
 }
 
