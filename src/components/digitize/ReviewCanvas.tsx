@@ -54,6 +54,7 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
   const svgRef = useRef<SVGSVGElement>(null);
   const [view, setView] = useState({ tx: 0, ty: 0, scale: 1 });
   const [drawPoints, setDrawPoints] = useState<PolygonPoint[]>([]);
+  const [cursorPos, setCursorPos] = useState<PolygonPoint | null>(null);
   const isDrawMode = mode === "draw-plot" || mode === "draw-road" || mode === "draw-area";
 
   // There was no way to back out of a draw once started — a misclick had no
@@ -68,13 +69,24 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
   // the reviewer picked the same draw tool again later.
   useEffect(() => {
     setDrawPoints([]);
+    setCursorPos(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately keyed only on `mode`, not on drawPoints itself
   }, [mode]);
 
   useEffect(() => {
     if (!isDrawMode) return;
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setDrawPoints([]);
+      // Ignore when the reviewer is typing into an input/textarea elsewhere
+      // on the page (e.g. the search box, a shape's label field) — "z" in
+      // particular is a normal character to type, not just an undo chord.
+      const target = e.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA"].includes(target.tagName)) return;
+
+      if (e.key === "Escape") {
+        setDrawPoints([]);
+      } else if (e.key === "Backspace" || e.key === "z") {
+        setDrawPoints((prev) => prev.slice(0, -1));
+      }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -136,6 +148,18 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
     if (local) setDrawPoints((prev) => [...prev, local]);
   }
 
+  // Rubber-band preview: tracks the cursor while drawing so the in-progress
+  // shape's "next" edge is visible before it's actually placed, rather than
+  // only ever seeing the shape jump between committed vertices. Only
+  // updates state in draw mode with at least one point placed — harmless to
+  // fire on every mouse move (each is a discrete browser event, not a
+  // render-triggered loop), but pointless work otherwise.
+  function handleCanvasMouseMove(e: React.MouseEvent<SVGSVGElement>) {
+    if (!isDrawMode || drawPoints.length === 0 || !svgRef.current) return;
+    const local = clientPointToLocalFraction(svgRef.current, e.clientX, e.clientY, VB);
+    if (local) setCursorPos(local);
+  }
+
   function finishDrawing() {
     if (!isDrawMode) return;
     const min = MIN_DRAW_POINTS[mode as "draw-plot" | "draw-road" | "draw-area"];
@@ -181,6 +205,7 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
         onPointerDown={handleBackgroundPointerDown}
         onPointerMove={handleBackgroundPointerMove}
         onPointerUp={handleBackgroundPointerUp}
+        onMouseMove={handleCanvasMouseMove}
         onClick={handleCanvasClick}
         onDoubleClick={finishDrawing}
       >
@@ -201,6 +226,17 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
               {drawPoints.map((p, i) => (
                 <circle key={i} cx={p.x * VB} cy={p.y * VB} r={VB * 0.006} fill="#3b82f6" />
               ))}
+              {cursorPos && (
+                <line
+                  x1={drawPoints[drawPoints.length - 1].x * VB}
+                  y1={drawPoints[drawPoints.length - 1].y * VB}
+                  x2={cursorPos.x * VB}
+                  y2={cursorPos.y * VB}
+                  stroke="#3b82f6"
+                  strokeWidth={VB * 0.0018}
+                  strokeDasharray={`${VB * 0.008} ${VB * 0.006}`}
+                />
+              )}
             </g>
           )}
         </g>

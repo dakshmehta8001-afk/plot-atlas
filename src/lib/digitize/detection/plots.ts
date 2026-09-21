@@ -1,9 +1,18 @@
-// Finds plot-like CLOSED shapes in an edge map. Deliberately has no idea how
-// many plots a layout "should" have — every candidate is judged purely on
-// its own geometry (area relative to the whole image, vertex count after
-// simplification, and solidity), which is what lets this generalize across
-// layouts with wildly different plot counts and shapes rather than assuming
-// a fixed grid.
+// Finds plot-like CLOSED shapes in an edge map (detection/edges.ts's
+// autoCanny output). Deliberately has no idea how many plots a layout
+// "should" have — every candidate is judged purely on its own geometry
+// (area relative to the whole image, vertex count after simplification,
+// and solidity), which is what lets this generalize across layouts with
+// wildly different plot counts and shapes rather than assuming a fixed
+// grid.
+//
+// An adaptive-threshold-plus-dilation alternative to Canny was tried here
+// (on the theory that adaptive threshold holds onto thin uniform-width
+// CAD-style lines better than gradient-based edge detection) and reverted
+// after real testing showed it performing WORSE on every existing test
+// case — more merged blobs, not fewer. Noted so a future attempt at the
+// same idea starts from "this was tried and measured, not just assumed
+// to help" rather than re-discovering the same dead end.
 import type { PolygonPoint } from "@/lib/types";
 import type { Cv } from "../opencvLoader";
 import type { DetectedShape } from "../types";
