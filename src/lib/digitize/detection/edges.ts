@@ -3,8 +3,16 @@
 // wildly in exposure (indoor vs outdoor light, phone auto-exposure, flash),
 // so a fixed threshold that works for one photo routinely finds either no
 // edges or solid noise on another — deriving it per-image is the standard
-// fix for that (the 0.33 sigma below is the commonly-cited default for this
-// technique, not tuned against any specific plan images of the user's).
+// fix for that.
+//
+// sigma=0.6, not the commonly-cited 0.33 default: a site plan is mostly
+// BACKGROUND (a large bright/blank area) with only sparse thin lines, so
+// its median intensity reflects the background color, not the line
+// content — 0.33's resulting lower threshold was, in real testing, high
+// enough to drop thin or rotated (anti-aliased, lower peak gradient) lines
+// entirely, silently merging adjacent plots whose shared dividing wall
+// never made it into the edge map at all. 0.6 pushes the lower threshold
+// down enough to catch those without a per-content-type heuristic.
 import type { Cv } from "../opencvLoader";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -30,7 +38,7 @@ function medianIntensity(cv: Cv, gray: any): number {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function autoCanny(cv: Cv, gray: any, sigma = 0.33): any {
+export function autoCanny(cv: Cv, gray: any, sigma = 0.6): any {
   const median = medianIntensity(cv, gray);
   const lower = Math.max(0, (1 - sigma) * median);
   const upper = Math.min(255, (1 + sigma) * median);

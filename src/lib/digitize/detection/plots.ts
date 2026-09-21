@@ -40,15 +40,20 @@ export function detectPlotContours(
   imageHeight: number,
   options: PlotDetectionOptions = DEFAULT_PLOT_OPTIONS,
 ): DetectedShape[] {
-  // A morphological close bridges the gaps a hand-drawn, dashed/dotted, or
-  // slightly-blurred boundary line leaves in the edge map — findContours
-  // needs a genuinely closed loop to treat something as one shape,  and a
-  // real scanned plan's boundary lines are often thin and broken by scan
-  // noise or an intentionally dashed/dotted line style (common for
-  // "proposed road" or setback lines specifically). 5x5 rather than 3x3:
-  // large enough to bridge a dashed line's actual gaps, still small enough
-  // not to fuse two genuinely separate nearby plots into one blob.
-  const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
+  // A small morphological close bridges tiny gaps (scan noise, a slightly
+  // broken line) in an otherwise-solid plot boundary — findContours needs a
+  // genuinely closed loop to treat something as one shape. Kept deliberately
+  // small (3x3): tried 5x5 first, on the theory that it would also help
+  // with dashed/dotted boundary lines, but a real test caught a genuine
+  // regression from that — it bridged the (already thin, and weaker still
+  // after rasterizing at an angle) dividing walls between adjacent rotated
+  // plots, fusing 4 separate plots into one blob. Dashed-line gaps are
+  // handled separately and don't need this: road detection (detection/
+  // roads.ts) runs HoughLinesP directly on the raw (non-closed) edge map,
+  // with its own maxLineGap tolerance — this closing step was never
+  // actually helping dashed roads, only plot boundaries, so shrinking it
+  // back down costs nothing there.
+  const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
   const closed = new cv.Mat();
   cv.morphologyEx(edges, closed, cv.MORPH_CLOSE, kernel);
   kernel.delete();
