@@ -8,7 +8,7 @@
 // opacity toggle so the reviewer can compare against the source photo while
 // correcting a boundary, and draw-a-new-shape support for draw-plot/draw-
 // road/draw-area tool modes.
-import { forwardRef, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { MAP_VIEWBOX_SIZE, type PolygonPoint } from "@/lib/types";
 import { toSvgPoints, boundingBoxCenter } from "@/lib/svgPolygon";
 import type { DetectedShape } from "@/lib/digitize/types";
@@ -55,6 +55,30 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
   const [view, setView] = useState({ tx: 0, ty: 0, scale: 1 });
   const [drawPoints, setDrawPoints] = useState<PolygonPoint[]>([]);
   const isDrawMode = mode === "draw-plot" || mode === "draw-road" || mode === "draw-area";
+
+  // There was no way to back out of a draw once started — a misclick had no
+  // recovery besides finishing a shape you didn't want (found from a real
+  // user getting stuck mid-drawing with 24 stray points and no way to clear
+  // them). Switching tools now implicitly cancels any in-progress draw
+  // (this effect), Escape cancels it explicitly without switching tools,
+  // and a visible "Cancel" button (below) covers reviewers who don't know
+  // the Escape shortcut. Previously, switching tools only stopped the
+  // preview from RENDERING (isDrawMode became false) without actually
+  // clearing `drawPoints` — the stray points would silently reappear if
+  // the reviewer picked the same draw tool again later.
+  useEffect(() => {
+    setDrawPoints([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately keyed only on `mode`, not on drawPoints itself
+  }, [mode]);
+
+  useEffect(() => {
+    if (!isDrawMode) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setDrawPoints([]);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isDrawMode]);
 
   useImperativeHandle(ref, () => ({
     focusOnPoints(points: PolygonPoint[]) {
@@ -198,9 +222,23 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
       </div>
 
       {isDrawMode && drawPoints.length > 0 && (
-        <p className="absolute left-3 top-3 rounded-md bg-black/60 px-3 py-1.5 text-xs text-white">
-          {drawPoints.length} point(s) — double-click to finish
-        </p>
+        <div className="absolute left-3 top-3 flex items-center gap-2 rounded-md bg-black/60 px-3 py-1.5 text-xs text-white">
+          <span>{drawPoints.length} point(s) — double-click to finish</span>
+          <button
+            type="button"
+            onClick={() => setDrawPoints((prev) => prev.slice(0, -1))}
+            className="rounded bg-white/20 px-2 py-0.5 font-medium hover:bg-white/30"
+          >
+            Undo point
+          </button>
+          <button
+            type="button"
+            onClick={() => setDrawPoints([])}
+            className="rounded bg-red-500/80 px-2 py-0.5 font-medium hover:bg-red-500"
+          >
+            Cancel
+          </button>
+        </div>
       )}
     </div>
   );
