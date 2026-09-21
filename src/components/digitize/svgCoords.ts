@@ -12,7 +12,17 @@ export function clientPointToLocalFraction(
   clientY: number,
   viewBoxSize: number,
 ): { x: number; y: number } | null {
-  const svg = referenceEl.ownerSVGElement;
+  // `ownerSVGElement` is the nearest ANCESTOR <svg> — for a child element
+  // (a shape, a vertex handle) that's the canvas's root <svg>, but for the
+  // root <svg> element itself it's `null` (there's no ancestor, since it
+  // IS the svg). ReviewCanvas passes its own root <svg> directly for its
+  // background click-to-draw and wheel-zoom handlers, which made both of
+  // those silently do nothing — no error, `clientPointToLocalFraction`
+  // just returned `null` every time — found via a real end-to-end test
+  // (drawing a plot manually and finding the click never registered a
+  // point) after the user reported the manual "Draw plot"/"Draw road"
+  // tools not working.
+  const svg = referenceEl instanceof SVGSVGElement ? referenceEl : referenceEl.ownerSVGElement;
   if (!svg) return null;
   const point = svg.createSVGPoint();
   point.x = clientX;
