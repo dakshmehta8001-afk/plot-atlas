@@ -60,19 +60,32 @@ export function detectPlotContours(
 
   const contours = new cv.MatVector();
   const hierarchy = new cv.Mat();
-  // RETR_EXTERNAL (only outermost contours), not RETR_LIST — a boundary
-  // drawn as a stroke has both an inner and outer edge, which RETR_LIST
-  // would surface as two near-duplicate nested contours per real plot; it
-  // would also pick up small stray contours from anything drawn INSIDE a
-  // plot (e.g. its own number/text), which are never plot candidates
-  // themselves. Confirmed empirically: RETR_LIST produced ~4x as many
-  // "plot" candidates as actually existed in a real test image.
-  cv.findContours(closed, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+  // RETR_LIST, NOT RETR_EXTERNAL. This was a real, serious bug found via
+  // direct testing (dumping the edge map and a per-contour rejection
+  // breakdown against a real user-submitted plan, not assumed): a site
+  // plan very commonly has an outer border/frame around the whole page —
+  // RETR_EXTERNAL returns ONLY the outermost contour of each nesting
+  // group, so with a full-page border present, it returns exactly ONE
+  // contour (the border itself, correctly rejected by the area filter as
+  // "too big to be a plot") and silently discards every actual plot
+  // nested inside it — total detection failure, not a threshold problem,
+  // confirmed by a real run logging `totalContours: 1`.
+  //
+  // RETR_LIST returns every contour regardless of nesting, so it doesn't
+  // have this failure mode — the tradeoff is that a boundary drawn as a
+  // stroke has both an inner and outer edge, which RETR_LIST surfaces as
+  // two near-duplicate contours per plot. `suppressOverlapping` below
+  // is the fix for THAT (a cheap non-max-suppression pass, keeping the
+  // larger/outer one and dropping anything that heavily overlaps an
+  // already-kept shape) — deliberately applied AFTER filtering, not by
+  // switching retrieval mode again, since missing real plots is a far
+  // worse failure than a few duplicates the reviewer has to delete.
+  cv.findContours(closed, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
   closed.delete();
   hierarchy.delete();
 
   const totalArea = imageWidth * imageHeight;
-  const shapes: DetectedShape[] = [];
+  const candidates: Candidate[] = [];
 
   for (let i = 0; i < contours.size(); i++) {
     const contour = contours.get(i);
@@ -121,33 +134,86 @@ export function detectPlotContours(
       });
     }
 
-    // A rough, purely-geometric confidence hint for the review UI (e.g. a
-    // dashed outline on low-confidence shapes) — how comfortably this
-    // contour clears the thresholds above. Never persisted, never shown as
-    // a claim of real accuracy.
-    const areaScore = Math.min(
-      1,
-      (Math.min(areaFraction - options.minAreaFraction, options.maxAreaFraction - areaFraction) /
-        (options.maxAreaFraction - options.minAreaFraction)) *
-        4,
-    );
-    const vertexScore = vertexCount >= 4 && vertexCount <= 6 ? 1 : 0.6;
-    const confidence = Math.max(0, Math.min(1, solidity * 0.5 + Math.max(0, areaScore) * 0.3 + vertexScore * 0.2));
-
-    shapes.push({
-      localId: crypto.randomUUID(),
-      kind: "plot",
-      points,
-      label: "",
-      status: "available",
-      confidence,
-      source: "detected",
-    });
+    candidates.push({ points, areaFraction, solidity, vertexCount });
 
     contour.delete();
     approx.delete();
   }
 
   contours.delete();
+
+  const shapes: DetectedShape[] = [];
+  for (const candidate of suppressOverlapping(candidates)) {
+    // A rough, purely-geometric confidence hint for the review UI (e.g. a
+    // dashed outline on low-confidence shapes) — how comfortably this
+    // contour clears the thresholds above. Never persisted, never shown as
+    // a claim of real accuracy.
+    const areaScore = Math.min(
+      1,
+      (Math.min(candidate.areaFraction - options.minAreaFraction, options.maxAreaFraction - candidate.areaFraction) /
+        (options.maxAreaFraction - options.minAreaFraction)) *
+        4,
+    );
+    const vertexScore = candidate.vertexCount >= 4 && candidate.vertexCount <= 6 ? 1 : 0.6;
+    const confidence = Math.max(0, Math.min(1, candidate.solidity * 0.5 + Math.max(0, areaScore) * 0.3 + vertexScore * 0.2));
+
+    shapes.push({
+      localId: crypto.randomUUID(),
+      kind: "plot",
+      points: candidate.points,
+      label: "",
+      status: "available",
+      confidence,
+      source: "detected",
+    });
+  }
+
   return shapes;
+}
+
+function boundingBoxOf(points: PolygonPoint[]) {
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  return { minX: Math.min(...xs), minY: Math.min(...ys), maxX: Math.max(...xs), maxY: Math.max(...ys) };
+}
+
+// Non-max suppression for the inner/outer duplicate contours RETR_LIST
+// produces for a single stroked boundary (see the findContours comment
+// above for why RETR_LIST is used despite this cost). Two contours from
+// the same stroke have near-identical bounding boxes; two genuinely
+// different adjacent plots don't, even when they share a wall, since a
+// shared wall is a shared EDGE, not a heavily overlapping interior. Kept
+// deliberately simple (bounding-box containment, not true polygon
+// intersection) — good enough to distinguish "same stroke, two edges" from
+// "two different plots" without adding real geometry-library complexity.
+interface Candidate {
+  points: PolygonPoint[];
+  areaFraction: number;
+  solidity: number;
+  vertexCount: number;
+}
+
+function suppressOverlapping(candidates: Candidate[]): Candidate[] {
+  // Larger first: between a stroke's inner and outer edge, the outer one
+  // (larger) more accurately represents the plot's real boundary.
+  const sorted = [...candidates].sort((a, b) => b.areaFraction - a.areaFraction);
+  const kept: { candidate: Candidate; box: ReturnType<typeof boundingBoxOf> }[] = [];
+
+  for (const candidate of sorted) {
+    const box = boundingBoxOf(candidate.points);
+    const boxArea = (box.maxX - box.minX) * (box.maxY - box.minY);
+    const isDuplicate = kept.some(({ box: keptBox }) => {
+      const ix = Math.max(0, Math.min(box.maxX, keptBox.maxX) - Math.max(box.minX, keptBox.minX));
+      const iy = Math.max(0, Math.min(box.maxY, keptBox.maxY) - Math.max(box.minY, keptBox.minY));
+      const intersection = ix * iy;
+      // Containment ratio (intersection / this box's own area), not IoU —
+      // deliberately: an inner stroke edge's box is fully swallowed by the
+      // outer edge's slightly larger box, which containment catches
+      // cleanly even when the two boxes aren't quite the same size.
+      return boxArea > 0 && intersection / boxArea > 0.75;
+    });
+    if (!isDuplicate) kept.push({ candidate, box });
+  }
+
+  return kept.map((k) => k.candidate);
 }
