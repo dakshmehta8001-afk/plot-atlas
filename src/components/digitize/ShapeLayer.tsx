@@ -35,12 +35,15 @@ export function ShapeLayer({
   onSelect,
   mode,
   onUpdateShape,
+  splitHoverId,
 }: {
   shapes: DetectedShape[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   mode: ToolMode;
   onUpdateShape: (id: string, points: DetectedShape["points"]) => void;
+  /** The shape currently under the cursor in Split-plot mode — highlighted as the "you're about to cut this one" target. Not a selection; unrelated to selectedId. */
+  splitHoverId?: string | null;
 }) {
   const selected = shapes.find((s) => s.localId === selectedId) ?? null;
   const editingPoints = mode === "edit-points" && selected;
@@ -51,6 +54,7 @@ export function ShapeLayer({
         if (shape.points.length < 2) return null;
         const style = styleFor(shape);
         const isSelected = shape.localId === selectedId;
+        const isSplitTarget = shape.localId === splitHoverId;
         const center = boundingBoxCenter(shape.points);
         const Tag = shape.kind === "road" ? "polyline" : "polygon";
 
@@ -68,11 +72,17 @@ export function ShapeLayer({
             <Tag
               points={toSvgPoints(shape.points)}
               fill={style.fill}
-              stroke={isSelected ? "#3b82f6" : style.stroke}
-              strokeWidth={isSelected ? VB * 0.004 : VB * 0.002}
+              stroke={isSplitTarget ? "#f97316" : isSelected ? "#3b82f6" : style.stroke}
+              strokeWidth={isSplitTarget || isSelected ? VB * 0.004 : VB * 0.002}
               strokeDasharray={style.dashed ? `${VB * 0.008} ${VB * 0.006}` : undefined}
               className="cursor-pointer"
               onClick={(e) => {
+                // In Split-plot mode, a click on a shape is placing a cut
+                // point, not selecting it — let it bubble up to the
+                // canvas's own click handler (ReviewCanvas) instead of
+                // being swallowed here. Every other mode keeps the normal
+                // select-on-click behavior.
+                if (mode === "split-plot") return;
                 e.stopPropagation();
                 onSelect(shape.localId);
               }}

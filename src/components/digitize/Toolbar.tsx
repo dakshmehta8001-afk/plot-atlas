@@ -5,7 +5,7 @@
 // "click a button, trace one shape, done"; this one is a persistent mode
 // (select / draw / edit-points) the reviewer stays in across many shapes,
 // which is a different interaction shape entirely.
-export type ToolMode = "select" | "draw-plot" | "draw-road" | "draw-area" | "edit-points";
+export type ToolMode = "select" | "draw-plot" | "draw-road" | "draw-area" | "edit-points" | "split-plot";
 
 const TOOLS: { mode: ToolMode; label: string }[] = [
   { mode: "select", label: "Select" },
@@ -13,6 +13,7 @@ const TOOLS: { mode: ToolMode; label: string }[] = [
   { mode: "draw-road", label: "Draw road" },
   { mode: "draw-area", label: "Draw area" },
   { mode: "edit-points", label: "Edit points" },
+  { mode: "split-plot", label: "Split plot" },
 ];
 
 export function Toolbar({

@@ -10,7 +10,7 @@
 // road/draw-area tool modes.
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { MAP_VIEWBOX_SIZE, type PolygonPoint } from "@/lib/types";
-import { toSvgPoints, boundingBoxCenter } from "@/lib/svgPolygon";
+import { toSvgPoints, boundingBoxCenter, pointInPolygon, splitPolygonWithLine } from "@/lib/svgPolygon";
 import type { DetectedShape } from "@/lib/digitize/types";
 import { ShapeLayer } from "./ShapeLayer";
 import { clientPointToLocalFraction } from "./svgCoords";
@@ -36,10 +36,12 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
   mode: ToolMode;
   onUpdateShape: (id: string, points: PolygonPoint[]) => void;
   onAddShape: (kind: "plot" | "road" | "feature", points: PolygonPoint[]) => void;
+  /** Replaces one shape with two, the result of the Split tool cutting it along a line. */
+  onSplitShape: (id: string, parts: [PolygonPoint[], PolygonPoint[]]) => void;
   showOriginal: boolean;
   originalOpacity: number;
 }>(function ReviewCanvas(
-  { sourceCanvas, shapes, selectedId, onSelect, mode, onUpdateShape, onAddShape, showOriginal, originalOpacity },
+  { sourceCanvas, shapes, selectedId, onSelect, mode, onUpdateShape, onAddShape, onSplitShape, showOriginal, originalOpacity },
   ref,
 ) {
   const aspectRatio = sourceCanvas.width / sourceCanvas.height;
@@ -55,7 +57,11 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
   const [view, setView] = useState({ tx: 0, ty: 0, scale: 1 });
   const [drawPoints, setDrawPoints] = useState<PolygonPoint[]>([]);
   const [cursorPos, setCursorPos] = useState<PolygonPoint | null>(null);
+  const [cutPoints, setCutPoints] = useState<PolygonPoint[]>([]);
+  const [splitHoverId, setSplitHoverId] = useState<string | null>(null);
+  const [splitError, setSplitError] = useState<string | null>(null);
   const isDrawMode = mode === "draw-plot" || mode === "draw-road" || mode === "draw-area";
+  const isSplitMode = mode === "split-plot";
 
   // There was no way to back out of a draw once started — a misclick had no
   // recovery besides finishing a shape you didn't want (found from a real
@@ -70,11 +76,14 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
   useEffect(() => {
     setDrawPoints([]);
     setCursorPos(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately keyed only on `mode`, not on drawPoints itself
+    setCutPoints([]);
+    setSplitHoverId(null);
+    setSplitError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately keyed only on `mode`, not on drawPoints/cutPoints themselves
   }, [mode]);
 
   useEffect(() => {
-    if (!isDrawMode) return;
+    if (!isDrawMode && !isSplitMode) return;
     function handleKeyDown(e: KeyboardEvent) {
       // Ignore when the reviewer is typing into an input/textarea elsewhere
       // on the page (e.g. the search box, a shape's label field) — "z" in
@@ -84,13 +93,21 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
 
       if (e.key === "Escape") {
         setDrawPoints([]);
+        setCutPoints([]);
+        setSplitError(null);
       } else if (e.key === "Backspace" || e.key === "z") {
         setDrawPoints((prev) => prev.slice(0, -1));
+        // A completed split already goes through the same shapesState
+        // history the Toolbar's Undo button uses — this only needs to
+        // cancel a PENDING (not-yet-completed) cut's first click, same as
+        // Escape does, since there's no "half-committed" split state
+        // beyond that single placed point.
+        setCutPoints((prev) => prev.slice(0, -1));
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isDrawMode]);
+  }, [isDrawMode, isSplitMode]);
 
   useImperativeHandle(ref, () => ({
     focusOnPoints(points: PolygonPoint[]) {
@@ -127,7 +144,7 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
   const panState = useRef<{ startX: number; startY: number; origTx: number; origTy: number } | null>(null);
 
   function handleBackgroundPointerDown(e: React.PointerEvent<SVGSVGElement>) {
-    if (isDrawMode) return;
+    if (isDrawMode || isSplitMode) return;
     if (mode === "select") onSelect(null);
     panState.current = { startX: e.clientX, startY: e.clientY, origTx: view.tx, origTy: view.ty };
     (e.target as Element).setPointerCapture(e.pointerId);
@@ -142,22 +159,78 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
     panState.current = null;
   }
 
-  function handleCanvasClick(e: React.MouseEvent<SVGSVGElement>) {
-    if (!isDrawMode || !svgRef.current) return;
-    const local = clientPointToLocalFraction(svgRef.current, e.clientX, e.clientY, VB);
-    if (local) setDrawPoints((prev) => [...prev, local]);
+  // Finds which existing plot/feature the cut line actually splits cleanly
+  // — roads are excluded (open polylines, nothing to "split" the same way)
+  // and whichever shape is currently hover-highlighted is tried first,
+  // since that's the one the reviewer was visually aiming at; any other
+  // shape the line happens to also cross cleanly is a fallback, not the
+  // primary target.
+  function findSplitTarget(a: PolygonPoint, b: PolygonPoint): { id: string; parts: [PolygonPoint[], PolygonPoint[]] } | null {
+    const candidates = shapes.filter((s) => s.kind !== "road" && s.points.length >= 3);
+    if (splitHoverId) {
+      const idx = candidates.findIndex((s) => s.localId === splitHoverId);
+      if (idx > 0) candidates.unshift(candidates.splice(idx, 1)[0]);
+    }
+    for (const shape of candidates) {
+      const parts = splitPolygonWithLine(shape.points, a, b);
+      if (parts) return { id: shape.localId, parts };
+    }
+    return null;
   }
 
-  // Rubber-band preview: tracks the cursor while drawing so the in-progress
-  // shape's "next" edge is visible before it's actually placed, rather than
-  // only ever seeing the shape jump between committed vertices. Only
-  // updates state in draw mode with at least one point placed — harmless to
-  // fire on every mouse move (each is a discrete browser event, not a
-  // render-triggered loop), but pointless work otherwise.
+  function handleCanvasClick(e: React.MouseEvent<SVGSVGElement>) {
+    if (!svgRef.current) return;
+
+    if (isDrawMode) {
+      const local = clientPointToLocalFraction(svgRef.current, e.clientX, e.clientY, VB);
+      if (local) setDrawPoints((prev) => [...prev, local]);
+      return;
+    }
+
+    if (isSplitMode) {
+      const local = clientPointToLocalFraction(svgRef.current, e.clientX, e.clientY, VB);
+      if (!local) return;
+      if (cutPoints.length === 0) {
+        setSplitError(null);
+        setCutPoints([local]);
+        return;
+      }
+      // Second click completes the cut attempt either way — a failed cut
+      // (the line doesn't cleanly split any shape) is communicated via
+      // `splitError`, not by leaving the reviewer stuck mid-cut with no
+      // way to tell what happened.
+      const target = findSplitTarget(cutPoints[0], local);
+      if (target) {
+        onSplitShape(target.id, target.parts);
+        setSplitError(null);
+      } else {
+        setSplitError("That line didn't cleanly cross a single plot — try a straighter cut fully through one shape.");
+      }
+      setCutPoints([]);
+      setSplitHoverId(null);
+    }
+  }
+
+  // Rubber-band preview: tracks the cursor while drawing/cutting so the
+  // in-progress edge is visible before it's actually placed, rather than
+  // only ever seeing the shape/cut jump between committed points. Harmless
+  // to fire on every mouse move (each is a discrete browser event, not a
+  // render-triggered loop) — guarded to do nothing outside draw/split
+  // modes, or before there's a first point to draw a line FROM.
   function handleCanvasMouseMove(e: React.MouseEvent<SVGSVGElement>) {
-    if (!isDrawMode || drawPoints.length === 0 || !svgRef.current) return;
-    const local = clientPointToLocalFraction(svgRef.current, e.clientX, e.clientY, VB);
-    if (local) setCursorPos(local);
+    if (!svgRef.current) return;
+    if (isDrawMode && drawPoints.length > 0) {
+      const local = clientPointToLocalFraction(svgRef.current, e.clientX, e.clientY, VB);
+      if (local) setCursorPos(local);
+      return;
+    }
+    if (isSplitMode) {
+      const local = clientPointToLocalFraction(svgRef.current, e.clientX, e.clientY, VB);
+      if (!local) return;
+      if (cutPoints.length > 0) setCursorPos(local);
+      const hovered = shapes.find((s) => s.kind !== "road" && s.points.length >= 3 && pointInPolygon(local, s.points));
+      setSplitHoverId(hovered ? hovered.localId : null);
+    }
   }
 
   function finishDrawing() {
@@ -200,7 +273,7 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
         viewBox={`0 0 ${VB} ${VB}`}
         preserveAspectRatio="none"
         className="h-full w-full"
-        style={{ aspectRatio, cursor: isDrawMode ? "crosshair" : "grab", touchAction: "none" }}
+        style={{ aspectRatio, cursor: isDrawMode || isSplitMode ? "crosshair" : "grab", touchAction: "none" }}
         onWheel={handleWheel}
         onPointerDown={handleBackgroundPointerDown}
         onPointerMove={handleBackgroundPointerMove}
@@ -214,7 +287,33 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
             <image href={imageHref} x={0} y={0} width={VB} height={VB} preserveAspectRatio="none" opacity={originalOpacity} />
           )}
 
-          <ShapeLayer shapes={shapes} selectedId={selectedId} onSelect={onSelect} mode={mode} onUpdateShape={onUpdateShape} />
+          <ShapeLayer
+            shapes={shapes}
+            selectedId={selectedId}
+            onSelect={onSelect}
+            mode={mode}
+            onUpdateShape={onUpdateShape}
+            splitHoverId={isSplitMode ? splitHoverId : null}
+          />
+
+          {isSplitMode && (
+            <g className="pointer-events-none">
+              {cutPoints.map((p, i) => (
+                <circle key={i} cx={p.x * VB} cy={p.y * VB} r={VB * 0.007} fill="#f97316" />
+              ))}
+              {cutPoints.length > 0 && cursorPos && (
+                <line
+                  x1={cutPoints[0].x * VB}
+                  y1={cutPoints[0].y * VB}
+                  x2={cursorPos.x * VB}
+                  y2={cursorPos.y * VB}
+                  stroke="#f97316"
+                  strokeWidth={VB * 0.0025}
+                  strokeDasharray={`${VB * 0.008} ${VB * 0.006}`}
+                />
+              )}
+            </g>
+          )}
 
           {isDrawMode && drawPoints.length > 0 && (
             <g className="pointer-events-none">
@@ -275,6 +374,28 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
             Cancel
           </button>
         </div>
+      )}
+
+      {isSplitMode && (
+        <div className="absolute left-3 top-3 flex items-center gap-2 rounded-md bg-black/60 px-3 py-1.5 text-xs text-white">
+          <span>
+            {cutPoints.length === 0
+              ? "Click one point, then a second point on the far side of the plot to cut it in two."
+              : "Click the second point to cut."}
+          </span>
+          {cutPoints.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setCutPoints([])}
+              className="rounded bg-red-500/80 px-2 py-0.5 font-medium hover:bg-red-500"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      )}
+      {isSplitMode && splitError && (
+        <p className="absolute left-3 top-12 max-w-sm rounded-md bg-red-500/90 px-3 py-1.5 text-xs text-white">{splitError}</p>
       )}
     </div>
   );

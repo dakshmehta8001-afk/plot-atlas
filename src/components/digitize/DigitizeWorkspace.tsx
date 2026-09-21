@@ -114,6 +114,23 @@ export function DigitizeWorkspace({
     shapesState.set(shapesState.value.filter((s) => s.localId !== selectedId));
     setSelectedId(null);
   }
+  // The Split tool's payoff: turning one detected-but-merged blob (the
+  // known failure mode when a plan's internal dividing lines are too thin
+  // to survive automatic detection — see the memory notes on this feature)
+  // into two separate, individually-editable plots, without re-tracing
+  // either one by hand. Both halves lose the original's label/confidence
+  // (a wrong-but-confident label carried over onto BOTH new plots would be
+  // worse than two blank ones) and get marked "manual", since the split
+  // itself was a reviewer action, not something detection produced.
+  function handleSplitShape(id: string, parts: [PolygonPoint[], PolygonPoint[]]) {
+    const original = shapesState.value.find((s) => s.localId === id);
+    if (!original) return;
+    const [pointsA, pointsB] = parts;
+    const childA: DetectedShape = { ...original, localId: crypto.randomUUID(), points: pointsA, label: "", source: "manual", confidence: undefined };
+    const childB: DetectedShape = { ...original, localId: crypto.randomUUID(), points: pointsB, label: "", source: "manual", confidence: undefined };
+    shapesState.set(shapesState.value.flatMap((s) => (s.localId === id ? [childA, childB] : [s])));
+    setSelectedId(null);
+  }
   function handleAddShape(kind: "plot" | "road" | "feature", points: PolygonPoint[]) {
     const shape: DetectedShape = {
       localId: crypto.randomUUID(),
@@ -281,6 +298,7 @@ export function DigitizeWorkspace({
           mode={mode}
           onUpdateShape={handleUpdatePoints}
           onAddShape={handleAddShape}
+          onSplitShape={handleSplitShape}
           showOriginal={showOriginal}
           originalOpacity={originalOpacity}
         />
