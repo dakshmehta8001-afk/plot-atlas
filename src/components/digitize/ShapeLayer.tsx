@@ -9,7 +9,7 @@ import { MAP_VIEWBOX_SIZE, SITE_FEATURE_STYLES, UNIT_STATUS_STYLES } from "@/lib
 import { boundingBoxCenter, deleteVertex, insertVertex, moveVertex, nearestEdgeInsertion, toSvgPoints } from "@/lib/svgPolygon";
 import type { DetectedShape } from "@/lib/digitize/types";
 import { VertexHandle } from "./VertexHandle";
-import { clientPointToLocalFraction } from "./svgCoords";
+import { clientPointToLocalFraction } from "@/lib/svgCoords";
 import type { ToolMode } from "./Toolbar";
 
 const VB = MAP_VIEWBOX_SIZE;

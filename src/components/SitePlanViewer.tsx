@@ -16,7 +16,7 @@
 // that doesn't match `highlightZone` when the viewer has clicked a legend
 // pill to filter. Buildings always render in a neutral indigo "structure"
 // style since they aren't themselves bought/sold.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   MAP_VIEWBOX_SIZE,
   SITE_FEATURE_STYLES,
@@ -29,9 +29,15 @@ import {
 } from "@/lib/types";
 import { useImageAspectRatio } from "@/lib/useImageAspectRatio";
 import { toSvgPoints, toSvgPathD, boundingBoxCenter } from "@/lib/svgPolygon";
+import { clientPointToLocalFraction } from "@/lib/svgCoords";
 
 const VB = MAP_VIEWBOX_SIZE;
 const ZOOM_SCALE = 4;
+// Free-roam pan/zoom cap for the full-site view (separate from ZOOM_SCALE,
+// which is the fixed scale the scripted click-to-zoom-a-shape animation
+// always lands on). Kept lower than the digitize editor's 12x ceiling — this
+// is a browsing aid over finished artwork, not a precision tracing tool.
+const MAX_FREE_ZOOM = 6;
 export const BUILDING_ZOOM_TRANSITION_MS = 650;
 
 // The point exactly halfway along a road's traced length — a road is an
@@ -107,6 +113,71 @@ export function SitePlanViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately keyed only on the signal, not on its own identity
   }, [resetSignal]);
 
+  // Free-roam pan/zoom over the full-site view — separate state from the
+  // scripted zoomedShapePoints/transform below, which stays untouched. Only
+  // active while zoomedId is null: the moment a plot/building is clicked,
+  // the scripted zoom-to-shape animation takes over completely, so this
+  // resets to identity on every zoomedId change (in either direction) and
+  // on resetSignal, meaning the scripted animation always starts from a
+  // clean, unpanned base rather than compounding with leftover pan/zoom.
+  const [view, setView] = useState({ tx: 0, ty: 0, scale: 1 });
+  const panGroupRef = useRef<SVGGElement>(null);
+  const panState = useRef<{ startX: number; startY: number; origTx: number; origTy: number } | null>(null);
+
+  useEffect(() => {
+    setView({ tx: 0, ty: 0, scale: 1 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately keyed only on zoomedId/resetSignal, not view's own identity
+  }, [zoomedId, resetSignal]);
+
+  function handleWheel(e: React.WheelEvent<SVGSVGElement>) {
+    if (zoomedId) return;
+    e.preventDefault();
+    const group = panGroupRef.current;
+    if (!group) return;
+    const local = clientPointToLocalFraction(group, e.clientX, e.clientY, VB);
+    if (!local) return;
+    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    setView((prev) => {
+      const nextScale = Math.min(MAX_FREE_ZOOM, Math.max(1, prev.scale * factor));
+      // Keep the point under the cursor fixed on screen while zooming — same
+      // algebra as the digitize editor's wheel-zoom, just anchored to
+      // whatever the pointer/touch position is instead of a clicked shape.
+      const px = local.x * VB;
+      const py = local.y * VB;
+      const tx = px - ((px - prev.tx) / prev.scale) * nextScale;
+      const ty = py - ((py - prev.ty) / prev.scale) * nextScale;
+      return { tx, ty, scale: nextScale };
+    });
+  }
+
+  function handleBackgroundPointerDown(e: React.PointerEvent<SVGSVGElement>) {
+    if (zoomedId) return;
+    panState.current = { startX: e.clientX, startY: e.clientY, origTx: view.tx, origTy: view.ty };
+    (e.target as Element).setPointerCapture(e.pointerId);
+  }
+  function handleBackgroundPointerMove(e: React.PointerEvent<SVGSVGElement>) {
+    if (!panState.current) return;
+    const dx = e.clientX - panState.current.startX;
+    const dy = e.clientY - panState.current.startY;
+    setView((prev) => ({ ...prev, tx: panState.current!.origTx + dx, ty: panState.current!.origTy + dy }));
+  }
+  function handleBackgroundPointerUp() {
+    panState.current = null;
+  }
+
+  function zoomBy(factor: number) {
+    setView((prev) => {
+      const nextScale = Math.min(MAX_FREE_ZOOM, Math.max(1, prev.scale * factor));
+      const center = VB / 2;
+      const tx = center - ((center - prev.tx) / prev.scale) * nextScale;
+      const ty = center - ((center - prev.ty) / prev.scale) * nextScale;
+      return { tx, ty, scale: nextScale };
+    });
+  }
+  function resetView() {
+    setView({ tx: 0, ty: 0, scale: 1 });
+  }
+
   const zoomedShapePoints = useMemo(() => {
     const plot = plots.find((p) => p.id === zoomedId);
     if (plot) return plot.polygon_points;
@@ -164,7 +235,21 @@ export function SitePlanViewer({
         </button>
       )}
       <div className="h-full w-full overflow-hidden" style={{ aspectRatio }}>
-        <svg viewBox={`0 0 ${VB} ${VB}`} preserveAspectRatio="none" className="h-full w-full bg-[#0b1f2e]">
+        <svg
+          viewBox={`0 0 ${VB} ${VB}`}
+          preserveAspectRatio="none"
+          className="h-full w-full bg-[#0b1f2e]"
+          style={{ cursor: zoomedId ? "default" : "grab", touchAction: zoomedId ? "auto" : "none" }}
+          onWheel={handleWheel}
+          onPointerDown={handleBackgroundPointerDown}
+          onPointerMove={handleBackgroundPointerMove}
+          onPointerUp={handleBackgroundPointerUp}
+        >
+          {/* Free-roam pan/zoom group (identity while a plot/building is
+              zoomed-in via the scripted animation below) wraps the existing
+              scripted zoom-to-shape group unchanged, so the two compose
+              without either needing to know about the other. */}
+          <g ref={panGroupRef} style={{ transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`, transformOrigin: "0 0" }}>
           <g
             style={{
               transform,
@@ -333,8 +418,38 @@ export function SitePlanViewer({
               );
             })}
           </g>
+          </g>
         </svg>
       </div>
+
+      {!zoomedId && (
+        <div className="absolute bottom-3 right-3 z-10 flex flex-col gap-1.5">
+          <button
+            type="button"
+            onClick={() => zoomBy(1.3)}
+            aria-label="Zoom in"
+            className="flex h-11 w-11 items-center justify-center rounded-md bg-white/90 text-lg font-semibold text-[#0f2436] shadow hover:bg-white"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            onClick={() => zoomBy(1 / 1.3)}
+            aria-label="Zoom out"
+            className="flex h-11 w-11 items-center justify-center rounded-md bg-white/90 text-lg font-semibold text-[#0f2436] shadow hover:bg-white"
+          >
+            −
+          </button>
+          <button
+            type="button"
+            onClick={resetView}
+            aria-label="Fit to view"
+            className="flex h-11 items-center justify-center rounded-md bg-white/90 px-2 text-xs font-medium text-[#0f2436] shadow hover:bg-white"
+          >
+            Fit
+          </button>
+        </div>
+      )}
     </div>
   );
 }

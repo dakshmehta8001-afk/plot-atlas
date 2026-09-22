@@ -7,7 +7,7 @@
 // canvas's own fractional coordinate space regardless of the review
 // canvas's current pan/zoom.
 import { MAP_VIEWBOX_SIZE } from "@/lib/types";
-import { clientPointToLocalFraction } from "./svgCoords";
+import { clientPointToLocalFraction } from "@/lib/svgCoords";
 
 const VB = MAP_VIEWBOX_SIZE;
 

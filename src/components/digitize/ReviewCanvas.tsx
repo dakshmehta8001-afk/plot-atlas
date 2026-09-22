@@ -13,7 +13,7 @@ import { MAP_VIEWBOX_SIZE, type PolygonPoint } from "@/lib/types";
 import { toSvgPoints, boundingBoxCenter, pointInPolygon, splitPolygonWithLine } from "@/lib/svgPolygon";
 import type { DetectedShape } from "@/lib/digitize/types";
 import { ShapeLayer } from "./ShapeLayer";
-import { clientPointToLocalFraction } from "./svgCoords";
+import { clientPointToLocalFraction } from "@/lib/svgCoords";
 import type { ToolMode } from "./Toolbar";
 
 const VB = MAP_VIEWBOX_SIZE;

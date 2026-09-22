@@ -3,6 +3,32 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Plot status colors — the single source of truth is still
+     UNIT_STATUS_STYLES in src/lib/types.ts (used for inline SVG fill/
+     stroke, which can't reference a CSS variable across the server/client
+     boundary the way these tokens can); these tokens mirror those exact
+     values so new UI (filter pills, legend, panels) can reference the same
+     palette via Tailwind's arbitrary-value syntax (e.g. bg-(--available))
+     instead of a third copy of the same hex codes. */
+  --available: #16a34a;
+  --available-fill: rgba(34, 197, 94, 0.35);
+  --hold: #ca8a04;
+  --hold-fill: rgba(234, 179, 8, 0.35);
+  --booked: #2563eb;
+  --booked-fill: rgba(59, 130, 246, 0.35);
+  --sold: #dc2626;
+  --sold-fill: rgba(239, 68, 68, 0.35);
+
+  /* The dark map surface every viewer/editor canvas already uses as a
+     literal hex value (SitePlanViewer, ProjectMapClient, ReviewCanvas,
+     UnitInfoCard) — tokenized here so future map UI can reference one
+     definition instead of copying #0b1f2e / #0f2436 by hand again. */
+  --map-background: #0b1f2e;
+  --map-panel: #0f2436;
+  --map-border: rgba(255, 255, 255, 0.1);
+  --map-text: #ffffff;
+  --map-muted: rgba(255, 255, 255, 0.5);
 }
 
 @theme inline {
@@ -10,6 +36,16 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --color-available: var(--available);
+  --color-hold: var(--hold);
+  --color-booked: var(--booked);
+  --color-sold: var(--sold);
+  --color-map-background: var(--map-background);
+  --color-map-panel: var(--map-panel);
+  --color-map-border: var(--map-border);
+  --color-map-text: var(--map-text);
+  --color-map-muted: var(--map-muted);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -22,7 +58,6 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
 }
 
 /* Used by BuildingDrilldown's floor-select and floor-view overlays so they
@@ -33,5 +68,24 @@ body {
   }
   to {
     opacity: 1;
+  }
+}
+
+/* Global reduced-motion support: neuters every CSS transition/animation
+   duration (including ones set inline via style={{transition: "..."}}, e.g.
+   SitePlanViewer's zoom-to-shape animation — an author-stylesheet
+   `!important` rule outranks a plain inline style in the CSS cascade) down
+   to effectively instant, without having to thread a matchMedia() check
+   through every animated component individually. Functionality is
+   unaffected either way — this only removes the animated transition
+   between states, never the state change itself. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
