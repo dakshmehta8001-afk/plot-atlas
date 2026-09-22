@@ -84,7 +84,13 @@ export function UnitInfoCard({
     unit.rate_per_sqft ?? (unit.total_price && unit.area_sqft ? Math.round(unit.total_price / unit.area_sqft) : null);
 
   return (
-    <div className="absolute left-4 top-44 z-[900] w-72 rounded-xl border border-white/10 bg-[#0f2436]/95 p-4 text-white shadow-2xl backdrop-blur">
+    // Mobile: a bottom sheet spanning the map's width, capped height with
+    // its own scroll (so a long enquiry form never gets clipped by the map
+    // container). Desktop: the original floating card, anchored bottom-left
+    // instead of a fixed top offset — that avoided guessing how tall the
+    // (now-compact, variable-height) header chrome is on any given project.
+    <div className="absolute inset-x-0 bottom-0 z-[900] max-h-[75%] overflow-y-auto rounded-t-2xl border-t border-map-border bg-[#0f2436]/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] text-white shadow-2xl backdrop-blur sm:inset-x-auto sm:bottom-4 sm:left-4 sm:top-auto sm:max-h-[calc(100%-2rem)] sm:w-72 sm:rounded-xl sm:border sm:pb-4">
+      <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-white/20 sm:hidden" />
       <div className="mb-2 flex items-start justify-between">
         <div className="flex items-center gap-2">
           <span className="text-lg font-bold">
@@ -100,7 +106,7 @@ export function UnitInfoCard({
         </div>
         <div className="flex items-center gap-2">
           <QuickContactIcons project={project} unit={unit} />
-          <button onClick={onClose} className="text-white/50 hover:text-white">
+          <button type="button" onClick={onClose} aria-label="Close" className="-m-1.5 p-1.5 text-white/50 hover:text-white">
             ✕
           </button>
         </div>

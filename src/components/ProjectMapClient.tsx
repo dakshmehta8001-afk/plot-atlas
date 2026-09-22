@@ -26,6 +26,7 @@ import {
   type Road,
   type SiteFeature,
   type Unit,
+  type UnitStatus,
 } from "@/lib/types";
 
 type Tab = "map" | "media" | "about";
@@ -67,6 +68,7 @@ export function ProjectMapClient({
   const [drilldownStage, setDrilldownStage] = useState<"site" | "floor-select" | "floor-view">("site");
   const [zoneColourMode, setZoneColourMode] = useState(false);
   const [selectedZone, setSelectedZone] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<UnitStatus | null>(null);
 
   useEffect(() => {
     const intent = searchParams.get("intent");
@@ -111,6 +113,10 @@ export function ProjectMapClient({
     setZoneColourMode(true);
   }
 
+  function toggleStatus(status: UnitStatus) {
+    setStatusFilter((current) => (current === status ? null : status));
+  }
+
   // Once drilled into a building, BuildingDrilldown shows its own back-
   // buttons and a "Tower A · 3rd Floor" breadcrumb in roughly the same
   // corner as this header/stats/legend overlay — showing both collides, so
@@ -121,68 +127,88 @@ export function ProjectMapClient({
     <div className="relative h-[640px] w-full overflow-hidden rounded-xl border border-white/10 bg-[#0b1f2e]">
       {showMapChrome && (
         <>
-          <div className="absolute left-4 top-4 z-[600] max-w-[65%]">
-            {ownerName && (
-              <p className="text-[11px] font-semibold uppercase tracking-widest text-blue-300/80">{ownerName}</p>
+          {/* A single flex-col stack rather than four independently
+              absolutely-positioned rows at hardcoded top offsets (the
+              previous layout) — that older layout assumed fixed row
+              heights that didn't match actual content, so it grew tall
+              enough to sit directly over plot geometry near the top-left
+              corner on some layouts. Floating text/chips, not a card box:
+              the outer stack and every non-interactive element (title,
+              location, feature-legend labels) stay pointer-events-none so a
+              click anywhere that isn't literally on a chip/button passes
+              straight through to the map beneath — confirmed necessary via
+              testing, since an earlier version of this wrapped everything
+              in a solid bg-black/45 card, which (correctly, if
+              unintentionally) blocked clicks across its ENTIRE bounding
+              box, including the empty space around the title text, not
+              just the chips — reintroducing the exact "header blocks the
+              map" bug this redesign exists to fix. Only StatusChip/zone
+              buttons and the zone checkbox opt back in via
+              pointer-events-auto, since those are the only parts that
+              actually need to catch a click. */}
+          <div className="pointer-events-none absolute left-3 top-3 z-[600] flex max-w-[calc(100%-5.5rem)] flex-col items-start gap-2 sm:left-4 sm:top-4 sm:max-w-sm">
+            <div>
+              {ownerName && (
+                <p className="truncate text-[10px] font-semibold uppercase tracking-widest text-blue-300/90 drop-shadow-sm">{ownerName}</p>
+              )}
+              <h1 className="truncate text-lg font-semibold text-white drop-shadow-md sm:text-xl">{project.name}</h1>
+              {project.location && <p className="truncate text-[11px] text-white/70 drop-shadow-sm">{project.location}</p>}
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              <Pill label="Total" value={counts.total} tone="neutral" />
+              <StatusChip label="Available" value={counts.available} tone="green" active={statusFilter === "available"} onClick={() => toggleStatus("available")} />
+              <StatusChip label="Hold" value={counts.hold} tone="yellow" active={statusFilter === "hold"} onClick={() => toggleStatus("hold")} />
+              <StatusChip label="Booked" value={counts.booked} tone="blue" active={statusFilter === "booked"} onClick={() => toggleStatus("booked")} />
+              <StatusChip label="Sold" value={counts.sold} tone="red" active={statusFilter === "sold"} onClick={() => toggleStatus("sold")} />
+            </div>
+
+            {(zones.length > 0 || featureKindsPresent.length > 0) && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {zones.length > 0 && (
+                  <>
+                    <label className="pointer-events-auto mr-0.5 flex items-center gap-1.5 rounded-full bg-black/30 px-2 py-1 text-[10px] text-white/70">
+                      <input
+                        type="checkbox"
+                        checked={zoneColourMode}
+                        onChange={(e) => setZoneColourMode(e.target.checked)}
+                        className="accent-blue-500"
+                      />
+                      Zone
+                    </label>
+                    {zones.map((zone) => (
+                      <button
+                        key={zone}
+                        onClick={() => toggleZone(zone)}
+                        className="pointer-events-auto flex items-center gap-1.5 rounded-full border bg-black/30 px-2 py-1 text-[11px] font-medium transition-opacity"
+                        style={{
+                          borderColor: zoneColorFor(zone, zones),
+                          color: zoneColorFor(zone, zones),
+                          opacity: selectedZone && selectedZone !== zone ? 0.4 : 1,
+                        }}
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: zoneColorFor(zone, zones) }} />
+                        {zone}
+                      </button>
+                    ))}
+                  </>
+                )}
+                {featureKindsPresent.map((kind) => {
+                  const style = SITE_FEATURE_STYLES[kind];
+                  return (
+                    <span
+                      key={kind}
+                      className="flex items-center gap-1.5 rounded-full border bg-black/30 px-2 py-1 text-[11px] font-medium"
+                      style={{ borderColor: style.border, color: style.border }}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: style.border }} />
+                      {style.label}
+                    </span>
+                  );
+                })}
+              </div>
             )}
-            <h1 className="text-2xl font-bold text-white drop-shadow">{project.name}</h1>
-            {project.location && <p className="text-xs text-white/50">{project.location}</p>}
           </div>
-
-          <div className="absolute left-4 top-[5.5rem] z-[600] flex flex-wrap gap-2">
-            <Pill label="Total" value={counts.total} tone="neutral" />
-            <Pill label="Available" value={counts.available} tone="green" />
-            <Pill label="Hold" value={counts.hold} tone="yellow" />
-            <Pill label="Booked" value={counts.booked} tone="blue" />
-            <Pill label="Sold" value={counts.sold} tone="red" />
-          </div>
-
-          {zones.length > 0 && (
-            <div className="absolute left-4 top-[8.5rem] z-[600] flex flex-wrap items-center gap-2">
-              <label className="mr-1 flex items-center gap-1.5 text-[11px] text-white/60">
-                <input
-                  type="checkbox"
-                  checked={zoneColourMode}
-                  onChange={(e) => setZoneColourMode(e.target.checked)}
-                  className="accent-blue-500"
-                />
-                Zone colours
-              </label>
-              {zones.map((zone) => (
-                <button
-                  key={zone}
-                  onClick={() => toggleZone(zone)}
-                  className="flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-opacity"
-                  style={{
-                    borderColor: zoneColorFor(zone, zones),
-                    color: zoneColorFor(zone, zones),
-                    opacity: selectedZone && selectedZone !== zone ? 0.4 : 1,
-                  }}
-                >
-                  <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: zoneColorFor(zone, zones) }} />
-                  {zone}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {featureKindsPresent.length > 0 && (
-            <div className="absolute left-4 top-[11.5rem] z-[600] flex flex-wrap items-center gap-2">
-              {featureKindsPresent.map((kind) => {
-                const style = SITE_FEATURE_STYLES[kind];
-                return (
-                  <span
-                    key={kind}
-                    className="flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium"
-                    style={{ borderColor: style.border, color: style.border }}
-                  >
-                    <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: style.border }} />
-                    {style.label}
-                  </span>
-                );
-              })}
-            </div>
-          )}
 
           <Compass />
         </>
@@ -216,6 +242,7 @@ export function ProjectMapClient({
             colorMode={zoneColourMode ? "zone" : "status"}
             zones={zones}
             highlightZone={selectedZone}
+            highlightStatus={statusFilter}
             onStageChange={setDrilldownStage}
           />
         )}
@@ -251,6 +278,42 @@ function Pill({ label, value, tone }: { label: string; value: number; tone: "neu
     <span className={`rounded-full border bg-black/30 px-2.5 py-0.5 text-[11px] font-medium ${toneClasses[tone]}`}>
       {label} <span className="font-bold">{value}</span>
     </span>
+  );
+}
+
+// Like Pill, but clickable — toggles the map's status filter (dims every
+// plot that doesn't match, via SitePlanViewer's highlightStatus prop).
+// "Total" stays a plain Pill since there's no status value to filter by.
+function StatusChip({
+  label,
+  value,
+  tone,
+  active,
+  onClick,
+}: {
+  label: string;
+  value: number;
+  tone: "green" | "blue" | "yellow" | "red";
+  active: boolean;
+  onClick: () => void;
+}) {
+  const toneClasses: Record<typeof tone, string> = {
+    green: "border-green-500/50 text-green-300",
+    blue: "border-blue-500/50 text-blue-300",
+    yellow: "border-yellow-500/50 text-yellow-300",
+    red: "border-red-500/50 text-red-300",
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`pointer-events-auto rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${toneClasses[tone]} ${
+        active ? "bg-white/20 ring-1 ring-white/50" : "bg-black/30 hover:bg-black/50"
+      }`}
+    >
+      {label} <span className="font-bold">{value}</span>
+    </button>
   );
 }
 

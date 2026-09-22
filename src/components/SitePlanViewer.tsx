@@ -26,6 +26,7 @@ import {
   type Road,
   type SiteFeature,
   type Unit,
+  type UnitStatus,
 } from "@/lib/types";
 import { useImageAspectRatio } from "@/lib/useImageAspectRatio";
 import { toSvgPoints, toSvgPathD, boundingBoxCenter } from "@/lib/svgPolygon";
@@ -83,6 +84,7 @@ export function SitePlanViewer({
   colorMode = "status",
   zones = [],
   highlightZone = null,
+  highlightStatus = null,
   resetSignal,
 }: {
   planImageUrl: string;
@@ -95,6 +97,10 @@ export function SitePlanViewer({
   colorMode?: "status" | "zone";
   zones?: string[];
   highlightZone?: string | null;
+  /** When set, dims every plot whose status doesn't match — independent of
+   * colorMode, so the status filter works whether plots are colored by
+   * status or by zone. */
+  highlightStatus?: UnitStatus | null;
   /** Bump this (e.g. with Date.now()) to force the view back to the full site, e.g. when the parent returns from a floor view. */
   resetSignal?: number;
 }) {
@@ -213,14 +219,15 @@ export function SitePlanViewer({
   }
 
   function plotStyle(unit: Unit): { fill: string; border: string; opacity: number } {
+    const statusDimmed = highlightStatus !== null && unit.status !== highlightStatus;
     if (colorMode === "zone") {
-      const dimmed = highlightZone !== null && unit.category !== highlightZone;
+      const dimmed = (highlightZone !== null && unit.category !== highlightZone) || statusDimmed;
       if (!unit.category) return { fill: "rgba(148,163,184,0.25)", border: "#64748b", opacity: dimmed ? 0.3 : 1 };
       const color = zoneColorFor(unit.category, zones);
       return { fill: `${color}59`, border: color, opacity: dimmed ? 0.3 : 1 };
     }
     const style = UNIT_STATUS_STYLES[unit.status];
-    return { fill: style.fill, border: style.border, opacity: 1 };
+    return { fill: style.fill, border: style.border, opacity: statusDimmed ? 0.3 : 1 };
   }
 
   return (
