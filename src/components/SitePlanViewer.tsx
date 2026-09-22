@@ -29,7 +29,7 @@ import {
   type UnitStatus,
 } from "@/lib/types";
 import { useImageAspectRatio } from "@/lib/useImageAspectRatio";
-import { toSvgPoints, toSvgPathD, boundingBoxCenter } from "@/lib/svgPolygon";
+import { toScaledSvgPoints, toScaledSvgPathD, scaledBoundingBoxCenter } from "@/lib/svgPolygon";
 import { clientPointToLocalFraction } from "@/lib/svgCoords";
 
 const VB = MAP_VIEWBOX_SIZE;
@@ -48,9 +48,9 @@ export const BUILDING_ZOOM_TRANSITION_MS = 650;
 // vertex, only its two endpoints, which is the common case this needs to
 // get right. Walking the path by cumulative length instead works for any
 // point count, including two.
-function pathMidpoint(points: { x: number; y: number }[]): { x: number; y: number } {
-  const px = points.map((p) => p.x * VB);
-  const py = points.map((p) => p.y * VB);
+function pathMidpoint(points: { x: number; y: number }[], vbWidth: number, vbHeight: number): { x: number; y: number } {
+  const px = points.map((p) => p.x * vbWidth);
+  const py = points.map((p) => p.y * vbHeight);
   if (px.length === 1) return { x: px[0], y: py[0] };
 
   const segmentLengths: number[] = [];
@@ -106,6 +106,18 @@ export function SitePlanViewer({
 }) {
   const [zoomedId, setZoomedId] = useState<string | null>(null);
   const aspectRatio = useImageAspectRatio(planImageUrl);
+  // The viewBox's own height, derived from the plan image's real aspect
+  // ratio — keeping width fixed at VB (1000) and deriving height this way,
+  // combined with the SVG's default preserveAspectRatio ("xMidYMid meet"
+  // — see the <svg> below, which no longer overrides it to "none"), is what
+  // makes the plan render at its true proportions instead of stretched to
+  // fill whatever shape the surrounding panel happens to be. Every x
+  // position still multiplies by VB and every y position by vbHeight —
+  // since both axes now map to the SAME number of screen pixels per unit
+  // (that's the whole point of matching the viewBox to the real aspect
+  // ratio), a "uniform size" value like a stroke-width or font-size stays
+  // correct as a plain VB-based fraction, unchanged, on either axis.
+  const vbHeight = VB / aspectRatio;
 
   // resetSignal only ever changes to a new value (never re-fires the same
   // one), so this only runs when the parent actually wants us reset — e.g.
@@ -140,16 +152,20 @@ export function SitePlanViewer({
     e.preventDefault();
     const group = panGroupRef.current;
     if (!group) return;
-    const local = clientPointToLocalFraction(group, e.clientX, e.clientY, VB);
-    if (!local) return;
+    // A viewBoxSize of 1 makes clientPointToLocalFraction hand back raw
+    // local SVG units (no division) rather than a 0..1 fraction — needed
+    // here since x and y no longer share one uniform unit scale (VB vs
+    // vbHeight), and this helper only ever divides by a single size.
+    const rawLocal = clientPointToLocalFraction(group, e.clientX, e.clientY, 1);
+    if (!rawLocal) return;
     const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
     setView((prev) => {
       const nextScale = Math.min(MAX_FREE_ZOOM, Math.max(1, prev.scale * factor));
       // Keep the point under the cursor fixed on screen while zooming — same
       // algebra as the digitize editor's wheel-zoom, just anchored to
       // whatever the pointer/touch position is instead of a clicked shape.
-      const px = local.x * VB;
-      const py = local.y * VB;
+      const px = rawLocal.x;
+      const py = rawLocal.y;
       const tx = px - ((px - prev.tx) / prev.scale) * nextScale;
       const ty = py - ((py - prev.ty) / prev.scale) * nextScale;
       return { tx, ty, scale: nextScale };
@@ -174,9 +190,10 @@ export function SitePlanViewer({
   function zoomBy(factor: number) {
     setView((prev) => {
       const nextScale = Math.min(MAX_FREE_ZOOM, Math.max(1, prev.scale * factor));
-      const center = VB / 2;
-      const tx = center - ((center - prev.tx) / prev.scale) * nextScale;
-      const ty = center - ((center - prev.ty) / prev.scale) * nextScale;
+      const centerX = VB / 2;
+      const centerY = vbHeight / 2;
+      const tx = centerX - ((centerX - prev.tx) / prev.scale) * nextScale;
+      const ty = centerY - ((centerY - prev.ty) / prev.scale) * nextScale;
       return { tx, ty, scale: nextScale };
     });
   }
@@ -195,15 +212,16 @@ export function SitePlanViewer({
     if (!zoomedShapePoints || zoomedShapePoints.length < 3) {
       return "translate(0px, 0px) scale(1)";
     }
-    const center = boundingBoxCenter(zoomedShapePoints);
-    const target = VB / 2;
+    const center = scaledBoundingBoxCenter(zoomedShapePoints, VB, vbHeight);
+    const targetX = VB / 2;
+    const targetY = vbHeight / 2;
     // Combined translate+scale so the zoomed shape's center lands in the
     // middle of the viewBox: translate(A - s*C) scale(s) applied to a point
     // p gives s*p + (A - s*C) = s*(p - C) + A, i.e. C maps to A.
-    const tx = target - ZOOM_SCALE * center.x;
-    const ty = target - ZOOM_SCALE * center.y;
+    const tx = targetX - ZOOM_SCALE * center.x;
+    const ty = targetY - ZOOM_SCALE * center.y;
     return `translate(${tx}px, ${ty}px) scale(${ZOOM_SCALE})`;
-  }, [zoomedShapePoints]);
+  }, [zoomedShapePoints, vbHeight]);
 
   function handlePlotClick(unit: Unit) {
     setZoomedId(unit.id);
@@ -241,10 +259,17 @@ export function SitePlanViewer({
           ← Back to full view
         </button>
       )}
-      <div className="h-full w-full overflow-hidden" style={{ aspectRatio }}>
+      {/* No CSS aspectRatio style here any more — with both h-full and
+          w-full set, that property has no effect (it only computes a
+          missing dimension, and neither is missing here), which is
+          actually how this used to silently stretch every plan image to
+          whatever shape the panel happened to be. The SVG's own viewBox
+          (below) now carries the real aspect ratio instead, so it
+          letterboxes/pillarboxes correctly inside this box via the default
+          preserveAspectRatio regardless of the box's own shape. */}
+      <div className="h-full w-full overflow-hidden">
         <svg
-          viewBox={`0 0 ${VB} ${VB}`}
-          preserveAspectRatio="none"
+          viewBox={`0 0 ${VB} ${vbHeight}`}
           className="h-full w-full bg-[#0b1f2e]"
           style={{ cursor: zoomedId ? "default" : "grab", touchAction: zoomedId ? "auto" : "none" }}
           onWheel={handleWheel}
@@ -264,11 +289,11 @@ export function SitePlanViewer({
               transition: "transform 600ms ease",
             }}
           >
-            <image href={planImageUrl} x={0} y={0} width={VB} height={VB} preserveAspectRatio="none" />
+            <image href={planImageUrl} x={0} y={0} width={VB} height={vbHeight} />
 
             {roads.map((road, index) => {
               if (road.path_points.length < 2) return null;
-              const mid = pathMidpoint(road.path_points);
+              const mid = pathMidpoint(road.path_points, VB, vbHeight);
               const motionPathId = `road-motion-${road.id}`;
               // Varying the duration a little per road, rather than one
               // fixed number, is what keeps several cars on screen at once
@@ -281,14 +306,14 @@ export function SitePlanViewer({
                       look like a road on ANY uploaded image, not only one
                       that already has road artwork drawn into it. */}
                   <polyline
-                    points={toSvgPoints(road.path_points)}
+                    points={toScaledSvgPoints(road.path_points, VB, vbHeight)}
                     fill="none"
                     stroke="#3a4552"
                     strokeWidth={VB * 0.026}
                     strokeLinecap="round"
                   />
                   <polyline
-                    points={toSvgPoints(road.path_points)}
+                    points={toScaledSvgPoints(road.path_points, VB, vbHeight)}
                     fill="none"
                     stroke="#e8eaed"
                     strokeWidth={VB * 0.0018}
@@ -300,7 +325,7 @@ export function SitePlanViewer({
                   {/* An invisible copy of the same path, purely so the car
                       below has something to run animateMotion along —
                       <mpath> only works off a real <path>, not a <polyline>. */}
-                  <path id={motionPathId} d={toSvgPathD(road.path_points)} fill="none" stroke="none" />
+                  <path id={motionPathId} d={toScaledSvgPathD(road.path_points, VB, vbHeight)} fill="none" stroke="none" />
                   <g>
                     <rect
                       x={-VB * 0.011}
@@ -352,7 +377,7 @@ export function SitePlanViewer({
               return (
                 <polygon
                   key={unit.id}
-                  points={toSvgPoints(unit.polygon_points)}
+                  points={toScaledSvgPoints(unit.polygon_points, VB, vbHeight)}
                   fill={style.fill}
                   stroke={style.border}
                   strokeWidth={VB * 0.002}
@@ -367,10 +392,11 @@ export function SitePlanViewer({
 
             {buildings.map((building) => {
               if (building.polygon_points.length < 3) return null;
+              const center = scaledBoundingBoxCenter(building.polygon_points, VB, vbHeight);
               return (
                 <g key={building.id}>
                   <polygon
-                    points={toSvgPoints(building.polygon_points)}
+                    points={toScaledSvgPoints(building.polygon_points, VB, vbHeight)}
                     fill="rgba(99,102,241,0.35)"
                     stroke="#6366f1"
                     strokeWidth={VB * 0.0025}
@@ -381,8 +407,8 @@ export function SitePlanViewer({
                     <title>{building.name}</title>
                   </polygon>
                   <text
-                    x={boundingBoxCenter(building.polygon_points).x}
-                    y={boundingBoxCenter(building.polygon_points).y}
+                    x={center.x}
+                    y={center.y}
                     textAnchor="middle"
                     fontSize={VB * 0.02}
                     fill="#e0e7ff"
@@ -400,11 +426,11 @@ export function SitePlanViewer({
             {features.map((feature) => {
               if (feature.polygon_points.length < 3) return null;
               const style = SITE_FEATURE_STYLES[feature.kind];
-              const center = boundingBoxCenter(feature.polygon_points);
+              const center = scaledBoundingBoxCenter(feature.polygon_points, VB, vbHeight);
               return (
                 <g key={feature.id} className="pointer-events-none">
                   <polygon
-                    points={toSvgPoints(feature.polygon_points)}
+                    points={toScaledSvgPoints(feature.polygon_points, VB, vbHeight)}
                     fill={style.fill}
                     stroke={style.border}
                     strokeWidth={VB * 0.002}

@@ -8,7 +8,7 @@
 import { useMemo, useState } from "react";
 import { MAP_VIEWBOX_SIZE, UNIT_STATUS_STYLES, type Unit } from "@/lib/types";
 import { useImageAspectRatio } from "@/lib/useImageAspectRatio";
-import { toSvgPoints, boundingBoxCenter } from "@/lib/svgPolygon";
+import { toScaledSvgPoints, scaledBoundingBoxCenter } from "@/lib/svgPolygon";
 
 const VB = MAP_VIEWBOX_SIZE;
 const ZOOM_SCALE = 3;
@@ -24,16 +24,22 @@ export function FloorPlanViewer({
 }) {
   const [zoomedId, setZoomedId] = useState<string | null>(null);
   const aspectRatio = useImageAspectRatio(planImageUrl);
+  // See the matching comment in SitePlanViewer.tsx: deriving the viewBox's
+  // height from the floor plate image's real aspect ratio (instead of a
+  // fixed square, stretched via preserveAspectRatio="none") is what keeps
+  // any non-square floor plate from rendering distorted.
+  const vbHeight = VB / aspectRatio;
 
   const transform = useMemo(() => {
     const flat = flats.find((f) => f.id === zoomedId);
     if (!flat || flat.polygon_points.length < 3) return "translate(0px, 0px) scale(1)";
-    const center = boundingBoxCenter(flat.polygon_points);
-    const target = VB / 2;
-    const tx = target - ZOOM_SCALE * center.x;
-    const ty = target - ZOOM_SCALE * center.y;
+    const center = scaledBoundingBoxCenter(flat.polygon_points, VB, vbHeight);
+    const targetX = VB / 2;
+    const targetY = vbHeight / 2;
+    const tx = targetX - ZOOM_SCALE * center.x;
+    const ty = targetY - ZOOM_SCALE * center.y;
     return `translate(${tx}px, ${ty}px) scale(${ZOOM_SCALE})`;
-  }, [flats, zoomedId]);
+  }, [flats, zoomedId, vbHeight]);
 
   function handleClick(unit: Unit) {
     setZoomedId(unit.id);
@@ -51,17 +57,17 @@ export function FloorPlanViewer({
           ← Back to floor view
         </button>
       )}
-      <div className="h-full w-full overflow-hidden" style={{ aspectRatio }}>
-        <svg viewBox={`0 0 ${VB} ${VB}`} preserveAspectRatio="none" className="h-full w-full bg-[#0b1f2e]">
+      <div className="h-full w-full overflow-hidden">
+        <svg viewBox={`0 0 ${VB} ${vbHeight}`} className="h-full w-full bg-[#0b1f2e]">
           <g style={{ transform, transformOrigin: "0 0", transition: "transform 500ms ease" }}>
-            <image href={planImageUrl} x={0} y={0} width={VB} height={VB} preserveAspectRatio="none" />
+            <image href={planImageUrl} x={0} y={0} width={VB} height={vbHeight} />
             {flats.map((unit) => {
               if (unit.polygon_points.length < 3) return null;
               const style = UNIT_STATUS_STYLES[unit.status];
               return (
                 <polygon
                   key={unit.id}
-                  points={toSvgPoints(unit.polygon_points)}
+                  points={toScaledSvgPoints(unit.polygon_points, VB, vbHeight)}
                   fill={style.fill}
                   stroke={style.border}
                   strokeWidth={VB * 0.0025}

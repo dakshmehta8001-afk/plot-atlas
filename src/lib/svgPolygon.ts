@@ -26,6 +26,36 @@ export function boundingBoxCenter(points: PolygonPoint[]): { x: number; y: numbe
   };
 }
 
+// Aspect-ratio-aware variants of the three functions above, for the two
+// PUBLIC map viewers (SitePlanViewer, FloorPlanViewer) only — those size
+// their SVG viewBox to the plan image's own aspect ratio (vbWidth x
+// vbHeight) instead of a fixed square, so a road/plot border renders at a
+// uniform visual thickness instead of stretched thicker along whichever
+// axis the image happens to be wider on. Kept as separate functions rather
+// than changing toSvgPoints/toSvgPathD/boundingBoxCenter's signature above,
+// so the manual tracer and digitize editor — which still use those,
+// unchanged, on the original square convention — are completely unaffected.
+export function toScaledSvgPoints(points: PolygonPoint[], vbWidth: number, vbHeight: number): string {
+  return points.map((p) => `${p.x * vbWidth},${p.y * vbHeight}`).join(" ");
+}
+
+export function toScaledSvgPathD(points: PolygonPoint[], vbWidth: number, vbHeight: number): string {
+  return points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x * vbWidth},${p.y * vbHeight}`).join(" ");
+}
+
+export function scaledBoundingBoxCenter(
+  points: PolygonPoint[],
+  vbWidth: number,
+  vbHeight: number,
+): { x: number; y: number } {
+  const xs = points.map((p) => p.x * vbWidth);
+  const ys = points.map((p) => p.y * vbHeight);
+  return {
+    x: (Math.min(...xs) + Math.max(...xs)) / 2,
+    y: (Math.min(...ys) + Math.max(...ys)) / 2,
+  };
+}
+
 // Everything below is additive, for the digitize review canvas's vertex
 // editing (src/components/digitize/*) — the manual tracer never needs to
 // edit an existing point, only append new ones, so this had no reason to

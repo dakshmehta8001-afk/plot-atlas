@@ -1,9 +1,10 @@
 "use client";
 
-// The MapBhoomi-style project map page: a fixed-height dark panel with a
-// header/stats/zone-legend/compass overlaid on the map, a floating bottom
-// tab bar (Media / About) that swaps the main content area, and a compact
-// unit info card in place of a full-screen modal. Ties together
+// The MapBhoomi-style project map page: a fixed-height dark panel laid out
+// as a real two-row flex column — a dedicated header row (title/stats/
+// zone-legend, own space, never overlapping) above a flex-1 map row (which
+// carries the Compass, a floating bottom tab bar for Media/About, and a
+// compact unit info card in place of a full-screen modal). Ties together
 // BuildingDrilldown (the map + the bird's-eye-to-floor-view animation),
 // MediaPanel/AboutPanel (the other two tabs), and UnitInfoCard (the enquiry
 // flow) — the project page itself stays a Server Component that does the
@@ -124,143 +125,136 @@ export function ProjectMapClient({
   const showMapChrome = activeTab === "map" && drilldownStage === "site";
 
   return (
-    <div className="relative h-[640px] w-full overflow-hidden rounded-xl border border-white/10 bg-[#0b1f2e]">
+    // A real two-row layout — a dedicated header row (only present at the
+    // site stage, via showMapChrome) above a separate flex-1 row holding
+    // the map/media/about content — rather than the header floating on top
+    // of the map. This guarantees the header and the map can never
+    // visually overlap regardless of a project's plan image aspect ratio
+    // or how much header content there is (title length, zone/feature
+    // legend, etc.): the header takes exactly the space its own content
+    // needs, and the map row gets whatever's left, instead of both
+    // occupying the same absolutely-positioned box and hoping they don't
+    // collide. min-h-0 on the map row is required for flex-1 to actually
+    // shrink below its content's natural size in a flex column — without
+    // it the row refuses to give up space to the header row above it.
+    <div className="relative flex h-[640px] w-full flex-col overflow-hidden rounded-xl border border-white/10 bg-[#0b1f2e]">
       {showMapChrome && (
-        <>
-          {/* A single flex-col stack rather than four independently
-              absolutely-positioned rows at hardcoded top offsets (the
-              previous layout) — that older layout assumed fixed row
-              heights that didn't match actual content, so it grew tall
-              enough to sit directly over plot geometry near the top-left
-              corner on some layouts. Floating text/chips, not a card box:
-              the outer stack and every non-interactive element (title,
-              location, feature-legend labels) stay pointer-events-none so a
-              click anywhere that isn't literally on a chip/button passes
-              straight through to the map beneath — confirmed necessary via
-              testing, since an earlier version of this wrapped everything
-              in a solid bg-black/45 card, which (correctly, if
-              unintentionally) blocked clicks across its ENTIRE bounding
-              box, including the empty space around the title text, not
-              just the chips — reintroducing the exact "header blocks the
-              map" bug this redesign exists to fix. Only StatusChip/zone
-              buttons and the zone checkbox opt back in via
-              pointer-events-auto, since those are the only parts that
-              actually need to catch a click. */}
-          <div className="pointer-events-none absolute left-3 top-3 z-[600] flex max-w-[calc(100%-5.5rem)] flex-col items-start gap-2 sm:left-4 sm:top-4 sm:max-w-sm">
-            <div>
-              {ownerName && (
-                <p className="truncate text-[10px] font-semibold uppercase tracking-widest text-blue-300/90 drop-shadow-sm">{ownerName}</p>
-              )}
-              <h1 className="truncate text-lg font-semibold text-white drop-shadow-md sm:text-xl">{project.name}</h1>
-              {project.location && <p className="truncate text-[11px] text-white/70 drop-shadow-sm">{project.location}</p>}
-            </div>
-
-            <div className="flex flex-wrap gap-1.5">
-              <Pill label="Total" value={counts.total} tone="neutral" />
-              <StatusChip label="Available" value={counts.available} tone="green" active={statusFilter === "available"} onClick={() => toggleStatus("available")} />
-              <StatusChip label="Hold" value={counts.hold} tone="yellow" active={statusFilter === "hold"} onClick={() => toggleStatus("hold")} />
-              <StatusChip label="Booked" value={counts.booked} tone="blue" active={statusFilter === "booked"} onClick={() => toggleStatus("booked")} />
-              <StatusChip label="Sold" value={counts.sold} tone="red" active={statusFilter === "sold"} onClick={() => toggleStatus("sold")} />
-            </div>
-
-            {(zones.length > 0 || featureKindsPresent.length > 0) && (
-              <div className="flex flex-wrap items-center gap-1.5">
-                {zones.length > 0 && (
-                  <>
-                    <label className="pointer-events-auto mr-0.5 flex items-center gap-1.5 rounded-full bg-black/30 px-2 py-1 text-[10px] text-white/70">
-                      <input
-                        type="checkbox"
-                        checked={zoneColourMode}
-                        onChange={(e) => setZoneColourMode(e.target.checked)}
-                        className="accent-blue-500"
-                      />
-                      Zone
-                    </label>
-                    {zones.map((zone) => (
-                      <button
-                        key={zone}
-                        onClick={() => toggleZone(zone)}
-                        className="pointer-events-auto flex items-center gap-1.5 rounded-full border bg-black/30 px-2 py-1 text-[11px] font-medium transition-opacity"
-                        style={{
-                          borderColor: zoneColorFor(zone, zones),
-                          color: zoneColorFor(zone, zones),
-                          opacity: selectedZone && selectedZone !== zone ? 0.4 : 1,
-                        }}
-                      >
-                        <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: zoneColorFor(zone, zones) }} />
-                        {zone}
-                      </button>
-                    ))}
-                  </>
-                )}
-                {featureKindsPresent.map((kind) => {
-                  const style = SITE_FEATURE_STYLES[kind];
-                  return (
-                    <span
-                      key={kind}
-                      className="flex items-center gap-1.5 rounded-full border bg-black/30 px-2 py-1 text-[11px] font-medium"
-                      style={{ borderColor: style.border, color: style.border }}
-                    >
-                      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: style.border }} />
-                      {style.label}
-                    </span>
-                  );
-                })}
-              </div>
+        <div className="flex-none border-b border-map-border bg-map-panel/60 px-3 py-2.5 sm:px-4">
+          <div className="min-w-0">
+            {ownerName && (
+              <p className="truncate text-[10px] font-semibold uppercase tracking-widest text-blue-300/80">{ownerName}</p>
             )}
+            <h1 className="truncate text-lg font-semibold text-white sm:text-xl">{project.name}</h1>
+            {project.location && <p className="truncate text-[11px] text-white/50">{project.location}</p>}
           </div>
 
-          <Compass />
-        </>
-      )}
-
-      {autoSentNotice && (
-        <p className="absolute bottom-16 left-1/2 z-[700] -translate-x-1/2 rounded-md bg-green-500/15 px-3 py-1.5 text-xs text-green-300">
-          {autoSentNotice}
-        </p>
-      )}
-
-      <div className="absolute inset-0">
-        {activeTab === "media" ? (
-          <MediaPanel media={media} />
-        ) : activeTab === "about" ? (
-          <AboutPanel project={project} />
-        ) : !project.plan_image_url ? (
-          <div className="flex h-full w-full items-center justify-center text-sm text-white/50">
-            This project has no plan image uploaded yet.
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <Pill label="Total" value={counts.total} tone="neutral" />
+            <StatusChip label="Available" value={counts.available} tone="green" active={statusFilter === "available"} onClick={() => toggleStatus("available")} />
+            <StatusChip label="Hold" value={counts.hold} tone="yellow" active={statusFilter === "hold"} onClick={() => toggleStatus("hold")} />
+            <StatusChip label="Booked" value={counts.booked} tone="blue" active={statusFilter === "booked"} onClick={() => toggleStatus("booked")} />
+            <StatusChip label="Sold" value={counts.sold} tone="red" active={statusFilter === "sold"} onClick={() => toggleStatus("sold")} />
           </div>
-        ) : (
-          <BuildingDrilldown
-            planImageUrl={project.plan_image_url}
-            plots={plots}
-            buildings={buildings}
-            roads={roads}
-            features={features}
-            unitsByFloor={unitsByFloor}
-            onPlotClick={setSelectedUnit}
-            onFlatClick={setSelectedUnit}
-            colorMode={zoneColourMode ? "zone" : "status"}
-            zones={zones}
-            highlightZone={selectedZone}
-            highlightStatus={statusFilter}
-            onStageChange={setDrilldownStage}
+
+          {(zones.length > 0 || featureKindsPresent.length > 0) && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {zones.length > 0 && (
+                <>
+                  <label className="mr-0.5 flex items-center gap-1.5 rounded-full bg-black/20 px-2 py-1 text-[10px] text-white/70">
+                    <input
+                      type="checkbox"
+                      checked={zoneColourMode}
+                      onChange={(e) => setZoneColourMode(e.target.checked)}
+                      className="accent-blue-500"
+                    />
+                    Zone
+                  </label>
+                  {zones.map((zone) => (
+                    <button
+                      key={zone}
+                      onClick={() => toggleZone(zone)}
+                      className="flex items-center gap-1.5 rounded-full border bg-black/20 px-2 py-1 text-[11px] font-medium transition-opacity"
+                      style={{
+                        borderColor: zoneColorFor(zone, zones),
+                        color: zoneColorFor(zone, zones),
+                        opacity: selectedZone && selectedZone !== zone ? 0.4 : 1,
+                      }}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: zoneColorFor(zone, zones) }} />
+                      {zone}
+                    </button>
+                  ))}
+                </>
+              )}
+              {featureKindsPresent.map((kind) => {
+                const style = SITE_FEATURE_STYLES[kind];
+                return (
+                  <span
+                    key={kind}
+                    className="flex items-center gap-1.5 rounded-full border bg-black/20 px-2 py-1 text-[11px] font-medium"
+                    style={{ borderColor: style.border, color: style.border }}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: style.border }} />
+                    {style.label}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="relative min-h-0 flex-1">
+        {showMapChrome && <Compass />}
+
+        {autoSentNotice && (
+          <p className="absolute bottom-16 left-1/2 z-[700] -translate-x-1/2 rounded-md bg-green-500/15 px-3 py-1.5 text-xs text-green-300">
+            {autoSentNotice}
+          </p>
+        )}
+
+        <div className="absolute inset-0">
+          {activeTab === "media" ? (
+            <MediaPanel media={media} />
+          ) : activeTab === "about" ? (
+            <AboutPanel project={project} />
+          ) : !project.plan_image_url ? (
+            <div className="flex h-full w-full items-center justify-center text-sm text-white/50">
+              This project has no plan image uploaded yet.
+            </div>
+          ) : (
+            <BuildingDrilldown
+              planImageUrl={project.plan_image_url}
+              plots={plots}
+              buildings={buildings}
+              roads={roads}
+              features={features}
+              unitsByFloor={unitsByFloor}
+              onPlotClick={setSelectedUnit}
+              onFlatClick={setSelectedUnit}
+              colorMode={zoneColourMode ? "zone" : "status"}
+              zones={zones}
+              highlightZone={selectedZone}
+              highlightStatus={statusFilter}
+              onStageChange={setDrilldownStage}
+            />
+          )}
+        </div>
+
+        {selectedUnit && (
+          <UnitInfoCard
+            unit={selectedUnit}
+            project={project}
+            isSignedIn={isSignedIn}
+            projectSlug={project.slug}
+            onClose={() => setSelectedUnit(null)}
           />
         )}
-      </div>
 
-      {selectedUnit && (
-        <UnitInfoCard
-          unit={selectedUnit}
-          project={project}
-          isSignedIn={isSignedIn}
-          projectSlug={project.slug}
-          onClose={() => setSelectedUnit(null)}
-        />
-      )}
-
-      <div className="absolute bottom-4 left-1/2 z-[600] flex -translate-x-1/2 gap-1 rounded-full bg-black/40 p-1 backdrop-blur">
-        <TabButton label="Media" active={activeTab === "media"} onClick={() => toggleTab("media")} />
-        <TabButton label="About" active={activeTab === "about"} onClick={() => toggleTab("about")} />
+        <div className="absolute bottom-4 left-1/2 z-[600] flex -translate-x-1/2 gap-1 rounded-full bg-black/40 p-1 backdrop-blur">
+          <TabButton label="Media" active={activeTab === "media"} onClick={() => toggleTab("media")} />
+          <TabButton label="About" active={activeTab === "about"} onClick={() => toggleTab("about")} />
+        </div>
       </div>
     </div>
   );
@@ -308,7 +302,7 @@ function StatusChip({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`pointer-events-auto rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${toneClasses[tone]} ${
+      className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${toneClasses[tone]} ${
         active ? "bg-white/20 ring-1 ring-white/50" : "bg-black/30 hover:bg-black/50"
       }`}
     >
