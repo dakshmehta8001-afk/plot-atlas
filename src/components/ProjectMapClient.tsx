@@ -247,7 +247,7 @@ export function ProjectMapClient({
           below the sm breakpoint. */}
       <div className="relative flex min-h-0 flex-1">
         <div className="relative min-w-0 flex-1">
-          {showMapChrome && <Compass />}
+          {showMapChrome && <Compass angleDegrees={project.map_calibration?.northAngleDegrees} />}
 
           {autoSentNotice && (
             <p className="absolute bottom-16 left-1/2 z-[700] -translate-x-1/2 rounded-md bg-green-500/15 px-3 py-1.5 text-xs text-green-300">

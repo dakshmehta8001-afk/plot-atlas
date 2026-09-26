@@ -7,6 +7,7 @@
 // fetch, while the actual OpenCV/Tesseract-heavy workspace never gets
 // evaluated during server rendering at all.
 import dynamic from "next/dynamic";
+import type { MapCalibration } from "@/lib/types";
 
 const DigitizeWorkspace = dynamic(() => import("./DigitizeWorkspace").then((m) => m.DigitizeWorkspace), {
   ssr: false,
@@ -19,6 +20,7 @@ export function DigitizeWorkspaceLoader(props: {
   projectId: string;
   projectName: string;
   hasExistingPlanImage: boolean;
+  initialCalibration: MapCalibration | null;
 }) {
   return <DigitizeWorkspace {...props} />;
 }

@@ -60,6 +60,46 @@ export function ShapeDetailsPanel({
       )}
 
       {shape.kind === "plot" && (
+        <label className="block text-sm">
+          Dimensions
+          <input
+            type="text"
+            value={shape.dimensions ?? ""}
+            onChange={(e) => onChange({ ...shape, dimensions: e.target.value || undefined, needsDimensionReview: !e.target.value })}
+            placeholder="Needs dimensions — enter manually"
+            className={`mt-1 w-full rounded-md border p-2 dark:bg-gray-950 ${
+              shape.needsDimensionReview
+                ? "border-amber-400 bg-amber-50 placeholder:text-amber-600 dark:border-amber-700 dark:bg-amber-950"
+                : "border-gray-300 dark:border-gray-700"
+            }`}
+          />
+          {shape.needsDimensionReview ? (
+            <span className="mt-1 block text-xs text-amber-600 dark:text-amber-400">
+              Couldn&apos;t be computed exactly — enter it by hand, or set a scale reference (Toolbar → Set scale) and it will
+              fill in automatically for a clean 4-point plot.
+            </span>
+          ) : (
+            <span className="mt-1 block text-xs text-gray-400">
+              Computed from this plot&apos;s traced shape and the project&apos;s scale reference — edit if it looks wrong.
+            </span>
+          )}
+        </label>
+      )}
+
+      {shape.kind === "plot" && (
+        <label className="block text-sm">
+          Category / zone
+          <input
+            type="text"
+            value={shape.category ?? ""}
+            onChange={(e) => onChange({ ...shape, category: e.target.value || undefined })}
+            placeholder="e.g. Premium, Corner Plot — usually set once for many plots via the color-legend step above"
+            className="mt-1 w-full rounded-md border border-gray-300 p-2 dark:border-gray-700 dark:bg-gray-950"
+          />
+        </label>
+      )}
+
+      {shape.kind === "plot" && (
         <div>
           <p className="mb-1.5 text-sm">Status</p>
           <div className="flex flex-wrap gap-1.5">
@@ -113,11 +153,15 @@ export function ShapeDetailsPanel({
         </div>
       )}
 
-      {areaFraction !== null && (
-        <p className="text-xs text-gray-400">
-          Relative size: {(areaFraction * 100).toFixed(2)}% of the plan image (a rough sizing hint only — this app has no
-          real-world scale reference, so it can&apos;t be converted to sq ft automatically; enter that manually after saving).
-        </p>
+      {shape.kind === "plot" && shape.areaSqft !== undefined ? (
+        <p className="text-xs text-gray-400">Area: {Math.round(shape.areaSqft).toLocaleString()} sq ft (computed from the scale reference).</p>
+      ) : (
+        areaFraction !== null && (
+          <p className="text-xs text-gray-400">
+            Relative size: {(areaFraction * 100).toFixed(2)}% of the plan image (a rough sizing hint only — set a scale
+            reference to get a real sq ft figure here instead).
+          </p>
+        )
       )}
 
       <p className="text-xs text-gray-400">{shape.points.length} point(s) traced.</p>

@@ -259,42 +259,56 @@ const MapShapes = memo(function MapShapes({
               transition: "opacity 300ms ease",
             }}
           >
-            {/* Rendered as real road styling (asphalt + lane markings),
-                not just a highlight — this is what makes a traced road
-                look like a road on ANY uploaded image, not only one
-                that already has road artwork drawn into it. */}
+            {/* Clean architectural/blueprint road styling — a light band
+                (matching a printed site plan's plain "gap between plots"
+                look, e.g. the Naman Infracity reference) with a thin
+                dashed centerline, replacing the earlier dark-asphalt
+                treatment. Still fully synthesized from the traced path
+                (not the plan artwork itself), so this looks right on ANY
+                uploaded image regardless of what that image already drew
+                in its own road gaps. */}
             <polyline
               points={toScaledSvgPoints(road.path_points, VB, vbHeight)}
               fill="none"
-              stroke="#3a4552"
+              stroke="#eef1f4"
               strokeWidth={asphaltWidth}
               strokeLinecap="round"
             />
             <polyline
               points={toScaledSvgPoints(road.path_points, VB, vbHeight)}
               fill="none"
-              stroke="#e8eaed"
+              stroke="#94a3b8"
               strokeWidth={centerlineWidth}
               strokeDasharray={`${dashLength} ${dashGap}`}
               strokeLinecap="round"
-              opacity={0.8}
             />
 
             {/* An invisible copy of the same path, purely so the car
                 below has something to run animateMotion along —
                 <mpath> only works off a real <path>, not a <polyline>. */}
             <path id={motionPathId} d={toScaledSvgPathD(road.path_points, VB, vbHeight)} fill="none" stroke="none" />
+            {/* A real, simple top-down 2D car — a rounded body, a darker
+                windshield band across the middle (reads as "front/back"
+                even at small map scale, which the old plain rect never
+                did), and four small wheel marks at the corners. Bigger and
+                fully opaque (the old rect was tiny and easy to miss), and
+                driven noticeably slower (driveDuration below is roughly
+                double the old per-road value) — both changes specifically
+                so it's actually visible as a car while panning/zooming,
+                not just a barely-noticeable colored speck. */}
             <g>
-              <rect
-                x={-VB * 0.011}
-                y={-VB * 0.0055}
-                width={VB * 0.022}
-                height={VB * 0.011}
-                rx={VB * 0.0025}
-                fill={index % 2 === 0 ? "#d7473f" : "#e7e7e2"}
-              />
+              <g
+                style={{ animation: `fadeIn 420ms ease-out backwards`, animationDelay: `${revealDelay(index)}ms` }}
+              >
+                <rect x={-VB * 0.016} y={-VB * 0.0075} width={VB * 0.032} height={VB * 0.015} rx={VB * 0.004} fill={index % 2 === 0 ? "#d7473f" : "#f4f4f2"} stroke="#0f2436" strokeWidth={VB * 0.0009} />
+                <rect x={-VB * 0.009} y={-VB * 0.005} width={VB * 0.018} height={VB * 0.006} rx={VB * 0.0015} fill="#0f2436" opacity={0.55} />
+                <circle cx={-VB * 0.01} cy={-VB * 0.0075} r={VB * 0.0022} fill="#0f2436" />
+                <circle cx={VB * 0.01} cy={-VB * 0.0075} r={VB * 0.0022} fill="#0f2436" />
+                <circle cx={-VB * 0.01} cy={VB * 0.0075} r={VB * 0.0022} fill="#0f2436" />
+                <circle cx={VB * 0.01} cy={VB * 0.0075} r={VB * 0.0022} fill="#0f2436" />
+              </g>
               <animateMotion
-                dur={`${driveDuration}s`}
+                dur={`${driveDuration * 1.8}s`}
                 repeatCount="indefinite"
                 rotate="auto"
                 keyPoints="0;1;0"
@@ -328,23 +342,20 @@ const MapShapes = memo(function MapShapes({
                 <mpath href={`#${motionPathId}`} />
               </animateMotion>
             </g>
-            {/* A backing rect behind the label so a road's width stays
-                legible over whatever the plan image looks like underneath. */}
-            <rect
-              x={mid.x - road.width_label.length * (VB * 0.0055)}
-              y={mid.y - VB * 0.013}
-              width={road.width_label.length * (VB * 0.011)}
-              height={VB * 0.022}
-              rx={VB * 0.004}
-              fill="#0f2436"
-              opacity={0.85}
-            />
+            {/* Sitting directly on the road's own light band, matching
+                the reference's plain look — a thin white halo (paintOrder
+                stroke) keeps it legible without needing a solid dark
+                pill behind it, now that the road itself is light rather
+                than dark asphalt. */}
             <text
               x={mid.x}
               y={mid.y + VB * 0.003}
               textAnchor="middle"
-              fontSize={VB * 0.014}
-              fill="#f5c94b"
+              fontSize={VB * 0.013}
+              fill="#334155"
+              stroke="#eef1f4"
+              strokeWidth={VB * 0.0035}
+              paintOrder="stroke"
               className="select-none font-medium"
             >
               {road.width_label}

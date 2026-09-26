@@ -15,22 +15,48 @@
 // reviewer is warned on screen; "Save to project" is the only durable step.
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { PolygonPoint } from "@/lib/types";
-import { uploadPlanImage } from "@/lib/actions/projects";
+import { MAP_VIEWBOX_SIZE, type MapCalibration, type PolygonPoint } from "@/lib/types";
+import { uploadPlanImage, setProjectCalibration } from "@/lib/actions/projects";
 import { saveDigitizedShapes } from "@/lib/actions/digitize";
 import { useDetectionPipeline, loadFileToCanvas } from "@/lib/digitize/useDetectionPipeline";
 import type { DetectedShape } from "@/lib/digitize/types";
+import { feetPerUnit, quadEdgeLengthsFt, formatDimensions, polygonAreaSqft, northAngleFromPoints } from "@/lib/calibration";
 import { UploadDropzone } from "./UploadDropzone";
 import { CornerWarpTool } from "./CornerWarpTool";
 import { ProcessingProgress } from "./ProcessingProgress";
 import { ReviewCanvas, type ReviewCanvasHandle } from "./ReviewCanvas";
 import { Toolbar, type ToolMode } from "./Toolbar";
 import { ShapeDetailsPanel } from "./ShapeDetailsPanel";
+import { ColorLegendAssist } from "./ColorLegendAssist";
 import { CountsHeader } from "./CountsHeader";
 import { Legend } from "./Legend";
 import { SearchPlotNumber } from "./SearchPlotNumber";
 import { ExportMenu } from "./ExportMenu";
 import { useUndoRedo } from "./useUndoRedo";
+
+const VB = MAP_VIEWBOX_SIZE;
+
+// Computed once per points-change, inline in whichever handler changed
+// them (never in a useEffect — recomputing here means a plain event-driven
+// state update, not an effect reacting to its own output, so there's no
+// risk of the kind of render loop/lint issue an effect-based version would
+// need to guard against). null calibration or a non-quad shape both
+// resolve to needsDimensionReview: true — see calibration.ts's own doc
+// comments for why each function returns null in those cases.
+function computeDimensionFields(
+  points: PolygonPoint[],
+  calibration: MapCalibration | null,
+  vbWidth: number,
+  vbHeight: number,
+): { dimensions?: string; areaSqft?: number; needsDimensionReview: boolean } {
+  if (!calibration) return { needsDimensionReview: true };
+  const perUnit = feetPerUnit(calibration.pointA, calibration.pointB, calibration.realDistanceFt, vbWidth, vbHeight);
+  if (!perUnit) return { needsDimensionReview: true };
+  const areaSqft = polygonAreaSqft(points, perUnit, vbWidth, vbHeight);
+  const edges = quadEdgeLengthsFt(points, perUnit, vbWidth, vbHeight);
+  if (!edges) return { areaSqft, needsDimensionReview: true };
+  return { dimensions: formatDimensions(edges.widthFt, edges.heightFt), areaSqft, needsDimensionReview: false };
+}
 
 type Stage = "upload" | "warp" | "processing" | "review" | "saving" | "done";
 
@@ -50,10 +76,12 @@ export function DigitizeWorkspace({
   projectId,
   projectName,
   hasExistingPlanImage,
+  initialCalibration,
 }: {
   projectId: string;
   projectName: string;
   hasExistingPlanImage: boolean;
+  initialCalibration: MapCalibration | null;
 }) {
   const router = useRouter();
   const { stage: pipelineStage, error: pipelineError, run, reset } = useDetectionPipeline();
@@ -64,6 +92,21 @@ export function DigitizeWorkspace({
   const [warnings, setWarnings] = useState<string[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedCount, setSavedCount] = useState(0);
+  const [calibration, setCalibration] = useState<MapCalibration | null>(initialCalibration);
+  const [calibrationError, setCalibrationError] = useState<string | null>(null);
+  // The SAME aspect-ratio correction the two public viewers use (vbHeight
+  // derived from the real image's aspect ratio, not a fixed square) — this
+  // is ONLY for the calibration/dimension MATH below, not for how
+  // ReviewCanvas itself visually renders (which deliberately stays on the
+  // digitize editor's original, unchanged square-viewBox convention; see
+  // the note in ReviewCanvas.tsx's own file comment). Feeding the square-
+  // viewBox's raw fractional points into calibration.ts's functions
+  // without this correction would silently compute wrong real-world
+  // distances/angles whenever the source image isn't itself perfectly
+  // square, since x and y fractions wouldn't represent the same real
+  // screen distance on both axes.
+  const aspectRatio = sourceCanvas ? sourceCanvas.width / sourceCanvas.height : 1;
+  const vbHeight = VB / aspectRatio;
 
   const shapesState = useUndoRedo<DetectedShape[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -97,14 +140,33 @@ export function DigitizeWorkspace({
       // ProcessingProgress's caller (below) shows that state with a retry.
       return;
     }
-    shapesState.set(outcome.result.shapes);
+    // Computed from outcome.sourceCanvas directly, not the sourceCanvas/
+    // vbHeight state/closure variables above — those still reflect the
+    // PREVIOUS render (setSourceCanvas below hasn't taken effect yet), and
+    // this project might already have a calibration from an earlier
+    // digitize pass (re-running detection doesn't reset it), so freshly
+    // detected plots should get real computed dimensions immediately
+    // rather than all starting "needs review" until individually touched.
+    const freshAspectRatio = outcome.sourceCanvas.width / outcome.sourceCanvas.height;
+    const freshVbHeight = VB / freshAspectRatio;
+    shapesState.set(
+      outcome.result.shapes.map((s) =>
+        s.kind === "plot" ? { ...s, ...computeDimensionFields(s.points, calibration, VB, freshVbHeight) } : s,
+      ),
+    );
     setSourceCanvas(outcome.sourceCanvas);
     setWarnings(outcome.result.warnings);
     setStage("review");
   }
 
   function handleUpdatePoints(id: string, points: PolygonPoint[]) {
-    shapesState.set(shapesState.value.map((s) => (s.localId === id ? { ...s, points } : s)));
+    shapesState.set(
+      shapesState.value.map((s) => {
+        if (s.localId !== id) return s;
+        if (s.kind !== "plot") return { ...s, points };
+        return { ...s, points, ...computeDimensionFields(points, calibration, VB, vbHeight) };
+      }),
+    );
   }
   function handleChangeShape(next: DetectedShape) {
     shapesState.set(shapesState.value.map((s) => (s.localId === next.localId ? next : s)));
@@ -126,8 +188,29 @@ export function DigitizeWorkspace({
     const original = shapesState.value.find((s) => s.localId === id);
     if (!original) return;
     const [pointsA, pointsB] = parts;
-    const childA: DetectedShape = { ...original, localId: crypto.randomUUID(), points: pointsA, label: "", source: "manual", confidence: undefined };
-    const childB: DetectedShape = { ...original, localId: crypto.randomUUID(), points: pointsB, label: "", source: "manual", confidence: undefined };
+    // Computed fresh for each half from ITS OWN new geometry — the split
+    // changed the shape, so anything the parent had computed is stale for
+    // both halves regardless of what it was before (a quad the reviewer
+    // just cut in half often becomes two clean quads too, so this is
+    // frequently NOT stuck needing review — no reason to force that).
+    const childA: DetectedShape = {
+      ...original,
+      localId: crypto.randomUUID(),
+      points: pointsA,
+      label: "",
+      source: "manual",
+      confidence: undefined,
+      ...computeDimensionFields(pointsA, calibration, VB, vbHeight),
+    };
+    const childB: DetectedShape = {
+      ...original,
+      localId: crypto.randomUUID(),
+      points: pointsB,
+      label: "",
+      source: "manual",
+      confidence: undefined,
+      ...computeDimensionFields(pointsB, calibration, VB, vbHeight),
+    };
     shapesState.set(shapesState.value.flatMap((s) => (s.localId === id ? [childA, childB] : [s])));
     setSelectedId(null);
   }
@@ -140,6 +223,7 @@ export function DigitizeWorkspace({
       status: kind === "plot" ? "available" : undefined,
       featureKind: kind === "feature" ? "other" : undefined,
       source: "manual",
+      ...(kind === "plot" ? computeDimensionFields(points, calibration, VB, vbHeight) : { needsDimensionReview: false }),
     };
     shapesState.set([...shapesState.value, shape]);
     setSelectedId(shape.localId);
@@ -149,6 +233,47 @@ export function DigitizeWorkspace({
     setSelectedId(shape.localId);
     setMode("select");
     canvasRef.current?.focusOnPoints(shape.points);
+  }
+  function handleApplyCategory(localIds: string[], category: string) {
+    const idSet = new Set(localIds);
+    shapesState.set(shapesState.value.map((s) => (idSet.has(s.localId) ? { ...s, category } : s)));
+  }
+
+  // The two calibration gestures (see ReviewCanvas's set-scale/set-north
+  // modes) both funnel through here. Setting/changing the SCALE
+  // recomputes every plot's dimensions (the scale factor itself just
+  // changed, so anything computed under the old one is now wrong) and
+  // persists the new calibration to the project row immediately — not
+  // deferred to "Save to project" — since it's project-level configuration,
+  // not a shape, and a reviewer re-running detection or navigating away
+  // shouldn't lose it.
+  async function handleSetScale(pointA: PolygonPoint, pointB: PolygonPoint, realDistanceFt: number) {
+    setCalibrationError(null);
+    const perUnit = feetPerUnit(pointA, pointB, realDistanceFt, VB, vbHeight);
+    if (!perUnit) {
+      setCalibrationError("Those two points are too close together to calibrate against — pick two points further apart.");
+      return;
+    }
+    const next: MapCalibration = { pointA, pointB, realDistanceFt, northAngleDegrees: calibration?.northAngleDegrees ?? null };
+    setCalibration(next);
+    shapesState.set(
+      shapesState.value.map((s) => (s.kind === "plot" ? { ...s, ...computeDimensionFields(s.points, next, VB, vbHeight) } : s)),
+    );
+    const result = await setProjectCalibration(projectId, next);
+    if (result.error) setCalibrationError(`Scale reference set locally, but saving it to the project failed: ${result.error}`);
+  }
+
+  async function handleSetNorth(pointA: PolygonPoint, pointB: PolygonPoint) {
+    setCalibrationError(null);
+    if (!calibration) {
+      setCalibrationError("Set a scale reference first (Toolbar → Set scale) — north angle is stored alongside it.");
+      return;
+    }
+    const northAngleDegrees = northAngleFromPoints(pointA, pointB, VB, vbHeight);
+    const next: MapCalibration = { ...calibration, northAngleDegrees };
+    setCalibration(next);
+    const result = await setProjectCalibration(projectId, next);
+    if (result.error) setCalibrationError(`North direction set locally, but saving it to the project failed: ${result.error}`);
   }
 
   async function handleSave() {
@@ -174,6 +299,10 @@ export function DigitizeWorkspace({
           label: s.label || (s.kind === "road" ? "Road" : s.kind === "feature" ? "Area" : "Unlabeled"),
           status: s.status,
           featureKind: s.featureKind,
+          dimensions: s.dimensions,
+          areaSqft: s.areaSqft,
+          category: s.category,
+          needsDimensionReview: s.needsDimensionReview,
         })),
       });
       if (result.error) {
@@ -240,6 +369,8 @@ export function DigitizeWorkspace({
   // stage === "review" (or "saving", which reuses the same screen with its button disabled)
   if (!sourceCanvas) return null;
 
+  const needsReviewCount = shapesState.value.filter((s) => s.kind === "plot" && s.needsDimensionReview).length;
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -255,6 +386,24 @@ export function DigitizeWorkspace({
         </div>
       )}
       {saveError && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{saveError}</p>}
+      {calibrationError && (
+        <p className="rounded-md bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{calibrationError}</p>
+      )}
+      {!calibration ? (
+        <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          No scale reference yet — use Toolbar → Set scale (click two points a known distance apart, e.g. a labeled road&apos;s
+          width) to get exact plot dimensions. Required before this project can be published.
+        </p>
+      ) : (
+        needsReviewCount > 0 && (
+          <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+            {needsReviewCount} plot{needsReviewCount === 1 ? "" : "s"} still need{needsReviewCount === 1 ? "s" : ""} dimensions
+            confirmed (not a clean 4-point shape) — select each one to enter it by hand. Required before publishing.
+          </p>
+        )
+      )}
+
+      <ColorLegendAssist shapes={shapesState.value} sourceCanvas={sourceCanvas} onApplyCategory={handleApplyCategory} />
 
       <Toolbar
         mode={mode}
@@ -302,6 +451,9 @@ export function DigitizeWorkspace({
           onModeChange={setMode}
           showOriginal={showOriginal}
           originalOpacity={originalOpacity}
+          calibration={calibration}
+          onSetScale={handleSetScale}
+          onSetNorth={handleSetNorth}
         />
         <div className="lg:h-full">
           {selectedShape ? (

@@ -629,6 +629,9 @@ export function detectRoadSegments(
       label: "",
       confidence: c.confidence,
       source: "detected" as const,
+      // Roads aren't subject to the dimension-review gate at all (only
+      // plots are) — false here is simply "not applicable", not a claim.
+      needsDimensionReview: false,
     };
   });
 }

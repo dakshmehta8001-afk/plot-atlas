@@ -9,7 +9,7 @@
 // correcting a boundary, and draw-a-new-shape support for draw-plot/draw-
 // road/draw-area tool modes.
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { MAP_VIEWBOX_SIZE, type PolygonPoint } from "@/lib/types";
+import { MAP_VIEWBOX_SIZE, type MapCalibration, type PolygonPoint } from "@/lib/types";
 import { toSvgPoints, boundingBoxCenter, pointInPolygon, splitPolygonWithLine } from "@/lib/svgPolygon";
 import type { DetectedShape } from "@/lib/digitize/types";
 import { ShapeLayer } from "./ShapeLayer";
@@ -44,8 +44,33 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
   onModeChange: (mode: ToolMode) => void;
   showOriginal: boolean;
   originalOpacity: number;
+  /** The project's current scale reference, if any — drawn as a persistent
+   * reference line so the reviewer can see calibration is already done and
+   * where, same as any other confirmed shape stays visible on the canvas. */
+  calibration?: MapCalibration | null;
+  /** Called once both calibration points are placed AND a real-world
+   * distance has been entered (the distance prompt lives inside this
+   * component, not the parent — see the set-scale banner below). */
+  onSetScale?: (pointA: PolygonPoint, pointB: PolygonPoint, realDistanceFt: number) => void;
+  /** Called immediately on the second click of the set-north gesture (tail then tip of the plan's own printed north arrow) — no extra prompt needed, just the two points. */
+  onSetNorth?: (pointA: PolygonPoint, pointB: PolygonPoint) => void;
 }>(function ReviewCanvas(
-  { sourceCanvas, shapes, selectedId, onSelect, mode, onUpdateShape, onAddShape, onSplitShape, onModeChange, showOriginal, originalOpacity },
+  {
+    sourceCanvas,
+    shapes,
+    selectedId,
+    onSelect,
+    mode,
+    onUpdateShape,
+    onAddShape,
+    onSplitShape,
+    onModeChange,
+    showOriginal,
+    originalOpacity,
+    calibration,
+    onSetScale,
+    onSetNorth,
+  },
   ref,
 ) {
   const aspectRatio = sourceCanvas.width / sourceCanvas.height;
@@ -75,12 +100,23 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
   const [cutPoints, setCutPoints] = useState<PolygonPoint[]>([]);
   const [splitHoverId, setSplitHoverId] = useState<string | null>(null);
   const [splitError, setSplitError] = useState<string | null>(null);
+  // Two more independent 2-click line gestures, deliberately kept as their
+  // own separate state rather than generalizing cutPoints/splitError to
+  // cover all three — the split tool already has real documented history
+  // (a getScreenCTM coordinate bug, an accidental-discard bug) and this
+  // avoids touching its working, already-debugged state entirely.
+  const [scalePoints, setScalePoints] = useState<PolygonPoint[]>([]);
+  const [scaleDistanceDraft, setScaleDistanceDraft] = useState("");
+  const [northPoints, setNorthPoints] = useState<PolygonPoint[]>([]);
   // A draw tool's in-progress points, parked here when the reviewer
   // switches to a DIFFERENT tool before finishing — see the mode-change
   // effect below for why this exists and isn't just cleared outright.
   const [pendingDraft, setPendingDraft] = useState<{ mode: DrawMode; points: PolygonPoint[] } | null>(null);
   const isDrawMode = mode === "draw-plot" || mode === "draw-road" || mode === "draw-area";
   const isSplitMode = mode === "split-plot";
+  const isScaleMode = mode === "set-scale";
+  const isNorthMode = mode === "set-north";
+  const isLineGestureMode = isSplitMode || isScaleMode || isNorthMode;
   const prevModeRef = useRef(mode);
 
   // Switching tools used to unconditionally clear `drawPoints` — the fix
@@ -120,11 +156,14 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
     setCutPoints([]);
     setSplitHoverId(null);
     setSplitError(null);
+    setScalePoints([]);
+    setScaleDistanceDraft("");
+    setNorthPoints([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately keyed only on `mode`; drawPoints/pendingDraft are read at their current value on each mode change, not tracked as triggers themselves
   }, [mode]);
 
   useEffect(() => {
-    if (!isDrawMode && !isSplitMode) return;
+    if (!isDrawMode && !isLineGestureMode) return;
     function handleKeyDown(e: KeyboardEvent) {
       // Ignore when the reviewer is typing into an input/textarea elsewhere
       // on the page (e.g. the search box, a shape's label field) — "z" in
@@ -136,19 +175,25 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
         setDrawPoints([]);
         setCutPoints([]);
         setSplitError(null);
+        setScalePoints([]);
+        setScaleDistanceDraft("");
+        setNorthPoints([]);
       } else if (e.key === "Backspace" || e.key === "z") {
         setDrawPoints((prev) => prev.slice(0, -1));
-        // A completed split already goes through the same shapesState
-        // history the Toolbar's Undo button uses — this only needs to
-        // cancel a PENDING (not-yet-completed) cut's first click, same as
-        // Escape does, since there's no "half-committed" split state
-        // beyond that single placed point.
+        // A completed split/scale/north already goes through the same
+        // shapesState history the Toolbar's Undo button uses (or, for
+        // scale/north, the project-level calibration action) — this only
+        // needs to cancel a PENDING (not-yet-completed) gesture's first
+        // click, same as Escape does, since there's no "half-committed"
+        // state beyond that single placed point for any of the three.
         setCutPoints((prev) => prev.slice(0, -1));
+        setScalePoints((prev) => prev.slice(0, -1));
+        setNorthPoints((prev) => prev.slice(0, -1));
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isDrawMode, isSplitMode]);
+  }, [isDrawMode, isLineGestureMode]);
 
   useImperativeHandle(ref, () => ({
     focusOnPoints(points: PolygonPoint[]) {
@@ -185,7 +230,7 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
   const panState = useRef<{ startX: number; startY: number; origTx: number; origTy: number } | null>(null);
 
   function handleBackgroundPointerDown(e: React.PointerEvent<SVGSVGElement>) {
-    if (isDrawMode || isSplitMode) return;
+    if (isDrawMode || isLineGestureMode) return;
     if (mode === "select") onSelect(null);
     panState.current = { startX: e.clientX, startY: e.clientY, origTx: view.tx, origTy: view.ty };
     (e.target as Element).setPointerCapture(e.pointerId);
@@ -249,6 +294,36 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
       }
       setCutPoints([]);
       setSplitHoverId(null);
+      return;
+    }
+
+    if (isScaleMode) {
+      const local = clientPointToLocalFraction(contentGroupRef.current, e.clientX, e.clientY, VB);
+      if (!local) return;
+      if (scalePoints.length === 0) {
+        setScalePoints([local]);
+        return;
+      }
+      // Second click just completes the LINE — the real-world distance is
+      // entered afterward via the inline input in the banner below, and
+      // onSetScale (which needs that number too) only fires once that's
+      // confirmed, not on this click.
+      setScalePoints([scalePoints[0], local]);
+      return;
+    }
+
+    if (isNorthMode) {
+      const local = clientPointToLocalFraction(contentGroupRef.current, e.clientX, e.clientY, VB);
+      if (!local) return;
+      if (northPoints.length === 0) {
+        setNorthPoints([local]);
+        return;
+      }
+      // North needs no extra numeric input (only the two points'
+      // direction matters), so the second click can call straight up to
+      // the parent and reset immediately, unlike scale above.
+      onSetNorth?.(northPoints[0], local);
+      setNorthPoints([]);
     }
   }
 
@@ -271,6 +346,16 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
       if (cutPoints.length > 0) setCursorPos(local);
       const hovered = shapes.find((s) => s.kind !== "road" && s.points.length >= 3 && pointInPolygon(local, s.points));
       setSplitHoverId(hovered ? hovered.localId : null);
+      return;
+    }
+    if (isScaleMode && scalePoints.length === 1) {
+      const local = clientPointToLocalFraction(contentGroupRef.current, e.clientX, e.clientY, VB);
+      if (local) setCursorPos(local);
+      return;
+    }
+    if (isNorthMode && northPoints.length === 1) {
+      const local = clientPointToLocalFraction(contentGroupRef.current, e.clientX, e.clientY, VB);
+      if (local) setCursorPos(local);
     }
   }
 
@@ -313,7 +398,7 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
         viewBox={`0 0 ${VB} ${VB}`}
         preserveAspectRatio="none"
         className="h-full w-full"
-        style={{ aspectRatio, cursor: isDrawMode || isSplitMode ? "crosshair" : "grab", touchAction: "none" }}
+        style={{ aspectRatio, cursor: isDrawMode || isLineGestureMode ? "crosshair" : "grab", touchAction: "none" }}
         onWheel={handleWheel}
         onPointerDown={handleBackgroundPointerDown}
         onPointerMove={handleBackgroundPointerMove}
@@ -376,6 +461,56 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
                   y2={cursorPos.y * VB}
                   stroke="#3b82f6"
                   strokeWidth={VB * 0.0018}
+                  strokeDasharray={`${VB * 0.008} ${VB * 0.006}`}
+                />
+              )}
+            </g>
+          )}
+
+          {/* The project's already-confirmed scale reference, drawn as a
+              plain persistent line (not tied to any mode) so it's always
+              visible as a reminder of what it was calibrated against —
+              same idea as a confirmed shape staying visible after it's
+              deselected. */}
+          {calibration && (
+            <g className="pointer-events-none">
+              <line
+                x1={calibration.pointA.x * VB}
+                y1={calibration.pointA.y * VB}
+                x2={calibration.pointB.x * VB}
+                y2={calibration.pointB.y * VB}
+                stroke="#22c55e"
+                strokeWidth={VB * 0.002}
+              />
+              <circle cx={calibration.pointA.x * VB} cy={calibration.pointA.y * VB} r={VB * 0.005} fill="#22c55e" />
+              <circle cx={calibration.pointB.x * VB} cy={calibration.pointB.y * VB} r={VB * 0.005} fill="#22c55e" />
+              <text
+                x={((calibration.pointA.x + calibration.pointB.x) / 2) * VB}
+                y={((calibration.pointA.y + calibration.pointB.y) / 2) * VB - VB * 0.012}
+                textAnchor="middle"
+                fontSize={VB * 0.013}
+                fill="#22c55e"
+                className="select-none font-medium"
+                style={{ paintOrder: "stroke", stroke: "#0b1f2e", strokeWidth: VB * 0.003 }}
+              >
+                Scale: {calibration.realDistanceFt}&apos;
+              </text>
+            </g>
+          )}
+
+          {(isScaleMode || isNorthMode) && (
+            <g className="pointer-events-none">
+              {(isScaleMode ? scalePoints : northPoints).map((p, i) => (
+                <circle key={i} cx={p.x * VB} cy={p.y * VB} r={VB * 0.007} fill={isScaleMode ? "#22c55e" : "#a855f7"} />
+              ))}
+              {(isScaleMode ? scalePoints : northPoints).length === 1 && cursorPos && (
+                <line
+                  x1={(isScaleMode ? scalePoints : northPoints)[0].x * VB}
+                  y1={(isScaleMode ? scalePoints : northPoints)[0].y * VB}
+                  x2={cursorPos.x * VB}
+                  y2={cursorPos.y * VB}
+                  stroke={isScaleMode ? "#22c55e" : "#a855f7"}
+                  strokeWidth={VB * 0.0025}
                   strokeDasharray={`${VB * 0.008} ${VB * 0.006}`}
                 />
               )}
@@ -461,6 +596,80 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
       )}
       {isSplitMode && splitError && (
         <p className="absolute left-3 top-12 max-w-sm rounded-md bg-red-500/90 px-3 py-1.5 text-xs text-white">{splitError}</p>
+      )}
+
+      {isScaleMode && (
+        <div className="absolute left-3 top-3 flex items-center gap-2 rounded-md bg-black/60 px-3 py-1.5 text-xs text-white">
+          {scalePoints.length < 2 ? (
+            <span>
+              {scalePoints.length === 0
+                ? "Click one end of something with a known real-world length (e.g. a labeled road's width), then the other end."
+                : "Click the second point."}
+            </span>
+          ) : (
+            <>
+              <span>Real-world distance between those two points:</span>
+              <input
+                type="number"
+                min={0}
+                step="any"
+                autoFocus
+                value={scaleDistanceDraft}
+                onChange={(e) => setScaleDistanceDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  const feet = Number(scaleDistanceDraft);
+                  if (!Number.isFinite(feet) || feet <= 0) return;
+                  onSetScale?.(scalePoints[0], scalePoints[1], feet);
+                  setScalePoints([]);
+                  setScaleDistanceDraft("");
+                }}
+                placeholder="feet"
+                className="w-16 rounded bg-white/90 px-1.5 py-0.5 text-[#0f2436]"
+              />
+              <span>ft</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const feet = Number(scaleDistanceDraft);
+                  if (!Number.isFinite(feet) || feet <= 0) return;
+                  onSetScale?.(scalePoints[0], scalePoints[1], feet);
+                  setScalePoints([]);
+                  setScaleDistanceDraft("");
+                }}
+                disabled={!Number.isFinite(Number(scaleDistanceDraft)) || Number(scaleDistanceDraft) <= 0}
+                className="rounded bg-green-500/80 px-2 py-0.5 font-medium hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Confirm
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setScalePoints([]);
+              setScaleDistanceDraft("");
+            }}
+            className="rounded bg-red-500/80 px-2 py-0.5 font-medium hover:bg-red-500"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {isNorthMode && (
+        <div className="absolute left-3 top-3 flex items-center gap-2 rounded-md bg-black/60 px-3 py-1.5 text-xs text-white">
+          <span>
+            {northPoints.length === 0
+              ? "Click the tail of the plan's own printed north arrow, then its tip."
+              : "Click the arrow's tip."}
+          </span>
+          {northPoints.length > 0 && (
+            <button type="button" onClick={() => setNorthPoints([])} className="rounded bg-red-500/80 px-2 py-0.5 font-medium hover:bg-red-500">
+              Cancel
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

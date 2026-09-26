@@ -28,6 +28,23 @@ export interface MapBounds {
 
 export type ProjectStatus = "draft" | "published";
 
+// The real-world scale reference a sub-admin sets once per project (during
+// digitize review) by clicking two points a known distance apart — pointA/
+// pointB are in the SAME fractional 0..1 PolygonPoint convention every
+// traced shape uses, so no separate coordinate system is needed. Also
+// carries the plan's own north-arrow angle if the sub-admin captured it
+// with the same click-two-points gesture (see Compass.tsx's angleDegrees
+// prop) — bundled into one column since both are set in the same UI step,
+// not because they're conceptually the same thing. Null until a sub-admin
+// runs the calibration step; see setProjectCalibration() and the
+// draft->published gate in setProjectStatus() for what requires this.
+export interface MapCalibration {
+  pointA: PolygonPoint;
+  pointB: PolygonPoint;
+  realDistanceFt: number;
+  northAngleDegrees: number | null;
+}
+
 export interface Project {
   id: string;
   sub_admin_id: string;
@@ -38,6 +55,7 @@ export interface Project {
   developer_name: string | null;
   plan_image_url: string | null;
   map_bounds: MapBounds | null;
+  map_calibration: MapCalibration | null;
   status: ProjectStatus;
   // The developer's own published business contact info (opt-in, shown as
   // quick-contact icons on a unit's info card) — not the same thing as a
@@ -122,6 +140,12 @@ export interface Unit {
   carpet_area_sqft: number | null;
   rate_per_sqft: number | null;
   total_price: number | null;
+  // True when this plot's dimensions couldn't be geometrically computed
+  // (no project-level calibration yet, or a shape that isn't a clean
+  // quadrilateral) — the explicit "ask, don't guess" flag the draft ->
+  // published gate in setProjectStatus() checks. Defaults to false in the
+  // DB, so it never retroactively affects any plot that predates it.
+  needs_dimension_review: boolean;
   polygon_points: PolygonPoint[];
   created_at: string;
 }

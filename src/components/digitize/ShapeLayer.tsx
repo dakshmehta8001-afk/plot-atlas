@@ -24,9 +24,13 @@ function styleFor(shape: DetectedShape): { fill: string; stroke: string; dashed:
   const s = UNIT_STATUS_STYLES[shape.status ?? "available"];
   // Low-confidence, still-automatic (never manually touched) shapes get a
   // dashed outline — a visual "please double-check this one" hint, never a
-  // claim about how accurate the boundary actually is.
+  // claim about how accurate the boundary actually is. A plot whose
+  // dimensions still need review gets the exact same treatment — both are
+  // the same "please double-check this one" signal, just from different
+  // causes (rough boundary detection vs. missing exact-size confirmation).
   const lowConfidence = shape.source === "detected" && (shape.confidence ?? 1) < 0.55;
-  return { fill: s.fill, stroke: s.border, dashed: lowConfidence };
+  const needsDimensions = shape.kind === "plot" && shape.needsDimensionReview;
+  return { fill: s.fill, stroke: s.border, dashed: lowConfidence || needsDimensions };
 }
 
 export function ShapeLayer({
@@ -77,12 +81,18 @@ export function ShapeLayer({
               strokeDasharray={style.dashed ? `${VB * 0.008} ${VB * 0.006}` : undefined}
               className="cursor-pointer"
               onClick={(e) => {
-                // In Split-plot mode, a click on a shape is placing a cut
-                // point, not selecting it — let it bubble up to the
-                // canvas's own click handler (ReviewCanvas) instead of
-                // being swallowed here. Every other mode keeps the normal
+                // In Split-plot/Set-scale/Set-north mode, a click on a
+                // shape is placing a cut/calibration point, not selecting
+                // it — let it bubble up to the canvas's own click handler
+                // (ReviewCanvas) instead of being swallowed here. A real
+                // bug found via live testing: calibration points very
+                // often land ON a plot (plots cover most of the visible
+                // area), and before this only "split-plot" was exempted
+                // here — clicking to calibrate silently selected whatever
+                // plot was underneath instead of ever registering as a
+                // calibration point. Every other mode keeps the normal
                 // select-on-click behavior.
-                if (mode === "split-plot") return;
+                if (mode === "split-plot" || mode === "set-scale" || mode === "set-north") return;
                 e.stopPropagation();
                 onSelect(shape.localId);
               }}

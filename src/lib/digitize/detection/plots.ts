@@ -174,6 +174,12 @@ export function detectPlotContours(
       status: "available",
       confidence,
       source: "detected",
+      // Nothing is computed yet at detection time — there's no project
+      // calibration available this early in the pipeline (that's set by
+      // the reviewer afterward). DigitizeWorkspace recomputes this
+      // correctly (and dimensions/areaSqft alongside it) the moment
+      // calibration exists, same as it does for every other plot.
+      needsDimensionReview: true,
     });
   }
 

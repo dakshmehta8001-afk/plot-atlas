@@ -18,6 +18,11 @@ export interface DigitizedShapeInput {
   label: string;
   status?: UnitStatus;
   featureKind?: SiteFeatureKind;
+  /** Plots only — see DetectedShape in src/lib/digitize/types.ts for what computes these. */
+  dimensions?: string;
+  areaSqft?: number;
+  category?: string;
+  needsDimensionReview?: boolean;
 }
 
 export interface DigitizeSaveInput {
@@ -58,6 +63,10 @@ export async function saveDigitizedShapes(
       unit_number: s.label,
       status: s.status ?? ("available" as UnitStatus),
       polygon_points: s.points,
+      dimensions: s.dimensions ?? null,
+      area_sqft: s.areaSqft ?? null,
+      category: s.category ?? null,
+      needs_dimension_review: s.needsDimensionReview ?? false,
     }));
 
   const roadRows = input.shapes

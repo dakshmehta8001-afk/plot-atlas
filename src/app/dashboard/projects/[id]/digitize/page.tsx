@@ -8,12 +8,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { DigitizeWorkspaceLoader } from "@/components/digitize/DigitizeWorkspaceLoader";
+import type { MapCalibration } from "@/lib/types";
 
 export default async function DigitizePage(props: PageProps<"/dashboard/projects/[id]/digitize">) {
   const { id } = await props.params;
   const supabase = await createClient();
 
-  const { data: project } = await supabase.from("projects").select("id, name, plan_image_url").eq("id", id).single();
+  const { data: project } = await supabase.from("projects").select("id, name, plan_image_url, map_calibration").eq("id", id).single();
   if (!project) notFound();
 
   return (
@@ -34,7 +35,12 @@ export default async function DigitizePage(props: PageProps<"/dashboard/projects
           ← Back to project
         </Link>
       </div>
-      <DigitizeWorkspaceLoader projectId={id} projectName={project.name} hasExistingPlanImage={!!project.plan_image_url} />
+      <DigitizeWorkspaceLoader
+        projectId={id}
+        projectName={project.name}
+        hasExistingPlanImage={!!project.plan_image_url}
+        initialCalibration={project.map_calibration as MapCalibration | null}
+      />
     </div>
   );
 }
