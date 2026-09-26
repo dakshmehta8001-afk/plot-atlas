@@ -71,6 +71,21 @@ body {
   }
 }
 
+/* Used by UnitInfoCard's desktop docked-panel variant so it slides in from
+   the map edge rather than snapping into place when a plot/flat is
+   selected — the mobile bottom-sheet variant intentionally has no
+   animation here (it's a smaller, already-immediate interaction). */
+@keyframes slideInRight {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
 /* Global reduced-motion support: neuters every CSS transition/animation
    duration (including ones set inline via style={{transition: "..."}}, e.g.
    SitePlanViewer's zoom-to-shape animation — an author-stylesheet

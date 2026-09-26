@@ -84,12 +84,15 @@ export function UnitInfoCard({
     unit.rate_per_sqft ?? (unit.total_price && unit.area_sqft ? Math.round(unit.total_price / unit.area_sqft) : null);
 
   return (
-    // Mobile: a bottom sheet spanning the map's width, capped height with
-    // its own scroll (so a long enquiry form never gets clipped by the map
-    // container). Desktop: the original floating card, anchored bottom-left
-    // instead of a fixed top offset — that avoided guessing how tall the
-    // (now-compact, variable-height) header chrome is on any given project.
-    <div className="absolute inset-x-0 bottom-0 z-[900] max-h-[75%] overflow-y-auto rounded-t-2xl border-t border-map-border bg-[#0f2436]/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] text-white shadow-2xl backdrop-blur sm:inset-x-auto sm:bottom-4 sm:left-4 sm:top-auto sm:max-h-[calc(100%-2rem)] sm:w-72 sm:rounded-xl sm:border sm:pb-4">
+    // Mobile: a bottom sheet spanning the map's width, capped height with its
+    // own scroll (so a long enquiry form never gets clipped by the map
+    // container) — unchanged. Desktop: a genuine docked side rail rather
+    // than a floating card — `sm:static` takes it out of absolute
+    // positioning entirely, so it becomes a real flex sibling of the map
+    // canvas in ProjectMapClient's map row (that's what makes the map
+    // actually reflow narrower while this is open, not just visually
+    // overlap it).
+    <div className="absolute inset-x-0 bottom-0 z-[900] max-h-[75%] overflow-y-auto rounded-t-2xl border-t border-map-border bg-[#0f2436]/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] text-white shadow-2xl backdrop-blur sm:static sm:z-auto sm:h-full sm:max-h-none sm:w-80 sm:flex-none sm:rounded-none sm:border-0 sm:border-l sm:bg-[#0f2436] sm:p-5 sm:pb-5 sm:shadow-none sm:[animation:slideInRight_320ms_ease]">
       <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-white/20 sm:hidden" />
       <div className="mb-2 flex items-start justify-between">
         <div className="flex items-center gap-2">

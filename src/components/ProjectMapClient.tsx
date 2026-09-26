@@ -204,45 +204,69 @@ export function ProjectMapClient({
         </div>
       )}
 
-      <div className="relative min-h-0 flex-1">
-        {showMapChrome && <Compass />}
+      {/* A flex row rather than everything absolutely stacked in one box:
+          UnitInfoCard becomes a real flex sibling of the map area on
+          desktop (via its own sm:static override), so selecting a plot
+          actually narrows the map canvas to make room for a docked side
+          rail — not just a floating card visually on top of it. On mobile
+          UnitInfoCard stays position:absolute (a bottom sheet, unaffected
+          by this row being flex), so nothing here changes its appearance
+          below the sm breakpoint. */}
+      <div className="relative flex min-h-0 flex-1">
+        <div className="relative min-w-0 flex-1">
+          {showMapChrome && <Compass />}
 
-        {autoSentNotice && (
-          <p className="absolute bottom-16 left-1/2 z-[700] -translate-x-1/2 rounded-md bg-green-500/15 px-3 py-1.5 text-xs text-green-300">
-            {autoSentNotice}
-          </p>
-        )}
-
-        <div className="absolute inset-0">
-          {activeTab === "media" ? (
-            <MediaPanel media={media} />
-          ) : activeTab === "about" ? (
-            <AboutPanel project={project} />
-          ) : !project.plan_image_url ? (
-            <div className="flex h-full w-full items-center justify-center text-sm text-white/50">
-              This project has no plan image uploaded yet.
-            </div>
-          ) : (
-            <BuildingDrilldown
-              planImageUrl={project.plan_image_url}
-              plots={plots}
-              buildings={buildings}
-              roads={roads}
-              features={features}
-              unitsByFloor={unitsByFloor}
-              onPlotClick={setSelectedUnit}
-              onFlatClick={setSelectedUnit}
-              colorMode={zoneColourMode ? "zone" : "status"}
-              zones={zones}
-              highlightZone={selectedZone}
-              highlightStatus={statusFilter}
-              onStageChange={setDrilldownStage}
-            />
+          {autoSentNotice && (
+            <p className="absolute bottom-16 left-1/2 z-[700] -translate-x-1/2 rounded-md bg-green-500/15 px-3 py-1.5 text-xs text-green-300">
+              {autoSentNotice}
+            </p>
           )}
+
+          <div className="absolute inset-0">
+            {activeTab === "media" ? (
+              <MediaPanel media={media} />
+            ) : activeTab === "about" ? (
+              <AboutPanel project={project} />
+            ) : !project.plan_image_url ? (
+              <div className="flex h-full w-full items-center justify-center text-sm text-white/50">
+                This project has no plan image uploaded yet.
+              </div>
+            ) : (
+              <BuildingDrilldown
+                planImageUrl={project.plan_image_url}
+                plots={plots}
+                buildings={buildings}
+                roads={roads}
+                features={features}
+                unitsByFloor={unitsByFloor}
+                onPlotClick={setSelectedUnit}
+                onFlatClick={setSelectedUnit}
+                colorMode={zoneColourMode ? "zone" : "status"}
+                zones={zones}
+                highlightZone={selectedZone}
+                highlightStatus={statusFilter}
+                onStageChange={setDrilldownStage}
+              />
+            )}
+          </div>
+
+          <div className="absolute bottom-4 left-1/2 z-[600] flex -translate-x-1/2 gap-1 rounded-full bg-black/40 p-1 backdrop-blur">
+            <TabButton label="Media" active={activeTab === "media"} onClick={() => toggleTab("media")} />
+            <TabButton label="About" active={activeTab === "about"} onClick={() => toggleTab("about")} />
+          </div>
         </div>
 
         {selectedUnit && (
           <UnitInfoCard
+            // Remounts (resetting useEnquiryFlow's message/submit state and
+            // replaying the docked panel's slide-in) whenever a DIFFERENT
+            // unit is selected — without this, clicking straight from one
+            // plot to another without closing the panel first would carry
+            // over the previous plot's typed enquiry message or "sent"
+            // state, a real latent bug that the docked rail (which
+            // specifically invites clicking through several plots in a row
+            // without closing) makes much more likely to actually surface.
+            key={selectedUnit.id}
             unit={selectedUnit}
             project={project}
             isSignedIn={isSignedIn}
@@ -250,11 +274,6 @@ export function ProjectMapClient({
             onClose={() => setSelectedUnit(null)}
           />
         )}
-
-        <div className="absolute bottom-4 left-1/2 z-[600] flex -translate-x-1/2 gap-1 rounded-full bg-black/40 p-1 backdrop-blur">
-          <TabButton label="Media" active={activeTab === "media"} onClick={() => toggleTab("media")} />
-          <TabButton label="About" active={activeTab === "about"} onClick={() => toggleTab("about")} />
-        </div>
       </div>
     </div>
   );
