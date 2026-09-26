@@ -56,13 +56,17 @@ export default async function ProjectPage(props: PageProps<"/projects/[slug]">) 
   }));
 
   return (
-    // `w-full` is required here specifically: body is a column flex
-    // container, and ProjectMapClient's root is sized entirely by
-    // absolutely-positioned children (no normal-flow content), so without
-    // an explicit width `main`'s auto margins make it shrink-to-fit to
-    // ~0 instead of stretching — a flexbox auto-margin quirk that doesn't
-    // affect any other (non-absolute-only) page in this app.
-    <main className="mx-auto w-full max-w-6xl px-4 py-8">
+    // The map is the main experience here, not a card embedded in a padded
+    // page — flex-1 (with min-h-0, required for a flex child to shrink
+    // below its content's natural size rather than refusing to give up
+    // space) makes this <main> fill every pixel of vertical space `<body>`
+    // (already a flex column, see layout.tsx) has left after the global
+    // Nav bar, no magic pixel height needed. `w-full` still matters for
+    // the same reason as before: ProjectMapClient's root is sized by
+    // absolutely-positioned children, so without an explicit width a flex
+    // item's default auto-sizing would shrink it to ~0 instead of
+    // stretching.
+    <main className="flex min-h-0 w-full flex-1">
       <ProjectMapClient
         project={project as Project}
         plots={plots}

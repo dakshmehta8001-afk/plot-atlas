@@ -77,104 +77,120 @@ export function BuildingDrilldown({
   }
 
   return (
-    <div className="relative h-full w-full">
-      {/* SitePlanViewer stays mounted underneath every stage so the zoomed-in
-          building footprint is still visible (softly dimmed) behind the
-          floor selector / floor view overlays — it reads as "we're now
-          inside that building" rather than a jarring page swap. The dim
-          itself eases in/out (transition-opacity) rather than snapping
-          instantly, so it reads as part of the same spatial move as the
-          zoom-to-building transform already playing underneath it. */}
-      <div
-        className={`h-full w-full transition-opacity duration-500 ${stage.kind === "site" ? "" : "pointer-events-none opacity-40"}`}
-        style={{ transitionTimingFunction: "var(--ease-cinematic)" }}
-      >
-        <SitePlanViewer
-          planImageUrl={planImageUrl}
-          plots={plots}
-          buildings={buildings}
-          roads={roads}
-          features={features}
-          onPlotClick={onPlotClick}
-          onBuildingSettled={(building) => {
-            const withFloors = buildings.find((b) => b.id === building.id);
-            if (withFloors) setStage({ kind: "floor-select", building: withFloors });
-          }}
-          colorMode={colorMode}
-          zones={zones}
-          highlightZone={highlightZone}
-          highlightStatus={highlightStatus}
-          resetSignal={resetSignal}
-        />
+    // A flex row, not everything absolutely stacked in one box — the
+    // floor-select panel below becomes a real flex sibling that narrows the
+    // map area on desktop, the exact docked-rail/bottom-sheet treatment
+    // UnitInfoCard already uses for plot/flat selection (see
+    // ProjectMapClient.tsx). Reusing it here is what makes picking a floor
+    // read as "a detail panel opened up next to the building I clicked,"
+    // instead of "a modal appeared over the map" — the building stays put
+    // and stays visible the whole time, rather than the map going dark
+    // behind a centered dialog.
+    <div className="relative flex h-full w-full">
+      <div className="relative min-w-0 flex-1">
+        {/* SitePlanViewer stays mounted underneath every stage so the
+            zoomed-in building footprint is still visible behind the floor
+            view overlay — it reads as "we're now inside that building"
+            rather than a jarring page swap. Only floor-view (which fully
+            covers the map with FloorPlanViewer) dims it; floor-select's own
+            docked panel takes up a side slice, not the whole screen, so the
+            building it's showing floors for should stay fully visible
+            beside it rather than washed out under an extra dim on top of
+            SitePlanViewer's own selected/dimmed styling. */}
+        <div
+          className={`h-full w-full transition-opacity duration-500 ${
+            stage.kind === "floor-view" ? "pointer-events-none opacity-40" : stage.kind === "floor-select" ? "pointer-events-none" : ""
+          }`}
+          style={{ transitionTimingFunction: "var(--ease-cinematic)" }}
+        >
+          <SitePlanViewer
+            planImageUrl={planImageUrl}
+            plots={plots}
+            buildings={buildings}
+            roads={roads}
+            features={features}
+            onPlotClick={onPlotClick}
+            onBuildingSettled={(building) => {
+              const withFloors = buildings.find((b) => b.id === building.id);
+              if (withFloors) setStage({ kind: "floor-select", building: withFloors });
+            }}
+            colorMode={colorMode}
+            zones={zones}
+            highlightZone={highlightZone}
+            highlightStatus={highlightStatus}
+            resetSignal={resetSignal}
+          />
+        </div>
+
+        {stage.kind === "floor-view" && (
+          <div className="absolute inset-0 z-20" style={{ animation: "settleIn 350ms var(--ease-cinematic)" }}>
+            <div className="absolute left-3 top-3 z-10 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setStage({ kind: "floor-select", building: stage.building })}
+                className="rounded-md bg-white/90 px-3 py-1.5 text-sm font-medium text-[#0f2436] shadow hover:bg-white"
+              >
+                ← Floors
+              </button>
+              <button
+                type="button"
+                onClick={backToSite}
+                className="rounded-md bg-white/90 px-3 py-1.5 text-sm font-medium text-[#0f2436] shadow hover:bg-white"
+              >
+                ← Site plan
+              </button>
+            </div>
+            <div className="absolute left-3 top-14 z-10 rounded-md bg-white/90 px-3 py-1 text-xs font-medium text-[#0f2436] shadow">
+              {stage.building.name} · {floorLabel(stage.floor)}
+            </div>
+            {stage.floor.plan_image_url ? (
+              <FloorPlanViewer
+                planImageUrl={stage.floor.plan_image_url}
+                flats={unitsByFloor[stage.floor.id] ?? []}
+                onFlatClick={onFlatClick}
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center bg-[#0b1f2e] text-sm text-white/50">
+                No floor plan image uploaded yet for this floor.
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {stage.kind === "floor-select" && (
-        <div className="animate-[fadeIn_300ms_ease] absolute inset-0 z-20 flex items-center justify-center bg-black/40">
-          <div
-            className="w-64 rounded-xl border border-white/10 bg-[#0f2436]/95 p-4 text-white shadow-2xl backdrop-blur"
-            style={{ animation: "settleIn 350ms var(--ease-cinematic)" }}
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="font-semibold">{stage.building.name}</h3>
-              <button onClick={backToSite} className="text-white/50 hover:text-white">
-                ✕
-              </button>
-            </div>
-            <p className="mb-2 text-xs uppercase tracking-wide text-white/40">Select a floor</p>
-            <div className="max-h-80 space-y-1 overflow-y-auto">
-              {sortFloors(stage.building.floors)
-                .slice()
-                .reverse()
-                .map((floor) => (
-                  <button
-                    key={floor.id}
-                    onClick={() => setStage({ kind: "floor-view", building: stage.building, floor })}
-                    className="flex w-full items-center justify-between rounded-md bg-white/5 px-3 py-2 text-sm hover:bg-white/15"
-                  >
-                    <span>{floorLabel(floor)}</span>
-                    <span className="text-white/40">{(unitsByFloor[floor.id] ?? []).length} units</span>
-                  </button>
-                ))}
-              {stage.building.floors.length === 0 && (
-                <p className="px-3 py-2 text-sm text-white/50">No floors added for this building yet.</p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {stage.kind === "floor-view" && (
-        <div className="absolute inset-0 z-20" style={{ animation: "settleIn 350ms var(--ease-cinematic)" }}>
-          <div className="absolute left-3 top-3 z-10 flex gap-2">
-            <button
-              type="button"
-              onClick={() => setStage({ kind: "floor-select", building: stage.building })}
-              className="rounded-md bg-white/90 px-3 py-1.5 text-sm font-medium text-[#0f2436] shadow hover:bg-white"
-            >
-              ← Floors
-            </button>
-            <button
-              type="button"
-              onClick={backToSite}
-              className="rounded-md bg-white/90 px-3 py-1.5 text-sm font-medium text-[#0f2436] shadow hover:bg-white"
-            >
-              ← Site plan
+        // Same shape as UnitInfoCard's root: a bottom sheet below `sm`, a
+        // static (not absolute) flex-none docked rail above it that slides
+        // in from the map's edge — so a building's floor list and a plot's
+        // info card feel like the same kind of interaction, not two
+        // different UI languages for what's conceptually the same
+        // "you selected something, here's more about it" moment.
+        <div className="absolute inset-x-0 bottom-0 z-20 max-h-[75%] overflow-y-auto rounded-t-2xl border-t border-white/10 bg-[#0f2436]/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] text-white shadow-2xl backdrop-blur sm:static sm:z-auto sm:h-full sm:max-h-none sm:w-72 sm:flex-none sm:rounded-none sm:border-0 sm:border-l sm:border-white/10 sm:bg-[#0f2436] sm:p-5 sm:pb-5 sm:shadow-none sm:[animation:slideInRight_320ms_ease]">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="font-semibold">{stage.building.name}</h3>
+            <button onClick={backToSite} className="text-white/50 hover:text-white">
+              ✕
             </button>
           </div>
-          <div className="absolute left-3 top-14 z-10 rounded-md bg-white/90 px-3 py-1 text-xs font-medium text-[#0f2436] shadow">
-            {stage.building.name} · {floorLabel(stage.floor)}
+          <p className="mb-2 text-xs uppercase tracking-wide text-white/40">Select a floor</p>
+          <div className="space-y-1">
+            {sortFloors(stage.building.floors)
+              .slice()
+              .reverse()
+              .map((floor) => (
+                <button
+                  key={floor.id}
+                  onClick={() => setStage({ kind: "floor-view", building: stage.building, floor })}
+                  className="flex w-full items-center justify-between rounded-md bg-white/5 px-3 py-2 text-sm hover:bg-white/15"
+                >
+                  <span>{floorLabel(floor)}</span>
+                  <span className="text-white/40">{(unitsByFloor[floor.id] ?? []).length} units</span>
+                </button>
+              ))}
+            {stage.building.floors.length === 0 && (
+              <p className="px-3 py-2 text-sm text-white/50">No floors added for this building yet.</p>
+            )}
           </div>
-          {stage.floor.plan_image_url ? (
-            <FloorPlanViewer
-              planImageUrl={stage.floor.plan_image_url}
-              flats={unitsByFloor[stage.floor.id] ?? []}
-              onFlatClick={onFlatClick}
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center bg-[#0b1f2e] text-sm text-white/50">
-              No floor plan image uploaded yet for this floor.
-            </div>
-          )}
         </div>
       )}
     </div>

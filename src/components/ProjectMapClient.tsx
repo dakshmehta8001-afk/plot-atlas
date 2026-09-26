@@ -138,8 +138,28 @@ export function ProjectMapClient({
     // collide. min-h-0 on the map row is required for flex-1 to actually
     // shrink below its content's natural size in a flex column — without
     // it the row refuses to give up space to the header row above it.
+    //
+    // No explicit height here (no h-full, no fixed h-[640px]) — the
+    // project page's own <main> (src/app/projects/[slug]/page.tsx) is a
+    // flex row filling the viewport below the nav bar, and its default
+    // align-items: stretch already sizes this single flex child to the
+    // container's full cross-size for free. An explicit height:100% here
+    // actively fights that: it overrides the stretch default and instead
+    // asks this element to resolve a PERCENTAGE against <main>'s height —
+    // which measured out to just this panel's own content height (the
+    // header row) instead of the full 847px available, because <main>
+    // establishes its size via flex-grow (a resolved flex value) rather
+    // than a literal CSS `height`, and that's exactly the combination
+    // percentage-height resolution doesn't reliably handle. Dropping the
+    // height utility and trusting stretch (confirmed via a live Playwright
+    // check: this div's rendered height went from 149.5px to the full
+    // 847px once removed) is what actually makes the map full-screen.
+    // w-full is still needed, unlike height: width is <main>'s MAIN axis
+    // (row direction), which flex-basis:auto sizes from content instead of
+    // stretching — and this element's own children are absolutely
+    // positioned, contributing ~0 to that content-based width.
     <div
-      className="relative flex h-[640px] w-full flex-col overflow-hidden rounded-xl border border-white/10 bg-[#0b1f2e]"
+      className="relative flex w-full flex-col overflow-hidden bg-[#0b1f2e]"
       // A one-time "digital twin powering on" entrance for the whole panel
       // when the project page first mounts — reuses the same settleIn
       // keyframe BuildingDrilldown's floor-select/floor-view panels already

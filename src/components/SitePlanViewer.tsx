@@ -61,6 +61,34 @@ export const BUILDING_ZOOM_TRANSITION_MS = 650;
 // MapShapes extraction was built to avoid.
 const LOD_LABEL_SCALE_THRESHOLD = 2;
 
+// Road width parsing: width_label is free text like "30 ft"/"150 ft" (see
+// ROAD_WIDTH_PRESETS in types.ts), not a structured number, so a real site
+// plan's 30 ft internal lane and 150 ft arterial road were previously
+// rendered at the exact same flat stroke width — reading as visually
+// identical even though the source plan (and the corridor-based detector,
+// which now infers width_label from the traced corridor's actual gap) drew
+// them very differently. Extracting the leading number and mapping it onto
+// a clamped stroke-width range fixes that without needing a real-world
+// scale reference (the map has none — see MAP_VIEWBOX_SIZE). Widths outside
+// the clamp range still render (just pinned to the min/max look), and a
+// missing/unparseable label falls back to the same flat width this used
+// to always render at, so old/hand-traced roads without a usable label
+// don't change appearance.
+const ROAD_WIDTH_MIN_FT = 20;
+const ROAD_WIDTH_MAX_FT = 200;
+const ROAD_STROKE_MIN = VB * 0.012;
+const ROAD_STROKE_MAX = VB * 0.05;
+const ROAD_STROKE_DEFAULT = VB * 0.026;
+function roadStrokeWidth(widthLabel: string): number {
+  const match = widthLabel.match(/(\d+(?:\.\d+)?)/);
+  if (!match) return ROAD_STROKE_DEFAULT;
+  const feet = parseFloat(match[1]);
+  if (!Number.isFinite(feet)) return ROAD_STROKE_DEFAULT;
+  const clampedFeet = Math.min(ROAD_WIDTH_MAX_FT, Math.max(ROAD_WIDTH_MIN_FT, feet));
+  const t = (clampedFeet - ROAD_WIDTH_MIN_FT) / (ROAD_WIDTH_MAX_FT - ROAD_WIDTH_MIN_FT);
+  return ROAD_STROKE_MIN + t * (ROAD_STROKE_MAX - ROAD_STROKE_MIN);
+}
+
 // The point exactly halfway along a road's traced length — a road is an
 // open path (often just two endpoints, sometimes bent), so a bounding-box
 // center can land off the path entirely, and picking the middle VERTEX by
@@ -167,6 +195,14 @@ const MapShapes = memo(function MapShapes({
         // fixed number, is what keeps several cars on screen at once
         // from all being in lockstep.
         const driveDuration = 7 + (index % 4) * 1.5;
+        // Both the asphalt strip and its dashed centerline scale off the
+        // same parsed width, keeping the same proportions the flat-width
+        // version had (a wider road gets a proportionally wider, not just
+        // absolutely wider, centerline and dash pattern).
+        const asphaltWidth = roadStrokeWidth(road.width_label);
+        const centerlineWidth = asphaltWidth * 0.069;
+        const dashLength = asphaltWidth * 0.54;
+        const dashGap = asphaltWidth * 0.38;
         return (
           <g
             key={road.id}
@@ -200,15 +236,15 @@ const MapShapes = memo(function MapShapes({
               points={toScaledSvgPoints(road.path_points, VB, vbHeight)}
               fill="none"
               stroke="#3a4552"
-              strokeWidth={VB * 0.026}
+              strokeWidth={asphaltWidth}
               strokeLinecap="round"
             />
             <polyline
               points={toScaledSvgPoints(road.path_points, VB, vbHeight)}
               fill="none"
               stroke="#e8eaed"
-              strokeWidth={VB * 0.0018}
-              strokeDasharray={`${VB * 0.014} ${VB * 0.01}`}
+              strokeWidth={centerlineWidth}
+              strokeDasharray={`${dashLength} ${dashGap}`}
               strokeLinecap="round"
               opacity={0.8}
             />
@@ -233,6 +269,30 @@ const MapShapes = memo(function MapShapes({
                 keyPoints="0;1;0"
                 keyTimes="0;0.5;1"
                 calcMode="linear"
+              >
+                <mpath href={`#${motionPathId}`} />
+              </animateMotion>
+            </g>
+            {/* A slow-walking pedestrian dot along the same motion path as
+                the car — same <mpath> trick, deliberately NOT synced with
+                it (a much longer duration, a staggered `begin` per road,
+                and keyPoints inset slightly from the road's very endpoints
+                rather than running the car's full length) so it reads as
+                independent ambient life on the road rather than a second
+                copy of the same car animation. This is the one small,
+                genuinely optional touch from the "ambient life" item in the
+                visual-polish pass — everything else on this map is
+                functional; this purely make it feel inhabited. */}
+            <g opacity={0.75}>
+              <circle r={VB * 0.005} fill="#f4d9a0" stroke="#0f2436" strokeWidth={VB * 0.0012} />
+              <animateMotion
+                dur={`${driveDuration * 2.6}s`}
+                repeatCount="indefinite"
+                rotate="auto"
+                keyPoints="0.05;0.95;0.05"
+                keyTimes="0;0.5;1"
+                calcMode="linear"
+                begin={`${(index % 3) * 1.4}s`}
               >
                 <mpath href={`#${motionPathId}`} />
               </animateMotion>
