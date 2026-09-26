@@ -34,6 +34,15 @@ import { clientPointToLocalFraction } from "@/lib/svgCoords";
 
 const VB = MAP_VIEWBOX_SIZE;
 const ZOOM_SCALE = 4;
+// A per-shape stagger for the initial reveal animation (see the `animation`/
+// `animationDelay` styles below) — capped so a large project's plots don't
+// drag the reveal out for seconds; anything past the cap just joins the
+// tail end of the cascade instead of continuing to spread out.
+const REVEAL_STEP_MS = 12;
+const REVEAL_MAX_DELAY_MS = 400;
+function revealDelay(index: number): number {
+  return Math.min(index * REVEAL_STEP_MS, REVEAL_MAX_DELAY_MS);
+}
 // Free-roam pan/zoom cap for the full-site view (separate from ZOOM_SCALE,
 // which is the fixed scale the scripted click-to-zoom-a-shape animation
 // always lands on). Kept lower than the digitize editor's 12x ceiling — this
@@ -148,6 +157,18 @@ export function SitePlanViewer({
   // pinch-zoom gesture instead.
   const activePointers = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinchState = useRef<{ distance: number } | null>(null);
+  // Styled hover tooltip for plots, replacing the native browser <title> —
+  // (x, y) are relative to containerRef's own box, not the viewport, so the
+  // tooltip can be positioned with plain `left`/`top` regardless of where
+  // this component sits on the page.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [hoveredUnit, setHoveredUnit] = useState<{ unit: Unit; x: number; y: number } | null>(null);
+
+  function updateHoverPosition(unit: Unit, e: React.MouseEvent) {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setHoveredUnit({ unit, x: e.clientX - rect.left, y: e.clientY - rect.top });
+  }
 
   useEffect(() => {
     setView({ tx: 0, ty: 0, scale: 1 });
@@ -289,6 +310,7 @@ export function SitePlanViewer({
 
   function handlePlotClick(unit: Unit) {
     setZoomedId(unit.id);
+    setHoveredUnit(null);
     onPlotClick(unit);
   }
 
@@ -313,7 +335,7 @@ export function SitePlanViewer({
   }
 
   return (
-    <div className="relative h-full w-full">
+    <div ref={containerRef} className="relative h-full w-full">
       {zoomedId && (
         <button
           type="button"
@@ -351,7 +373,7 @@ export function SitePlanViewer({
             style={{
               transform,
               transformOrigin: "0 0",
-              transition: "transform 600ms ease",
+              transition: "transform 650ms var(--ease-cinematic)",
             }}
           >
             <image href={planImageUrl} x={0} y={0} width={VB} height={vbHeight} />
@@ -365,7 +387,20 @@ export function SitePlanViewer({
               // from all being in lockstep.
               const driveDuration = 7 + (index % 4) * 1.5;
               return (
-                <g key={road.id} className="pointer-events-none">
+                <g
+                  key={road.id}
+                  className="pointer-events-none"
+                  // Reveal-in on first mount only — `animationFillMode:
+                  // "backwards"` applies the from-keyframe during the
+                  // staggered delay (so later shapes don't flash at full
+                  // opacity before their turn), but does NOT persist after
+                  // the animation ends, so it can never permanently override
+                  // anything. Re-renders (toggling the zone/status filter,
+                  // etc.) don't replay this — it only plays once, when the
+                  // shape's own DOM node is first created, since none of
+                  // these props change on re-render.
+                  style={{ animation: "fadeIn 420ms ease-out backwards", animationDelay: `${revealDelay(index)}ms` }}
+                >
                   {/* Rendered as real road styling (asphalt + lane markings),
                       not just a highlight — this is what makes a traced road
                       look like a road on ANY uploaded image, not only one
@@ -436,7 +471,7 @@ export function SitePlanViewer({
               );
             })}
 
-            {plots.map((unit) => {
+            {plots.map((unit, index) => {
               if (unit.polygon_points.length < 3) return null;
               const style = plotStyle(unit);
               return (
@@ -448,18 +483,23 @@ export function SitePlanViewer({
                   strokeWidth={VB * 0.002}
                   opacity={style.opacity}
                   className="cursor-pointer transition-opacity hover:opacity-80"
+                  style={{ animation: "fadeIn 420ms ease-out backwards", animationDelay: `${revealDelay(index)}ms` }}
                   onClick={() => handlePlotClick(unit)}
-                >
-                  <title>{unit.unit_number}</title>
-                </polygon>
+                  onMouseEnter={(e) => updateHoverPosition(unit, e)}
+                  onMouseMove={(e) => updateHoverPosition(unit, e)}
+                  onMouseLeave={() => setHoveredUnit((prev) => (prev?.unit.id === unit.id ? null : prev))}
+                />
               );
             })}
 
-            {buildings.map((building) => {
+            {buildings.map((building, index) => {
               if (building.polygon_points.length < 3) return null;
               const center = scaledBoundingBoxCenter(building.polygon_points, VB, vbHeight);
               return (
-                <g key={building.id}>
+                <g
+                  key={building.id}
+                  style={{ animation: "fadeIn 420ms ease-out backwards", animationDelay: `${revealDelay(plots.length + index)}ms` }}
+                >
                   <polygon
                     points={toScaledSvgPoints(building.polygon_points, VB, vbHeight)}
                     fill="rgba(99,102,241,0.35)"
@@ -488,12 +528,19 @@ export function SitePlanViewer({
             {/* Parks/temples/gates/etc — informational only, no click-to-zoom
                 (same lighter interaction level as buildings get relative to
                 plots, since a feature isn't itself a sellable unit). */}
-            {features.map((feature) => {
+            {features.map((feature, index) => {
               if (feature.polygon_points.length < 3) return null;
               const style = SITE_FEATURE_STYLES[feature.kind];
               const center = scaledBoundingBoxCenter(feature.polygon_points, VB, vbHeight);
               return (
-                <g key={feature.id} className="pointer-events-none">
+                <g
+                  key={feature.id}
+                  className="pointer-events-none"
+                  style={{
+                    animation: "fadeIn 420ms ease-out backwards",
+                    animationDelay: `${revealDelay(plots.length + buildings.length + index)}ms`,
+                  }}
+                >
                   <polygon
                     points={toScaledSvgPoints(feature.polygon_points, VB, vbHeight)}
                     fill={style.fill}
@@ -519,6 +566,19 @@ export function SitePlanViewer({
           </g>
         </svg>
       </div>
+
+      {!zoomedId && hoveredUnit && (
+        <div
+          className="pointer-events-none absolute z-[550] -translate-x-1/2 -translate-y-[calc(100%+10px)] whitespace-nowrap rounded-md border border-map-border bg-map-panel/95 px-2.5 py-1.5 text-xs text-white shadow-lg backdrop-blur"
+          style={{ left: hoveredUnit.x, top: hoveredUnit.y }}
+        >
+          <span className="font-semibold">
+            {hoveredUnit.unit.wing ? `${hoveredUnit.unit.wing}-` : ""}
+            {hoveredUnit.unit.unit_number}
+          </span>
+          <span className="ml-1.5 text-white/60">{UNIT_STATUS_STYLES[hoveredUnit.unit.status].label}</span>
+        </div>
+      )}
 
       {!zoomedId && (
         <div className="absolute bottom-3 right-3 z-10 flex flex-col gap-1.5">

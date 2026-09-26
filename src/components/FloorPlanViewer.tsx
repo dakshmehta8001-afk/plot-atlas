@@ -5,13 +5,19 @@
 // same click-to-zoom interaction as SitePlanViewer. Used inside
 // BuildingDrilldown once a viewer has picked a floor from the floor
 // selector.
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { MAP_VIEWBOX_SIZE, UNIT_STATUS_STYLES, type Unit } from "@/lib/types";
 import { useImageAspectRatio } from "@/lib/useImageAspectRatio";
 import { toScaledSvgPoints, scaledBoundingBoxCenter } from "@/lib/svgPolygon";
 
 const VB = MAP_VIEWBOX_SIZE;
 const ZOOM_SCALE = 3;
+// See the matching constants/helper in SitePlanViewer.tsx.
+const REVEAL_STEP_MS = 12;
+const REVEAL_MAX_DELAY_MS = 400;
+function revealDelay(index: number): number {
+  return Math.min(index * REVEAL_STEP_MS, REVEAL_MAX_DELAY_MS);
+}
 
 export function FloorPlanViewer({
   planImageUrl,
@@ -29,6 +35,14 @@ export function FloorPlanViewer({
   // fixed square, stretched via preserveAspectRatio="none") is what keeps
   // any non-square floor plate from rendering distorted.
   const vbHeight = VB / aspectRatio;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [hoveredUnit, setHoveredUnit] = useState<{ unit: Unit; x: number; y: number } | null>(null);
+
+  function updateHoverPosition(unit: Unit, e: React.MouseEvent) {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setHoveredUnit({ unit, x: e.clientX - rect.left, y: e.clientY - rect.top });
+  }
 
   const transform = useMemo(() => {
     const flat = flats.find((f) => f.id === zoomedId);
@@ -43,11 +57,12 @@ export function FloorPlanViewer({
 
   function handleClick(unit: Unit) {
     setZoomedId(unit.id);
+    setHoveredUnit(null);
     onFlatClick(unit);
   }
 
   return (
-    <div className="relative h-full w-full">
+    <div ref={containerRef} className="relative h-full w-full">
       {zoomedId && (
         <button
           type="button"
@@ -59,9 +74,9 @@ export function FloorPlanViewer({
       )}
       <div className="h-full w-full overflow-hidden">
         <svg viewBox={`0 0 ${VB} ${vbHeight}`} className="h-full w-full bg-[#0b1f2e]">
-          <g style={{ transform, transformOrigin: "0 0", transition: "transform 500ms ease" }}>
+          <g style={{ transform, transformOrigin: "0 0", transition: "transform 550ms var(--ease-cinematic)" }}>
             <image href={planImageUrl} x={0} y={0} width={VB} height={vbHeight} />
-            {flats.map((unit) => {
+            {flats.map((unit, index) => {
               if (unit.polygon_points.length < 3) return null;
               const style = UNIT_STATUS_STYLES[unit.status];
               return (
@@ -72,18 +87,28 @@ export function FloorPlanViewer({
                   stroke={style.border}
                   strokeWidth={VB * 0.0025}
                   className="cursor-pointer transition-opacity hover:opacity-80"
+                  style={{ animation: "fadeIn 420ms ease-out backwards", animationDelay: `${revealDelay(index)}ms` }}
                   onClick={() => handleClick(unit)}
-                >
-                  <title>
-                    {unit.unit_number}
-                    {unit.bhk_type ? ` · ${unit.bhk_type}` : ""}
-                  </title>
-                </polygon>
+                  onMouseEnter={(e) => updateHoverPosition(unit, e)}
+                  onMouseMove={(e) => updateHoverPosition(unit, e)}
+                  onMouseLeave={() => setHoveredUnit((prev) => (prev?.unit.id === unit.id ? null : prev))}
+                />
               );
             })}
           </g>
         </svg>
       </div>
+
+      {!zoomedId && hoveredUnit && (
+        <div
+          className="pointer-events-none absolute z-[550] -translate-x-1/2 -translate-y-[calc(100%+10px)] whitespace-nowrap rounded-md border border-map-border bg-map-panel/95 px-2.5 py-1.5 text-xs text-white shadow-lg backdrop-blur"
+          style={{ left: hoveredUnit.x, top: hoveredUnit.y }}
+        >
+          <span className="font-semibold">{hoveredUnit.unit.unit_number}</span>
+          {hoveredUnit.unit.bhk_type && <span className="ml-1.5 text-white/60">{hoveredUnit.unit.bhk_type}</span>}
+          <span className="ml-1.5 text-white/60">{UNIT_STATUS_STYLES[hoveredUnit.unit.status].label}</span>
+        </div>
+      )}
     </div>
   );
 }

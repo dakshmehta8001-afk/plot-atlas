@@ -29,6 +29,12 @@
   --map-border: rgba(255, 255, 255, 0.1);
   --map-text: #ffffff;
   --map-muted: rgba(255, 255, 255, 0.5);
+
+  /* A decelerating "ease-out-expo"-style curve for the map's scripted
+     camera moves (zoom-to-a-shape, drilldown transitions) — settles into
+     its final position rather than the flat, slightly mechanical-feeling
+     `ease` timing function they used before. */
+  --ease-cinematic: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @theme inline {
