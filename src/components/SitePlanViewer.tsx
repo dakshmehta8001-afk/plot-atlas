@@ -49,6 +49,17 @@ function revealDelay(index: number): number {
 // is a browsing aid over finished artwork, not a precision tracing tool.
 const MAX_FREE_ZOOM = 6;
 export const BUILDING_ZOOM_TRANSITION_MS = 650;
+// Level-of-detail threshold: plot number labels and zone-accent dots stay
+// hidden below this free-roam zoom scale (keeps the low-zoom overview
+// clean, per the "avoid clutter" goal), and always show once a plot/
+// building is actually selected (effective scale = ZOOM_SCALE, always
+// "zoomed in enough"). Deliberately a boolean crossing point, not a
+// continuous prop, passed down to MapShapes — React.memo only skips a
+// re-render when a prop's VALUE is unchanged, and a boolean only changes
+// when the threshold is actually crossed, not on every intermediate zoom
+// tick, so this doesn't reintroduce the per-frame re-render cost the
+// MapShapes extraction was built to avoid.
+const LOD_LABEL_SCALE_THRESHOLD = 2;
 
 // The point exactly halfway along a road's traced length — a road is an
 // open path (often just two endpoints, sometimes bent), so a bounding-box
@@ -106,6 +117,8 @@ const MapShapes = memo(function MapShapes({
   zones,
   highlightZone,
   highlightStatus,
+  selectedId,
+  showLabels,
   onPlotClick,
   onBuildingClick,
   onPlotHover,
@@ -120,21 +133,28 @@ const MapShapes = memo(function MapShapes({
   zones: string[];
   highlightZone: string | null;
   highlightStatus: UnitStatus | null;
+  /** The currently zoomed-in plot/building id, if any — drives the
+   * "selected plot glows, everything else dims" focus effect. */
+  selectedId: string | null;
+  /** Level-of-detail gate for plot number labels and zone-accent dots. */
+  showLabels: boolean;
   onPlotClick: (unit: Unit) => void;
   onBuildingClick: (building: Building) => void;
   onPlotHover: (unit: Unit, e: React.MouseEvent) => void;
   onPlotHoverEnd: (unitId: string) => void;
 }) {
-  function plotStyle(unit: Unit): { fill: string; border: string; opacity: number } {
+  function plotStyle(unit: Unit): { fill: string; border: string; opacity: number; isSelected: boolean } {
+    const isSelected = selectedId === unit.id;
+    const dimmedBySelection = selectedId !== null && !isSelected;
     const statusDimmed = highlightStatus !== null && unit.status !== highlightStatus;
     if (colorMode === "zone") {
-      const dimmed = (highlightZone !== null && unit.category !== highlightZone) || statusDimmed;
-      if (!unit.category) return { fill: "rgba(148,163,184,0.25)", border: "#64748b", opacity: dimmed ? 0.3 : 1 };
+      const dimmed = dimmedBySelection || (highlightZone !== null && unit.category !== highlightZone) || statusDimmed;
+      if (!unit.category) return { fill: "rgba(148,163,184,0.25)", border: "#64748b", opacity: dimmed ? 0.25 : 1, isSelected };
       const color = zoneColorFor(unit.category, zones);
-      return { fill: `${color}59`, border: color, opacity: dimmed ? 0.3 : 1 };
+      return { fill: `${color}59`, border: color, opacity: dimmed ? 0.25 : 1, isSelected };
     }
     const style = UNIT_STATUS_STYLES[unit.status];
-    return { fill: style.fill, border: style.border, opacity: statusDimmed ? 0.3 : 1 };
+    return { fill: style.fill, border: style.border, opacity: dimmedBySelection || statusDimmed ? 0.25 : 1, isSelected };
   }
 
   return (
@@ -159,8 +179,18 @@ const MapShapes = memo(function MapShapes({
             // anything. Re-renders (toggling the zone/status filter,
             // etc.) don't replay this — it only plays once, when the
             // shape's own DOM node is first created, since none of
-            // these props change on re-render.
-            style={{ animation: "fadeIn 420ms ease-out backwards", animationDelay: `${revealDelay(index)}ms` }}
+            // these props change on re-render. The plain `opacity` here
+            // (separate from the animation) is what gives the "focus"
+            // dimming when a plot/building is selected — the animation's
+            // own opacity keyframe only controls the entrance and never
+            // persists afterward (backwards, not forwards/both), so this
+            // takes over cleanly once the reveal finishes.
+            style={{
+              animation: "fadeIn 420ms ease-out backwards",
+              animationDelay: `${revealDelay(index)}ms`,
+              opacity: selectedId !== null ? 0.4 : 1,
+              transition: "opacity 300ms ease",
+            }}
           >
             {/* Rendered as real road styling (asphalt + lane markings),
                 not just a highlight — this is what makes a traced road
@@ -235,39 +265,111 @@ const MapShapes = memo(function MapShapes({
       {plots.map((unit, index) => {
         if (unit.polygon_points.length < 3) return null;
         const style = plotStyle(unit);
+        const center = scaledBoundingBoxCenter(unit.polygon_points, VB, vbHeight);
+        const zoneColor = unit.category ? zoneColorFor(unit.category, zones) : null;
         return (
-          <polygon
-            key={unit.id}
-            points={toScaledSvgPoints(unit.polygon_points, VB, vbHeight)}
-            fill={style.fill}
-            stroke={style.border}
-            strokeWidth={VB * 0.002}
-            opacity={style.opacity}
-            className="cursor-pointer transition-opacity hover:opacity-80"
-            style={{ animation: "fadeIn 420ms ease-out backwards", animationDelay: `${revealDelay(index)}ms` }}
-            onClick={() => onPlotClick(unit)}
-            onMouseEnter={(e) => onPlotHover(unit, e)}
-            onMouseMove={(e) => onPlotHover(unit, e)}
-            onMouseLeave={() => onPlotHoverEnd(unit.id)}
-          />
+          <g key={unit.id}>
+            <polygon
+              points={toScaledSvgPoints(unit.polygon_points, VB, vbHeight)}
+              fill={style.fill}
+              stroke={style.border}
+              strokeWidth={style.isSelected ? VB * 0.005 : VB * 0.002}
+              opacity={style.opacity}
+              // Hover glow/brighten is deliberately pure CSS (:hover, no
+              // React state) — the selected-shape glow below is driven by
+              // `selectedId`, which only changes on an actual click (rare),
+              // but hover fires on every mousemove; doing it in CSS means
+              // it costs nothing in React re-renders at all, keeping the
+              // MapShapes-memoization perf fix from the last audit intact.
+              // A scale-on-hover transform was deliberately left out: SVG
+              // elements need transform-box:fill-box for a scale to
+              // originate from the shape's own center rather than the
+              // whole viewBox's corner, and getting that subtly wrong reads
+              // as the shape jumping sideways, not growing in place — the
+              // brighten+glow already reads as a clear hover response
+              // without that risk.
+              className="cursor-pointer transition-[opacity,filter] duration-200 hover:brightness-125 hover:[filter:drop-shadow(0_0_5px_rgba(255,255,255,0.55))]"
+              style={{
+                animation: "fadeIn 420ms ease-out backwards",
+                animationDelay: `${revealDelay(index)}ms`,
+                // Selected plot: a steady bright glow, distinct from the
+                // momentary hover one — undefined (no inline filter at all)
+                // when not selected, so the CSS hover rule above can still
+                // apply freely (an inline style always wins over an
+                // external stylesheet rule, selected or not, so leaving
+                // this property OUT entirely when unselected is what lets
+                // hover still work on every other plot).
+                filter: style.isSelected ? "drop-shadow(0 0 10px rgba(255,255,255,0.85)) drop-shadow(0 0 20px rgba(96,165,250,0.6))" : undefined,
+              }}
+              onClick={() => onPlotClick(unit)}
+              onMouseEnter={(e) => onPlotHover(unit, e)}
+              onMouseMove={(e) => onPlotHover(unit, e)}
+              onMouseLeave={() => onPlotHoverEnd(unit.id)}
+            />
+            {/* Zone/category accent — a small colored dot independent of
+                colorMode, so "Premium"/"Corner"/"Standard" stays visually
+                identifiable even while plots are colored by sale status.
+                Gated by showLabels (LOD) same as the number label below,
+                since it's the same "only show detail once zoomed in
+                enough" clutter concern. */}
+            {zoneColor && (
+              <circle
+                cx={unit.polygon_points[0].x * VB}
+                cy={unit.polygon_points[0].y * vbHeight}
+                r={VB * 0.008}
+                fill={zoneColor}
+                stroke="#0b1f2e"
+                strokeWidth={VB * 0.0015}
+                className="pointer-events-none"
+                style={{ opacity: showLabels ? 1 : 0, transition: "opacity 300ms ease" }}
+              />
+            )}
+            <text
+              x={center.x}
+              y={center.y}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontSize={VB * 0.013}
+              fill="#ffffff"
+              stroke="#0b1f2e"
+              strokeWidth={VB * 0.005}
+              paintOrder="stroke"
+              className="pointer-events-none select-none font-semibold"
+              style={{ opacity: showLabels ? style.opacity : 0, transition: "opacity 300ms ease" }}
+            >
+              {unit.unit_number}
+            </text>
+          </g>
         );
       })}
 
       {buildings.map((building, index) => {
         if (building.polygon_points.length < 3) return null;
         const center = scaledBoundingBoxCenter(building.polygon_points, VB, vbHeight);
+        const isSelected = selectedId === building.id;
+        const dimmed = selectedId !== null && !isSelected;
         return (
           <g
             key={building.id}
-            style={{ animation: "fadeIn 420ms ease-out backwards", animationDelay: `${revealDelay(plots.length + index)}ms` }}
+            style={{
+              animation: "fadeIn 420ms ease-out backwards",
+              animationDelay: `${revealDelay(plots.length + index)}ms`,
+              opacity: dimmed ? 0.25 : 1,
+              transition: "opacity 300ms ease",
+            }}
           >
             <polygon
               points={toScaledSvgPoints(building.polygon_points, VB, vbHeight)}
               fill="rgba(99,102,241,0.35)"
               stroke="#6366f1"
-              strokeWidth={VB * 0.0025}
+              strokeWidth={isSelected ? VB * 0.005 : VB * 0.0025}
               strokeDasharray={`${VB * 0.006} ${VB * 0.004}`}
-              className="cursor-pointer transition-opacity hover:opacity-80"
+              className="cursor-pointer transition-[filter] duration-200 hover:brightness-125 hover:[filter:drop-shadow(0_0_5px_rgba(255,255,255,0.55))]"
+              style={{
+                filter: isSelected
+                  ? "drop-shadow(0 0 10px rgba(255,255,255,0.85)) drop-shadow(0 0 20px rgba(96,165,250,0.6))"
+                  : undefined,
+              }}
               onClick={() => onBuildingClick(building)}
             >
               <title>{building.name}</title>
@@ -300,6 +402,8 @@ const MapShapes = memo(function MapShapes({
             style={{
               animation: "fadeIn 420ms ease-out backwards",
               animationDelay: `${revealDelay(plots.length + buildings.length + index)}ms`,
+              opacity: selectedId !== null ? 0.4 : 1,
+              transition: "opacity 300ms ease",
             }}
           >
             <polygon
@@ -636,6 +740,8 @@ export function SitePlanViewer({
               zones={zones}
               highlightZone={highlightZone}
               highlightStatus={highlightStatus}
+              selectedId={zoomedId}
+              showLabels={zoomedId !== null || view.scale >= LOD_LABEL_SCALE_THRESHOLD}
               onPlotClick={handlePlotClick}
               onBuildingClick={handleBuildingClick}
               onPlotHover={updateHoverPosition}

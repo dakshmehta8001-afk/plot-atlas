@@ -6,7 +6,7 @@
 // BuildingDrilldown once a viewer has picked a floor from the floor
 // selector.
 import { memo, useCallback, useMemo, useRef, useState } from "react";
-import { MAP_VIEWBOX_SIZE, UNIT_STATUS_STYLES, type Unit } from "@/lib/types";
+import { MAP_VIEWBOX_SIZE, UNIT_STATUS_STYLES, distinctZones, zoneColorFor, type Unit } from "@/lib/types";
 import { useImageAspectRatio } from "@/lib/useImageAspectRatio";
 import { toScaledSvgPoints, scaledBoundingBoxCenter } from "@/lib/svgPolygon";
 
@@ -27,12 +27,18 @@ function revealDelay(index: number): number {
 const FlatShapes = memo(function FlatShapes({
   flats,
   vbHeight,
+  zones,
+  selectedId,
   onFlatClick,
   onFlatHover,
   onFlatHoverEnd,
 }: {
   flats: Unit[];
   vbHeight: number;
+  zones: string[];
+  /** The currently zoomed-in flat's id, if any — same "selected glows,
+   * everything else dims" focus effect as SitePlanViewer's MapShapes. */
+  selectedId: string | null;
   onFlatClick: (unit: Unit) => void;
   onFlatHover: (unit: Unit, e: React.MouseEvent) => void;
   onFlatHoverEnd: (unitId: string) => void;
@@ -42,20 +48,61 @@ const FlatShapes = memo(function FlatShapes({
       {flats.map((unit, index) => {
         if (unit.polygon_points.length < 3) return null;
         const style = UNIT_STATUS_STYLES[unit.status];
+        const isSelected = selectedId === unit.id;
+        const dimmed = selectedId !== null && !isSelected;
+        const center = scaledBoundingBoxCenter(unit.polygon_points, VB, vbHeight);
+        const zoneColor = unit.category ? zoneColorFor(unit.category, zones) : null;
         return (
-          <polygon
-            key={unit.id}
-            points={toScaledSvgPoints(unit.polygon_points, VB, vbHeight)}
-            fill={style.fill}
-            stroke={style.border}
-            strokeWidth={VB * 0.0025}
-            className="cursor-pointer transition-opacity hover:opacity-80"
-            style={{ animation: "fadeIn 420ms ease-out backwards", animationDelay: `${revealDelay(index)}ms` }}
-            onClick={() => onFlatClick(unit)}
-            onMouseEnter={(e) => onFlatHover(unit, e)}
-            onMouseMove={(e) => onFlatHover(unit, e)}
-            onMouseLeave={() => onFlatHoverEnd(unit.id)}
-          />
+          <g key={unit.id}>
+            <polygon
+              points={toScaledSvgPoints(unit.polygon_points, VB, vbHeight)}
+              fill={style.fill}
+              stroke={style.border}
+              strokeWidth={isSelected ? VB * 0.006 : VB * 0.0025}
+              opacity={dimmed ? 0.25 : 1}
+              // See the matching comment in SitePlanViewer's MapShapes: hover
+              // glow is pure CSS (no React state), the selected glow below
+              // is driven by selectedId (only changes on a click).
+              className="cursor-pointer transition-[opacity,filter] duration-200 hover:brightness-125 hover:[filter:drop-shadow(0_0_5px_rgba(255,255,255,0.55))]"
+              style={{
+                animation: "fadeIn 420ms ease-out backwards",
+                animationDelay: `${revealDelay(index)}ms`,
+                filter: isSelected
+                  ? "drop-shadow(0 0 10px rgba(255,255,255,0.85)) drop-shadow(0 0 20px rgba(96,165,250,0.6))"
+                  : undefined,
+              }}
+              onClick={() => onFlatClick(unit)}
+              onMouseEnter={(e) => onFlatHover(unit, e)}
+              onMouseMove={(e) => onFlatHover(unit, e)}
+              onMouseLeave={() => onFlatHoverEnd(unit.id)}
+            />
+            {zoneColor && (
+              <circle
+                cx={unit.polygon_points[0].x * VB}
+                cy={unit.polygon_points[0].y * vbHeight}
+                r={VB * 0.008}
+                fill={zoneColor}
+                stroke="#0b1f2e"
+                strokeWidth={VB * 0.0015}
+                className="pointer-events-none"
+              />
+            )}
+            <text
+              x={center.x}
+              y={center.y}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontSize={VB * 0.018}
+              fill="#ffffff"
+              stroke="#0b1f2e"
+              strokeWidth={VB * 0.005}
+              paintOrder="stroke"
+              className="pointer-events-none select-none font-semibold"
+              style={{ opacity: dimmed ? 0.25 : 1, transition: "opacity 300ms ease" }}
+            >
+              {unit.unit_number}
+            </text>
+          </g>
         );
       })}
     </>
@@ -80,6 +127,7 @@ export function FloorPlanViewer({
   const vbHeight = VB / aspectRatio;
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoveredUnit, setHoveredUnit] = useState<{ unit: Unit; x: number; y: number } | null>(null);
+  const zones = useMemo(() => distinctZones(flats), [flats]);
 
   const updateHoverPosition = useCallback((unit: Unit, e: React.MouseEvent) => {
     const rect = containerRef.current?.getBoundingClientRect();
@@ -129,6 +177,8 @@ export function FloorPlanViewer({
             <FlatShapes
               flats={flats}
               vbHeight={vbHeight}
+              zones={zones}
+              selectedId={zoomedId}
               onFlatClick={handleClick}
               onFlatHover={updateHoverPosition}
               onFlatHoverEnd={handleFlatHoverEnd}

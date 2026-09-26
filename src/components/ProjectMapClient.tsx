@@ -18,6 +18,7 @@ import { Compass } from "@/components/Compass";
 import { UnitInfoCard } from "@/components/UnitInfoCard";
 import { PENDING_ENQUIRY_KEY } from "@/lib/useEnquiryFlow";
 import { createLead } from "@/lib/actions/leads";
+import { useCountUp } from "@/lib/useCountUp";
 import {
   distinctZones,
   SITE_FEATURE_STYLES,
@@ -137,7 +138,19 @@ export function ProjectMapClient({
     // collide. min-h-0 on the map row is required for flex-1 to actually
     // shrink below its content's natural size in a flex column — without
     // it the row refuses to give up space to the header row above it.
-    <div className="relative flex h-[640px] w-full flex-col overflow-hidden rounded-xl border border-white/10 bg-[#0b1f2e]">
+    <div
+      className="relative flex h-[640px] w-full flex-col overflow-hidden rounded-xl border border-white/10 bg-[#0b1f2e]"
+      // A one-time "digital twin powering on" entrance for the whole panel
+      // when the project page first mounts — reuses the same settleIn
+      // keyframe BuildingDrilldown's floor-select/floor-view panels already
+      // use (a plain HTML element, so no SVG transform-box concerns), just
+      // a touch slower/grander given this is the top-level container, not
+      // a sub-panel. Plays once per mount; the reveal-in stagger on the
+      // shapes THEMSELVES (SitePlanViewer/FloorPlanViewer) runs on their
+      // own separate timeline right after, layering into one continuous
+      // "map powers on, then draws itself in" opening sequence.
+      style={{ animation: "settleIn 550ms var(--ease-cinematic)" }}
+    >
       {showMapChrome && (
         <div className="flex-none border-b border-map-border bg-map-panel/60 px-3 py-2.5 sm:px-4">
           <div className="min-w-0">
@@ -287,9 +300,13 @@ function Pill({ label, value, tone }: { label: string; value: number; tone: "neu
     yellow: "border-yellow-500/50 text-yellow-300",
     red: "border-red-500/50 text-red-300",
   };
+  // Counts up from 0 on first mount rather than appearing as a static
+  // number — useCountUp itself checks prefers-reduced-motion and jumps
+  // straight to the target for anyone who needs that.
+  const displayValue = useCountUp(value);
   return (
     <span className={`rounded-full border bg-black/30 px-2.5 py-0.5 text-[11px] font-medium ${toneClasses[tone]}`}>
-      {label} <span className="font-bold">{value}</span>
+      {label} <span className="font-bold tabular-nums">{displayValue}</span>
     </span>
   );
 }
@@ -316,6 +333,7 @@ function StatusChip({
     yellow: "border-yellow-500/50 text-yellow-300",
     red: "border-red-500/50 text-red-300",
   };
+  const displayValue = useCountUp(value);
   return (
     <button
       type="button"
@@ -325,7 +343,7 @@ function StatusChip({
         active ? "bg-white/20 ring-1 ring-white/50" : "bg-black/30 hover:bg-black/50"
       }`}
     >
-      {label} <span className="font-bold">{value}</span>
+      {label} <span className="font-bold tabular-nums">{displayValue}</span>
     </button>
   );
 }
