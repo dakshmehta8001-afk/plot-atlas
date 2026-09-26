@@ -16,6 +16,18 @@
 // that doesn't match `highlightZone` when the viewer has clicked a legend
 // pill to filter. Buildings always render in a neutral indigo "structure"
 // style since they aren't themselves bought/sold.
+//
+// Clicking a zone legend pill (ProjectMapClient's `toggleZone`) does two
+// things at once, both already true before this file's own zone fly-in
+// code was added: it sets `highlightZone` (dimming non-matching plots,
+// above) AND always forces zoneColourMode on, which is what guarantees
+// `highlightZone` is only ever non-null while colorMode is "zone" — i.e.
+// the dimming-as-highlight effect above and the camera fly-in below always
+// happen together, with no separate "highlight the zone" code needed here.
+// If a future change ever lets `highlightZone` be set while colorMode is
+// "status", the camera would still fly to the zone correctly, just without
+// the visual dim/highlight — worth re-checking this comment's assumption
+// then.
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MAP_VIEWBOX_SIZE,
@@ -60,6 +72,25 @@ export const BUILDING_ZOOM_TRANSITION_MS = 650;
 // tick, so this doesn't reintroduce the per-frame re-render cost the
 // MapShapes extraction was built to avoid.
 const LOD_LABEL_SCALE_THRESHOLD = 2;
+
+// Zone fly-in: how much extra margin to leave around a zone's own bounding
+// box when fitting the camera to it, as a fraction of the box's own
+// width/height on EACH side — 0.35 means the padded box is 1.7x the zone's
+// raw size, so the zone itself fills roughly 1/1.7 (~59%) of the frame,
+// leaving genuine surrounding context (neighboring zones/plots/roads)
+// visible rather than cropping tight to just the selected zone's plots.
+// This is what satisfies "keep surrounding plots visible" — a tight fit
+// would zoom in until nothing else was on screen, reading as a full screen
+// swap rather than a fly-in within the same map.
+const ZONE_FIT_PADDING = 0.35;
+// Never zoom OUT past the full-site identity view for a zone fit (a zone
+// spanning nearly the whole plan would otherwise compute a scale < 1,
+// which would look like zooming AWAY from the site, backwards for a
+// "fly INTO this zone" gesture) — and cap the zoom-IN side at the same
+// ceiling the free-roam pinch/wheel zoom already uses (`MAX_FREE_ZOOM`),
+// so a one-plot zone doesn't fly in absurdly tighter than a viewer could
+// otherwise ever manually zoom to.
+const ZONE_MIN_ZOOM = 1;
 
 // Road width parsing: width_label is free text like "30 ft"/"150 ft" (see
 // ROAD_WIDTH_PRESETS in types.ts), not a structured number, so a real site
@@ -590,8 +621,13 @@ export function SitePlanViewer({
 
   useEffect(() => {
     setView({ tx: 0, ty: 0, scale: 1 });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately keyed only on zoomedId/resetSignal, not view's own identity
-  }, [zoomedId, resetSignal]);
+    // Also reset on highlightZone changing (entering a zone, leaving one, or
+    // switching straight from one zone to another) — otherwise a viewer's
+    // leftover manual pan/zoom from browsing the last zone would compose
+    // with the NEXT zone's fresh fit-to-box transform below, landing
+    // somewhere neither transform intended.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately keyed only on zoomedId/resetSignal/highlightZone, not view's own identity
+  }, [zoomedId, resetSignal, highlightZone]);
 
   function handleWheel(e: React.WheelEvent<SVGSVGElement>) {
     if (zoomedId) return;
@@ -711,20 +747,77 @@ export function SitePlanViewer({
     return building?.polygon_points ?? null;
   }, [plots, buildings, zoomedId]);
 
-  const transform = useMemo(() => {
-    if (!zoomedShapePoints || zoomedShapePoints.length < 3) {
-      return "translate(0px, 0px) scale(1)";
-    }
-    const center = scaledBoundingBoxCenter(zoomedShapePoints, VB, vbHeight);
+  // Zone fly-in: the union bounding box of every valid plot belonging to
+  // `highlightZone` (the SAME prop the zone legend's dim/highlight filter
+  // above already uses — see the class comment at the top of this file for
+  // why that also means colorMode is already "zone" whenever this is set).
+  // Deliberately built from `plots` only (standalone units), matching the
+  // spec this was built against: a zone's camera target is the bounding
+  // box of its MEMBER UNITS' existing polygon_points — no new geometry, no
+  // schema change, nothing invented. A plot with fewer than 3 points is the
+  // same "invalid shape" guard the render loop below already uses (it
+  // wouldn't render as a polygon either), so it's excluded from the bounds
+  // calc too rather than skewing it with a degenerate point.
+  const highlightZoneBounds = useMemo(() => {
+    if (!highlightZone) return null;
+    const memberPoints = plots
+      .filter((p) => p.category === highlightZone && p.polygon_points.length >= 3)
+      .flatMap((p) => p.polygon_points);
+    if (memberPoints.length === 0) return null;
+    const xs = memberPoints.map((p) => p.x * VB);
+    const ys = memberPoints.map((p) => p.y * vbHeight);
+    return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+  }, [plots, highlightZone, vbHeight]);
+
+  // The fit-to-box camera transform for whichever zone is highlighted, or
+  // null if there isn't one (or its bounds turned out unusable — a zone
+  // whose only members have missing/invalid polygon data, or a single
+  // point repeated so the box has zero width/height) — the null case is
+  // the "gracefully fall back to the existing camera behavior" requirement:
+  // `transform` below just treats it the same as "no zone selected."
+  const zoneTransform = useMemo(() => {
+    if (!highlightZoneBounds) return null;
+    const { minX, maxX, minY, maxY } = highlightZoneBounds;
+    const boxWidth = maxX - minX;
+    const boxHeight = maxY - minY;
+    if (boxWidth <= 0 || boxHeight <= 0) return null;
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    const paddedWidth = boxWidth * (1 + 2 * ZONE_FIT_PADDING);
+    const paddedHeight = boxHeight * (1 + 2 * ZONE_FIT_PADDING);
+    // Fit (min of the two axis scales), not fill (max) — fill would crop
+    // whichever axis is relatively narrower to fill the frame completely,
+    // cutting off real content on that axis; fit guarantees the WHOLE
+    // padded box (and therefore every member plot) stays on screen.
+    const fitScale = Math.min(VB / paddedWidth, vbHeight / paddedHeight);
+    const scale = Math.min(MAX_FREE_ZOOM, Math.max(ZONE_MIN_ZOOM, fitScale));
     const targetX = VB / 2;
     const targetY = vbHeight / 2;
-    // Combined translate+scale so the zoomed shape's center lands in the
-    // middle of the viewBox: translate(A - s*C) scale(s) applied to a point
-    // p gives s*p + (A - s*C) = s*(p - C) + A, i.e. C maps to A.
-    const tx = targetX - ZOOM_SCALE * center.x;
-    const ty = targetY - ZOOM_SCALE * center.y;
-    return `translate(${tx}px, ${ty}px) scale(${ZOOM_SCALE})`;
-  }, [zoomedShapePoints, vbHeight]);
+    const tx = targetX - scale * centerX;
+    const ty = targetY - scale * centerY;
+    return `translate(${tx}px, ${ty}px) scale(${scale})`;
+  }, [highlightZoneBounds, vbHeight]);
+
+  const transform = useMemo(() => {
+    // A zoomed-in plot/building always wins over a zone fly-in — this is
+    // exactly the "click Building/Plot" step of the Site → Zone → Building
+    // flow, and this branch is completely unchanged from before zone
+    // fly-in existed, so that existing Building → Floor → Flat behavior
+    // stays untouched.
+    if (zoomedShapePoints && zoomedShapePoints.length >= 3) {
+      const center = scaledBoundingBoxCenter(zoomedShapePoints, VB, vbHeight);
+      const targetX = VB / 2;
+      const targetY = vbHeight / 2;
+      // Combined translate+scale so the zoomed shape's center lands in the
+      // middle of the viewBox: translate(A - s*C) scale(s) applied to a
+      // point p gives s*p + (A - s*C) = s*(p - C) + A, i.e. C maps to A.
+      const tx = targetX - ZOOM_SCALE * center.x;
+      const ty = targetY - ZOOM_SCALE * center.y;
+      return `translate(${tx}px, ${ty}px) scale(${ZOOM_SCALE})`;
+    }
+    if (zoneTransform) return zoneTransform;
+    return "translate(0px, 0px) scale(1)";
+  }, [zoomedShapePoints, vbHeight, zoneTransform]);
 
   const handlePlotClick = useCallback(
     (unit: Unit) => {
@@ -801,7 +894,15 @@ export function SitePlanViewer({
               highlightZone={highlightZone}
               highlightStatus={highlightStatus}
               selectedId={zoomedId}
-              showLabels={zoomedId !== null || view.scale >= LOD_LABEL_SCALE_THRESHOLD}
+              // Also show labels once a zone fly-in has happened, even
+              // though `view` (the free-roam layer) itself resets to
+              // identity scale on every zone change (see the effect
+              // above) — without this, flying into a zone would still
+              // hide plot numbers until the viewer ALSO manually
+              // wheel/pinch-zoomed past the LOD threshold, defeating the
+              // point of "Zone context → click Building/Plot" needing to
+              // actually read the plot numbers to pick one.
+              showLabels={zoomedId !== null || zoneTransform !== null || view.scale >= LOD_LABEL_SCALE_THRESHOLD}
               onPlotClick={handlePlotClick}
               onBuildingClick={handleBuildingClick}
               onPlotHover={updateHoverPosition}
