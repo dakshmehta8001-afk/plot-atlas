@@ -92,6 +92,24 @@ body {
   }
 }
 
+/* Used by BuildingDrilldown's floor-select and floor-view overlays — a
+   separate keyframe from fadeIn above (rather than adding a transform to
+   that one) since fadeIn is also used for SVG shape reveals, where a scale
+   transform needs `transform-box: fill-box` to originate from each shape's
+   own center instead of the whole viewport's — not a concern for these
+   overlays (plain HTML elements, where transform-origin already defaults
+   to the element's own box). */
+@keyframes settleIn {
+  from {
+    transform: scale(0.96);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
 /* Global reduced-motion support: neuters every CSS transition/animation
    duration (including ones set inline via style={{transition: "..."}}, e.g.
    SitePlanViewer's zoom-to-shape animation — an author-stylesheet

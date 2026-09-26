@@ -81,8 +81,14 @@ export function BuildingDrilldown({
       {/* SitePlanViewer stays mounted underneath every stage so the zoomed-in
           building footprint is still visible (softly dimmed) behind the
           floor selector / floor view overlays — it reads as "we're now
-          inside that building" rather than a jarring page swap. */}
-      <div className={stage.kind === "site" ? "h-full w-full" : "h-full w-full opacity-40 pointer-events-none"}>
+          inside that building" rather than a jarring page swap. The dim
+          itself eases in/out (transition-opacity) rather than snapping
+          instantly, so it reads as part of the same spatial move as the
+          zoom-to-building transform already playing underneath it. */}
+      <div
+        className={`h-full w-full transition-opacity duration-500 ${stage.kind === "site" ? "" : "pointer-events-none opacity-40"}`}
+        style={{ transitionTimingFunction: "var(--ease-cinematic)" }}
+      >
         <SitePlanViewer
           planImageUrl={planImageUrl}
           plots={plots}
@@ -104,7 +110,10 @@ export function BuildingDrilldown({
 
       {stage.kind === "floor-select" && (
         <div className="animate-[fadeIn_300ms_ease] absolute inset-0 z-20 flex items-center justify-center bg-black/40">
-          <div className="w-64 rounded-xl border border-white/10 bg-[#0f2436]/95 p-4 text-white shadow-2xl backdrop-blur">
+          <div
+            className="w-64 rounded-xl border border-white/10 bg-[#0f2436]/95 p-4 text-white shadow-2xl backdrop-blur"
+            style={{ animation: "settleIn 350ms var(--ease-cinematic)" }}
+          >
             <div className="mb-3 flex items-center justify-between">
               <h3 className="font-semibold">{stage.building.name}</h3>
               <button onClick={backToSite} className="text-white/50 hover:text-white">
@@ -135,7 +144,7 @@ export function BuildingDrilldown({
       )}
 
       {stage.kind === "floor-view" && (
-        <div className="animate-[fadeIn_300ms_ease] absolute inset-0 z-20">
+        <div className="absolute inset-0 z-20" style={{ animation: "settleIn 350ms var(--ease-cinematic)" }}>
           <div className="absolute left-3 top-3 z-10 flex gap-2">
             <button
               type="button"
