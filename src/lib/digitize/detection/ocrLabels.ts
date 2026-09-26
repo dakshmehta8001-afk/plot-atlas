@@ -20,6 +20,20 @@ const FEATURE_KEYWORDS: { pattern: RegExp; kind: SiteFeatureKind; label: string 
 ];
 
 const ROAD_NUMBER = /(\d+)/;
+// Confirms a road candidate's OWN OCR crop actually mentions something
+// road-related — used only to BOOST an already-geometrically-plausible
+// candidate's confidence (see detection/roads.ts's corridor scoring), never
+// to decide "is a road" on its own. A plot boundary that happens to have
+// nearby text reading "40" from an unrelated number should never become a
+// road just because a digit matched; requiring an actual road WORD (not
+// just ROAD_NUMBER) keeps this from being that permissive.
+const ROAD_KEYWORDS = /\b(road|rd|proposed|wide|highway)\b/i;
+// How much a confirmed keyword match adds to a candidate's confidence —
+// enough to carry a borderline geometric reading (e.g. right at
+// MIN_GEOMETRIC_CONFIDENCE) up past MIN_FINAL_CONFIDENCE, without being so
+// large that text alone could matter more than the corridor geometry that
+// got it considered in the first place.
+const ROAD_KEYWORD_CONFIDENCE_BOOST = 0.3;
 
 // Below this, an OCR result is treated the same as "found nothing" rather
 // than trusted to auto-fill a label — a wrong-but-confident-looking label
@@ -105,8 +119,24 @@ async function labelRoad(shape: DetectedShape, sourceCanvas: HTMLCanvasElement):
     return shape;
   }
   if (!result.text || result.confidence < MIN_CONFIDENCE) return shape;
+
+  // Keyword match is confidence SUPPORT for a candidate the geometric
+  // corridor detector already found plausible on its own — it never
+  // decides "road" by itself (a candidate with no geometric support never
+  // reaches this function with a meaningful confidence to boost). Checked
+  // independently of the number match: real labels like "PROPOSED ROAD 40'
+  // WIDE" have both, but a road whose width number OCR'd cleanly while the
+  // word itself didn't (or vice versa) should still get whatever support
+  // is actually there.
+  const keywordMatched = ROAD_KEYWORDS.test(result.text);
+  const boostedConfidence = keywordMatched
+    ? Math.min(1, (shape.confidence ?? 0) + ROAD_KEYWORD_CONFIDENCE_BOOST)
+    : shape.confidence;
+
   const numberMatch = result.text.match(ROAD_NUMBER);
-  return numberMatch ? { ...shape, label: `${numberMatch[1]} ft` } : shape;
+  return numberMatch
+    ? { ...shape, label: `${numberMatch[1]} ft`, confidence: boostedConfidence }
+    : { ...shape, confidence: boostedConfidence };
 }
 
 export async function labelShapesWithOcr(shapes: DetectedShape[], sourceCanvas: HTMLCanvasElement): Promise<DetectedShape[]> {

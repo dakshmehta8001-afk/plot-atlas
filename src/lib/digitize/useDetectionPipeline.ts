@@ -11,7 +11,7 @@ import { loadOpenCv, type Cv } from "./opencvLoader";
 import { denoise, enhanceContrast, MAX_EDGE_PX, resizeToMaxEdge, toGrayscale } from "./imagePrep";
 import { autoCanny } from "./detection/edges";
 import { detectPlotContours } from "./detection/plots";
-import { detectRoadSegments } from "./detection/roads";
+import { detectRoadSegments, filterRoadsByConfidence } from "./detection/roads";
 import { labelShapesWithOcr } from "./detection/ocrLabels";
 import { renderPdfFirstPageToCanvas } from "./pdfToImageClient";
 import type { DetectionResult, PipelineStage } from "./types";
@@ -66,11 +66,19 @@ export function useDetectionPipeline() {
       const analysisWidth = resized.cols;
       const analysisHeight = resized.rows;
 
-      setStage("detecting-roads");
-      const roadShapes = detectRoadSegments(cv, edges, analysisWidth, analysisHeight);
-
+      // Plots run FIRST now — road detection's corridor pairing needs to
+      // know which candidate edges are already accounted for as one
+      // plot's own boundary (see roads.ts's pairBelongsToSinglePlot),
+      // since a single plot's two opposite sides are otherwise
+      // geometrically indistinguishable from a real road's two paired
+      // boundaries: both are parallel, both have a real gap, both can
+      // have a uniform interior. Only the plot-contour cross-reference
+      // tells them apart.
       setStage("detecting-plots");
       const plotShapes = detectPlotContours(cv, edges, analysisWidth, analysisHeight);
+
+      setStage("detecting-roads");
+      const roadShapes = detectRoadSegments(cv, edges, contrasted, analysisWidth, analysisHeight, plotShapes);
 
       owned.forEach((m) => m.delete());
 
@@ -92,10 +100,23 @@ export function useDetectionPipeline() {
         ocrFailed = true;
       }
 
+      // A road candidate cleared the GEOMETRIC bar in detectRoadSegments,
+      // but OCR (just run, above) may or may not have found supporting
+      // road-keyword text to boost it — this is where a still-weak
+      // candidate with no textual support either actually gets dropped,
+      // rather than shown to the reviewer as a confident auto-detection.
+      // Plots/features are untouched (the filter is a no-op for them).
+      shapes = filterRoadsByConfidence(shapes);
+
       setStage("building-map");
 
       const warnings: string[] = [];
-      if (plotShapes.length === 0 && roadShapes.length === 0) {
+      // Checked against the FINAL shapes list, not the pre-filter
+      // roadShapes count — a road candidate can clear the geometric bar in
+      // detectRoadSegments and still get dropped by filterRoadsByConfidence
+      // just above if OCR found no supporting text either, so roadShapes
+      // itself is no longer the right thing to check here.
+      if (plotShapes.length === 0 && !shapes.some((s) => s.kind === "road")) {
         warnings.push(
           "No plot or road boundaries were detected automatically — use Draw Plot/Draw Road to trace them by hand, or retry with a straighter, better-lit photo.",
         );
