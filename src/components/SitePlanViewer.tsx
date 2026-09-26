@@ -141,6 +141,13 @@ export function SitePlanViewer({
   const [view, setView] = useState({ tx: 0, ty: 0, scale: 1 });
   const panGroupRef = useRef<SVGGElement>(null);
   const panState = useRef<{ startX: number; startY: number; origTx: number; origTy: number } | null>(null);
+  // Every currently-down pointer, keyed by pointerId — Pointer Events unify
+  // mouse/touch/pen, so tracking them this way (rather than a single "is
+  // panning" boolean) is what lets one finger fall through to the existing
+  // single-pointer pan below, while two simultaneously down switches into a
+  // pinch-zoom gesture instead.
+  const activePointers = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchState = useRef<{ distance: number } | null>(null);
 
   useEffect(() => {
     setView({ tx: 0, ty: 0, scale: 1 });
@@ -174,17 +181,74 @@ export function SitePlanViewer({
 
   function handleBackgroundPointerDown(e: React.PointerEvent<SVGSVGElement>) {
     if (zoomedId) return;
-    panState.current = { startX: e.clientX, startY: e.clientY, origTx: view.tx, origTy: view.ty };
+    activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     (e.target as Element).setPointerCapture(e.pointerId);
+
+    if (activePointers.current.size === 2) {
+      // A second finger just landed — hand off from single-finger pan (if
+      // one was in progress) to a pinch gesture.
+      panState.current = null;
+      const [a, b] = [...activePointers.current.values()];
+      pinchState.current = { distance: Math.hypot(b.x - a.x, b.y - a.y) };
+    } else if (activePointers.current.size === 1) {
+      panState.current = { startX: e.clientX, startY: e.clientY, origTx: view.tx, origTy: view.ty };
+    }
   }
+
   function handleBackgroundPointerMove(e: React.PointerEvent<SVGSVGElement>) {
+    if (!activePointers.current.has(e.pointerId)) return;
+    activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activePointers.current.size === 2 && pinchState.current) {
+      const group = panGroupRef.current;
+      if (!group) return;
+      const [a, b] = [...activePointers.current.values()];
+      const distance = Math.hypot(b.x - a.x, b.y - a.y);
+      const midX = (a.x + b.x) / 2;
+      const midY = (a.y + b.y) / 2;
+      const factor = distance / pinchState.current.distance;
+      pinchState.current.distance = distance;
+
+      // Same "keep a screen point fixed while scale changes" algebra as
+      // handleWheel, just re-anchored to the pinch midpoint every move
+      // event instead of a stationary cursor — recomputing the anchor from
+      // the CURRENT (pre-update) transform each event, rather than fixing
+      // it once at gesture start, is what lets a pinch pan (both fingers
+      // drifting together) and zoom (fingers spreading/pinching) compose
+      // into one gesture without tracking them as two separate things.
+      const rawLocal = clientPointToLocalFraction(group, midX, midY, 1);
+      if (!rawLocal) return;
+      setView((prev) => {
+        const nextScale = Math.min(MAX_FREE_ZOOM, Math.max(1, prev.scale * factor));
+        const px = rawLocal.x;
+        const py = rawLocal.y;
+        const tx = px - ((px - prev.tx) / prev.scale) * nextScale;
+        const ty = py - ((py - prev.ty) / prev.scale) * nextScale;
+        return { tx, ty, scale: nextScale };
+      });
+      return;
+    }
+
     if (!panState.current) return;
     const dx = e.clientX - panState.current.startX;
     const dy = e.clientY - panState.current.startY;
     setView((prev) => ({ ...prev, tx: panState.current!.origTx + dx, ty: panState.current!.origTy + dy }));
   }
-  function handleBackgroundPointerUp() {
-    panState.current = null;
+
+  function handleBackgroundPointerUp(e: React.PointerEvent<SVGSVGElement>) {
+    activePointers.current.delete(e.pointerId);
+
+    if (activePointers.current.size < 2) {
+      pinchState.current = null;
+    }
+    if (activePointers.current.size === 1) {
+      // One finger lifted off during a pinch — resume a plain single-finger
+      // pan from here rather than freezing until it's lifted too.
+      const [[, remaining]] = [...activePointers.current.entries()];
+      panState.current = { startX: remaining.x, startY: remaining.y, origTx: view.tx, origTy: view.ty };
+    } else if (activePointers.current.size === 0) {
+      panState.current = null;
+    }
   }
 
   function zoomBy(factor: number) {
@@ -276,6 +340,7 @@ export function SitePlanViewer({
           onPointerDown={handleBackgroundPointerDown}
           onPointerMove={handleBackgroundPointerMove}
           onPointerUp={handleBackgroundPointerUp}
+          onPointerCancel={handleBackgroundPointerUp}
         >
           {/* Free-roam pan/zoom group (identity while a plot/building is
               zoomed-in via the scripted animation below) wraps the existing
