@@ -25,16 +25,36 @@ export interface DigitizeSaveInput {
   shapes: DigitizedShapeInput[];
 }
 
+// A polygon needs >=3 points to be a real shape, a road (open polyline)
+// needs >=2 — the DB only enforces `not null` on polygon_points/path_points,
+// not a minimum length. The review canvas UI already guards every path that
+// could produce an under-count shape (manual draw's MIN_DRAW_POINTS, the
+// split tool's <3-point rejection, vertex-delete's floor), so this isn't
+// currently reachable through normal use — but it's exactly the shape of
+// bug that produced a batch of stray "Unlabeled" rows during earlier
+// testing, and this action has no server-side backstop if a future UI
+// change (or a direct call to this action, bypassing the UI) reintroduces
+// it. Rejecting the WHOLE save up front (rather than silently dropping the
+// bad shape) means a sub-admin never loses work without knowing why.
+function minPointsFor(kind: DigitizedShapeInput["kind"]): number {
+  return kind === "road" ? 2 : 3;
+}
+
 export async function saveDigitizedShapes(
   input: DigitizeSaveInput,
 ): Promise<ActionResult & { created?: number }> {
+  const invalidShape = input.shapes.find((s) => s.points.length < minPointsFor(s.kind));
+  if (invalidShape) {
+    return {
+      error: `"${invalidShape.label || "Unlabeled"}" has only ${invalidShape.points.length} point(s) — a ${invalidShape.kind} needs at least ${minPointsFor(invalidShape.kind)}.`,
+    };
+  }
+
   const supabase = await createClient();
 
   const plotRows = input.shapes
     .filter((s) => s.kind === "plot")
     .map((s) => ({
-      project_id: input.projectId,
-      unit_type: "plot" as const,
       unit_number: s.label,
       status: s.status ?? ("available" as UnitStatus),
       polygon_points: s.points,
@@ -43,7 +63,6 @@ export async function saveDigitizedShapes(
   const roadRows = input.shapes
     .filter((s) => s.kind === "road")
     .map((s) => ({
-      project_id: input.projectId,
       width_label: s.label,
       path_points: s.points,
     }));
@@ -51,26 +70,26 @@ export async function saveDigitizedShapes(
   const featureRows = input.shapes
     .filter((s) => s.kind === "feature")
     .map((s) => ({
-      project_id: input.projectId,
       kind: s.featureKind ?? ("other" as SiteFeatureKind),
       label: s.label,
       polygon_points: s.points,
     }));
 
-  if (plotRows.length > 0) {
-    const { error } = await supabase.from("units").insert(plotRows);
-    if (error) return { error: `Saving plots failed: ${error.message}` };
-  }
-  if (roadRows.length > 0) {
-    const { error } = await supabase.from("roads").insert(roadRows);
-    if (error) return { error: `Saving roads failed: ${error.message}` };
-  }
-  if (featureRows.length > 0) {
-    const { error } = await supabase.from("site_features").insert(featureRows);
-    if (error) return { error: `Saving areas failed: ${error.message}` };
-  }
+  // A single RPC (supabase/migrations/20260926000200_add_save_digitized_shapes_rpc.sql)
+  // wraps all three inserts in one transaction, rather than three separate
+  // .insert() calls — a mid-save failure now rolls back everything instead
+  // of leaving the earlier inserts committed (which risked duplicating them
+  // on retry, since the review canvas's local state is only cleared once
+  // the WHOLE save reports success).
+  const { data, error } = await supabase.rpc("save_digitized_shapes", {
+    p_project_id: input.projectId,
+    p_plots: plotRows,
+    p_roads: roadRows,
+    p_features: featureRows,
+  });
+  if (error) return { error: error.message };
 
   revalidatePath(`/dashboard/projects/${input.projectId}`, "layout");
   revalidatePath("/projects", "layout");
-  return { created: plotRows.length + roadRows.length + featureRows.length };
+  return { created: data ?? 0 };
 }

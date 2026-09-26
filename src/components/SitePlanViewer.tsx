@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 // Viewer-facing (read-only) map of a project's master site plan: renders
 // every standalone plot AND every building's footprint as SVG polygons over
@@ -16,7 +16,7 @@
 // that doesn't match `highlightZone` when the viewer has clicked a legend
 // pill to filter. Buildings always render in a neutral indigo "structure"
 // style since they aren't themselves bought/sold.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MAP_VIEWBOX_SIZE,
   SITE_FEATURE_STYLES,
@@ -81,6 +81,251 @@ function pathMidpoint(points: { x: number; y: number }[], vbWidth: number, vbHei
   }
   return { x: px[px.length - 1], y: py[px.length - 1] };
 }
+
+// Extracted specifically so pan/zoom (`view`) and hover-tooltip
+// (`hoveredUnit`) state — both of which live in SitePlanViewer and change
+// on nearly every pointermove/wheel event during a drag-pan, pinch, or
+// hover — don't force a full re-render of every road/plot/building/feature
+// on each of those events. A performance audit found this recomputing
+// every shape's SVG points string (toScaledSvgPoints etc.) on every single
+// frame of a pan/zoom gesture, invisible on a handful of demo plots but a
+// real source of dropped frames on a real project with 100+ plots,
+// especially on mobile (the least CPU headroom, and exactly where pinch-
+// zoom makes this the most reachable). React.memo only helps if the props
+// passed in are themselves stable across those re-renders — see the
+// useCallback-wrapped handlers in SitePlanViewer below; plots/roads/etc.
+// are already stable since they come from a Server Component fetch that
+// doesn't re-run on client-side pan/zoom/hover.
+const MapShapes = memo(function MapShapes({
+  roads,
+  plots,
+  buildings,
+  features,
+  vbHeight,
+  colorMode,
+  zones,
+  highlightZone,
+  highlightStatus,
+  onPlotClick,
+  onBuildingClick,
+  onPlotHover,
+  onPlotHoverEnd,
+}: {
+  roads: Road[];
+  plots: Unit[];
+  buildings: Building[];
+  features: SiteFeature[];
+  vbHeight: number;
+  colorMode: "status" | "zone";
+  zones: string[];
+  highlightZone: string | null;
+  highlightStatus: UnitStatus | null;
+  onPlotClick: (unit: Unit) => void;
+  onBuildingClick: (building: Building) => void;
+  onPlotHover: (unit: Unit, e: React.MouseEvent) => void;
+  onPlotHoverEnd: (unitId: string) => void;
+}) {
+  function plotStyle(unit: Unit): { fill: string; border: string; opacity: number } {
+    const statusDimmed = highlightStatus !== null && unit.status !== highlightStatus;
+    if (colorMode === "zone") {
+      const dimmed = (highlightZone !== null && unit.category !== highlightZone) || statusDimmed;
+      if (!unit.category) return { fill: "rgba(148,163,184,0.25)", border: "#64748b", opacity: dimmed ? 0.3 : 1 };
+      const color = zoneColorFor(unit.category, zones);
+      return { fill: `${color}59`, border: color, opacity: dimmed ? 0.3 : 1 };
+    }
+    const style = UNIT_STATUS_STYLES[unit.status];
+    return { fill: style.fill, border: style.border, opacity: statusDimmed ? 0.3 : 1 };
+  }
+
+  return (
+    <>
+      {roads.map((road, index) => {
+        if (road.path_points.length < 2) return null;
+        const mid = pathMidpoint(road.path_points, VB, vbHeight);
+        const motionPathId = `road-motion-${road.id}`;
+        // Varying the duration a little per road, rather than one
+        // fixed number, is what keeps several cars on screen at once
+        // from all being in lockstep.
+        const driveDuration = 7 + (index % 4) * 1.5;
+        return (
+          <g
+            key={road.id}
+            className="pointer-events-none"
+            // Reveal-in on first mount only — `animationFillMode:
+            // "backwards"` applies the from-keyframe during the
+            // staggered delay (so later shapes don't flash at full
+            // opacity before their turn), but does NOT persist after
+            // the animation ends, so it can never permanently override
+            // anything. Re-renders (toggling the zone/status filter,
+            // etc.) don't replay this — it only plays once, when the
+            // shape's own DOM node is first created, since none of
+            // these props change on re-render.
+            style={{ animation: "fadeIn 420ms ease-out backwards", animationDelay: `${revealDelay(index)}ms` }}
+          >
+            {/* Rendered as real road styling (asphalt + lane markings),
+                not just a highlight — this is what makes a traced road
+                look like a road on ANY uploaded image, not only one
+                that already has road artwork drawn into it. */}
+            <polyline
+              points={toScaledSvgPoints(road.path_points, VB, vbHeight)}
+              fill="none"
+              stroke="#3a4552"
+              strokeWidth={VB * 0.026}
+              strokeLinecap="round"
+            />
+            <polyline
+              points={toScaledSvgPoints(road.path_points, VB, vbHeight)}
+              fill="none"
+              stroke="#e8eaed"
+              strokeWidth={VB * 0.0018}
+              strokeDasharray={`${VB * 0.014} ${VB * 0.01}`}
+              strokeLinecap="round"
+              opacity={0.8}
+            />
+
+            {/* An invisible copy of the same path, purely so the car
+                below has something to run animateMotion along —
+                <mpath> only works off a real <path>, not a <polyline>. */}
+            <path id={motionPathId} d={toScaledSvgPathD(road.path_points, VB, vbHeight)} fill="none" stroke="none" />
+            <g>
+              <rect
+                x={-VB * 0.011}
+                y={-VB * 0.0055}
+                width={VB * 0.022}
+                height={VB * 0.011}
+                rx={VB * 0.0025}
+                fill={index % 2 === 0 ? "#d7473f" : "#e7e7e2"}
+              />
+              <animateMotion
+                dur={`${driveDuration}s`}
+                repeatCount="indefinite"
+                rotate="auto"
+                keyPoints="0;1;0"
+                keyTimes="0;0.5;1"
+                calcMode="linear"
+              >
+                <mpath href={`#${motionPathId}`} />
+              </animateMotion>
+            </g>
+            {/* A backing rect behind the label so a road's width stays
+                legible over whatever the plan image looks like underneath. */}
+            <rect
+              x={mid.x - road.width_label.length * (VB * 0.0055)}
+              y={mid.y - VB * 0.013}
+              width={road.width_label.length * (VB * 0.011)}
+              height={VB * 0.022}
+              rx={VB * 0.004}
+              fill="#0f2436"
+              opacity={0.85}
+            />
+            <text
+              x={mid.x}
+              y={mid.y + VB * 0.003}
+              textAnchor="middle"
+              fontSize={VB * 0.014}
+              fill="#f5c94b"
+              className="select-none font-medium"
+            >
+              {road.width_label}
+            </text>
+          </g>
+        );
+      })}
+
+      {plots.map((unit, index) => {
+        if (unit.polygon_points.length < 3) return null;
+        const style = plotStyle(unit);
+        return (
+          <polygon
+            key={unit.id}
+            points={toScaledSvgPoints(unit.polygon_points, VB, vbHeight)}
+            fill={style.fill}
+            stroke={style.border}
+            strokeWidth={VB * 0.002}
+            opacity={style.opacity}
+            className="cursor-pointer transition-opacity hover:opacity-80"
+            style={{ animation: "fadeIn 420ms ease-out backwards", animationDelay: `${revealDelay(index)}ms` }}
+            onClick={() => onPlotClick(unit)}
+            onMouseEnter={(e) => onPlotHover(unit, e)}
+            onMouseMove={(e) => onPlotHover(unit, e)}
+            onMouseLeave={() => onPlotHoverEnd(unit.id)}
+          />
+        );
+      })}
+
+      {buildings.map((building, index) => {
+        if (building.polygon_points.length < 3) return null;
+        const center = scaledBoundingBoxCenter(building.polygon_points, VB, vbHeight);
+        return (
+          <g
+            key={building.id}
+            style={{ animation: "fadeIn 420ms ease-out backwards", animationDelay: `${revealDelay(plots.length + index)}ms` }}
+          >
+            <polygon
+              points={toScaledSvgPoints(building.polygon_points, VB, vbHeight)}
+              fill="rgba(99,102,241,0.35)"
+              stroke="#6366f1"
+              strokeWidth={VB * 0.0025}
+              strokeDasharray={`${VB * 0.006} ${VB * 0.004}`}
+              className="cursor-pointer transition-opacity hover:opacity-80"
+              onClick={() => onBuildingClick(building)}
+            >
+              <title>{building.name}</title>
+            </polygon>
+            <text
+              x={center.x}
+              y={center.y}
+              textAnchor="middle"
+              fontSize={VB * 0.02}
+              fill="#e0e7ff"
+              className="pointer-events-none select-none font-semibold"
+            >
+              {building.name}
+            </text>
+          </g>
+        );
+      })}
+
+      {/* Parks/temples/gates/etc — informational only, no click-to-zoom
+          (same lighter interaction level as buildings get relative to
+          plots, since a feature isn't itself a sellable unit). */}
+      {features.map((feature, index) => {
+        if (feature.polygon_points.length < 3) return null;
+        const style = SITE_FEATURE_STYLES[feature.kind];
+        const center = scaledBoundingBoxCenter(feature.polygon_points, VB, vbHeight);
+        return (
+          <g
+            key={feature.id}
+            className="pointer-events-none"
+            style={{
+              animation: "fadeIn 420ms ease-out backwards",
+              animationDelay: `${revealDelay(plots.length + buildings.length + index)}ms`,
+            }}
+          >
+            <polygon
+              points={toScaledSvgPoints(feature.polygon_points, VB, vbHeight)}
+              fill={style.fill}
+              stroke={style.border}
+              strokeWidth={VB * 0.002}
+            >
+              <title>{feature.label}</title>
+            </polygon>
+            <text
+              x={center.x}
+              y={center.y}
+              textAnchor="middle"
+              fontSize={VB * 0.016}
+              fill="#f8fafc"
+              className="select-none font-medium"
+            >
+              {feature.label}
+            </text>
+          </g>
+        );
+      })}
+    </>
+  );
+});
 
 export function SitePlanViewer({
   planImageUrl,
@@ -164,11 +409,20 @@ export function SitePlanViewer({
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoveredUnit, setHoveredUnit] = useState<{ unit: Unit; x: number; y: number } | null>(null);
 
-  function updateHoverPosition(unit: Unit, e: React.MouseEvent) {
+  // Wrapped in useCallback (stable across the pan/zoom/hover re-renders
+  // this component has often) so they can be passed as props into the
+  // React.memo-wrapped MapShapes below without defeating its memoization —
+  // a fresh function identity on every render would make React.memo's prop
+  // comparison always see "something changed" and re-render anyway.
+  const updateHoverPosition = useCallback((unit: Unit, e: React.MouseEvent) => {
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
     setHoveredUnit({ unit, x: e.clientX - rect.left, y: e.clientY - rect.top });
-  }
+  }, []);
+
+  const handlePlotHoverEnd = useCallback((unitId: string) => {
+    setHoveredUnit((prev) => (prev?.unit.id === unitId ? null : prev));
+  }, []);
 
   useEffect(() => {
     setView({ tx: 0, ty: 0, scale: 1 });
@@ -308,31 +562,25 @@ export function SitePlanViewer({
     return `translate(${tx}px, ${ty}px) scale(${ZOOM_SCALE})`;
   }, [zoomedShapePoints, vbHeight]);
 
-  function handlePlotClick(unit: Unit) {
-    setZoomedId(unit.id);
-    setHoveredUnit(null);
-    onPlotClick(unit);
-  }
+  const handlePlotClick = useCallback(
+    (unit: Unit) => {
+      setZoomedId(unit.id);
+      setHoveredUnit(null);
+      onPlotClick(unit);
+    },
+    [onPlotClick],
+  );
 
-  function handleBuildingClick(building: Building) {
-    setZoomedId(building.id);
-    // Let the zoom-in transition play out before telling the parent to swap
-    // to the floor selector, so the building visually "opens up" rather
-    // than the floor UI just appearing instantly.
-    window.setTimeout(() => onBuildingSettled(building), BUILDING_ZOOM_TRANSITION_MS);
-  }
-
-  function plotStyle(unit: Unit): { fill: string; border: string; opacity: number } {
-    const statusDimmed = highlightStatus !== null && unit.status !== highlightStatus;
-    if (colorMode === "zone") {
-      const dimmed = (highlightZone !== null && unit.category !== highlightZone) || statusDimmed;
-      if (!unit.category) return { fill: "rgba(148,163,184,0.25)", border: "#64748b", opacity: dimmed ? 0.3 : 1 };
-      const color = zoneColorFor(unit.category, zones);
-      return { fill: `${color}59`, border: color, opacity: dimmed ? 0.3 : 1 };
-    }
-    const style = UNIT_STATUS_STYLES[unit.status];
-    return { fill: style.fill, border: style.border, opacity: statusDimmed ? 0.3 : 1 };
-  }
+  const handleBuildingClick = useCallback(
+    (building: Building) => {
+      setZoomedId(building.id);
+      // Let the zoom-in transition play out before telling the parent to
+      // swap to the floor selector, so the building visually "opens up"
+      // rather than the floor UI just appearing instantly.
+      window.setTimeout(() => onBuildingSettled(building), BUILDING_ZOOM_TRANSITION_MS);
+    },
+    [onBuildingSettled],
+  );
 
   return (
     <div ref={containerRef} className="relative h-full w-full">
@@ -378,190 +626,21 @@ export function SitePlanViewer({
           >
             <image href={planImageUrl} x={0} y={0} width={VB} height={vbHeight} />
 
-            {roads.map((road, index) => {
-              if (road.path_points.length < 2) return null;
-              const mid = pathMidpoint(road.path_points, VB, vbHeight);
-              const motionPathId = `road-motion-${road.id}`;
-              // Varying the duration a little per road, rather than one
-              // fixed number, is what keeps several cars on screen at once
-              // from all being in lockstep.
-              const driveDuration = 7 + (index % 4) * 1.5;
-              return (
-                <g
-                  key={road.id}
-                  className="pointer-events-none"
-                  // Reveal-in on first mount only — `animationFillMode:
-                  // "backwards"` applies the from-keyframe during the
-                  // staggered delay (so later shapes don't flash at full
-                  // opacity before their turn), but does NOT persist after
-                  // the animation ends, so it can never permanently override
-                  // anything. Re-renders (toggling the zone/status filter,
-                  // etc.) don't replay this — it only plays once, when the
-                  // shape's own DOM node is first created, since none of
-                  // these props change on re-render.
-                  style={{ animation: "fadeIn 420ms ease-out backwards", animationDelay: `${revealDelay(index)}ms` }}
-                >
-                  {/* Rendered as real road styling (asphalt + lane markings),
-                      not just a highlight — this is what makes a traced road
-                      look like a road on ANY uploaded image, not only one
-                      that already has road artwork drawn into it. */}
-                  <polyline
-                    points={toScaledSvgPoints(road.path_points, VB, vbHeight)}
-                    fill="none"
-                    stroke="#3a4552"
-                    strokeWidth={VB * 0.026}
-                    strokeLinecap="round"
-                  />
-                  <polyline
-                    points={toScaledSvgPoints(road.path_points, VB, vbHeight)}
-                    fill="none"
-                    stroke="#e8eaed"
-                    strokeWidth={VB * 0.0018}
-                    strokeDasharray={`${VB * 0.014} ${VB * 0.01}`}
-                    strokeLinecap="round"
-                    opacity={0.8}
-                  />
-
-                  {/* An invisible copy of the same path, purely so the car
-                      below has something to run animateMotion along —
-                      <mpath> only works off a real <path>, not a <polyline>. */}
-                  <path id={motionPathId} d={toScaledSvgPathD(road.path_points, VB, vbHeight)} fill="none" stroke="none" />
-                  <g>
-                    <rect
-                      x={-VB * 0.011}
-                      y={-VB * 0.0055}
-                      width={VB * 0.022}
-                      height={VB * 0.011}
-                      rx={VB * 0.0025}
-                      fill={index % 2 === 0 ? "#d7473f" : "#e7e7e2"}
-                    />
-                    <animateMotion
-                      dur={`${driveDuration}s`}
-                      repeatCount="indefinite"
-                      rotate="auto"
-                      keyPoints="0;1;0"
-                      keyTimes="0;0.5;1"
-                      calcMode="linear"
-                    >
-                      <mpath href={`#${motionPathId}`} />
-                    </animateMotion>
-                  </g>
-                  {/* A backing rect behind the label so a road's width stays
-                      legible over whatever the plan image looks like underneath. */}
-                  <rect
-                    x={mid.x - road.width_label.length * (VB * 0.0055)}
-                    y={mid.y - VB * 0.013}
-                    width={road.width_label.length * (VB * 0.011)}
-                    height={VB * 0.022}
-                    rx={VB * 0.004}
-                    fill="#0f2436"
-                    opacity={0.85}
-                  />
-                  <text
-                    x={mid.x}
-                    y={mid.y + VB * 0.003}
-                    textAnchor="middle"
-                    fontSize={VB * 0.014}
-                    fill="#f5c94b"
-                    className="select-none font-medium"
-                  >
-                    {road.width_label}
-                  </text>
-                </g>
-              );
-            })}
-
-            {plots.map((unit, index) => {
-              if (unit.polygon_points.length < 3) return null;
-              const style = plotStyle(unit);
-              return (
-                <polygon
-                  key={unit.id}
-                  points={toScaledSvgPoints(unit.polygon_points, VB, vbHeight)}
-                  fill={style.fill}
-                  stroke={style.border}
-                  strokeWidth={VB * 0.002}
-                  opacity={style.opacity}
-                  className="cursor-pointer transition-opacity hover:opacity-80"
-                  style={{ animation: "fadeIn 420ms ease-out backwards", animationDelay: `${revealDelay(index)}ms` }}
-                  onClick={() => handlePlotClick(unit)}
-                  onMouseEnter={(e) => updateHoverPosition(unit, e)}
-                  onMouseMove={(e) => updateHoverPosition(unit, e)}
-                  onMouseLeave={() => setHoveredUnit((prev) => (prev?.unit.id === unit.id ? null : prev))}
-                />
-              );
-            })}
-
-            {buildings.map((building, index) => {
-              if (building.polygon_points.length < 3) return null;
-              const center = scaledBoundingBoxCenter(building.polygon_points, VB, vbHeight);
-              return (
-                <g
-                  key={building.id}
-                  style={{ animation: "fadeIn 420ms ease-out backwards", animationDelay: `${revealDelay(plots.length + index)}ms` }}
-                >
-                  <polygon
-                    points={toScaledSvgPoints(building.polygon_points, VB, vbHeight)}
-                    fill="rgba(99,102,241,0.35)"
-                    stroke="#6366f1"
-                    strokeWidth={VB * 0.0025}
-                    strokeDasharray={`${VB * 0.006} ${VB * 0.004}`}
-                    className="cursor-pointer transition-opacity hover:opacity-80"
-                    onClick={() => handleBuildingClick(building)}
-                  >
-                    <title>{building.name}</title>
-                  </polygon>
-                  <text
-                    x={center.x}
-                    y={center.y}
-                    textAnchor="middle"
-                    fontSize={VB * 0.02}
-                    fill="#e0e7ff"
-                    className="pointer-events-none select-none font-semibold"
-                  >
-                    {building.name}
-                  </text>
-                </g>
-              );
-            })}
-
-            {/* Parks/temples/gates/etc — informational only, no click-to-zoom
-                (same lighter interaction level as buildings get relative to
-                plots, since a feature isn't itself a sellable unit). */}
-            {features.map((feature, index) => {
-              if (feature.polygon_points.length < 3) return null;
-              const style = SITE_FEATURE_STYLES[feature.kind];
-              const center = scaledBoundingBoxCenter(feature.polygon_points, VB, vbHeight);
-              return (
-                <g
-                  key={feature.id}
-                  className="pointer-events-none"
-                  style={{
-                    animation: "fadeIn 420ms ease-out backwards",
-                    animationDelay: `${revealDelay(plots.length + buildings.length + index)}ms`,
-                  }}
-                >
-                  <polygon
-                    points={toScaledSvgPoints(feature.polygon_points, VB, vbHeight)}
-                    fill={style.fill}
-                    stroke={style.border}
-                    strokeWidth={VB * 0.002}
-                  >
-                    <title>{feature.label}</title>
-                  </polygon>
-                  <text
-                    x={center.x}
-                    y={center.y}
-                    textAnchor="middle"
-                    fontSize={VB * 0.016}
-                    fill="#f8fafc"
-                    className="select-none font-medium"
-                  >
-                    {feature.label}
-                  </text>
-                </g>
-              );
-            })}
+            <MapShapes
+              roads={roads}
+              plots={plots}
+              buildings={buildings}
+              features={features}
+              vbHeight={vbHeight}
+              colorMode={colorMode}
+              zones={zones}
+              highlightZone={highlightZone}
+              highlightStatus={highlightStatus}
+              onPlotClick={handlePlotClick}
+              onBuildingClick={handleBuildingClick}
+              onPlotHover={updateHoverPosition}
+              onPlotHoverEnd={handlePlotHoverEnd}
+            />
           </g>
           </g>
         </svg>

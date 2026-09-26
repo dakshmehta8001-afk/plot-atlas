@@ -5,7 +5,7 @@
 // same click-to-zoom interaction as SitePlanViewer. Used inside
 // BuildingDrilldown once a viewer has picked a floor from the floor
 // selector.
-import { useMemo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import { MAP_VIEWBOX_SIZE, UNIT_STATUS_STYLES, type Unit } from "@/lib/types";
 import { useImageAspectRatio } from "@/lib/useImageAspectRatio";
 import { toScaledSvgPoints, scaledBoundingBoxCenter } from "@/lib/svgPolygon";
@@ -18,6 +18,49 @@ const REVEAL_MAX_DELAY_MS = 400;
 function revealDelay(index: number): number {
   return Math.min(index * REVEAL_STEP_MS, REVEAL_MAX_DELAY_MS);
 }
+
+// See the matching comment on SitePlanViewer's MapShapes: extracted so the
+// hover-tooltip state (which changes on every mousemove while hovering a
+// flat) doesn't force every flat's SVG points string to recompute on each
+// of those events — invisible on a small floor plate, real on a floor with
+// many flats.
+const FlatShapes = memo(function FlatShapes({
+  flats,
+  vbHeight,
+  onFlatClick,
+  onFlatHover,
+  onFlatHoverEnd,
+}: {
+  flats: Unit[];
+  vbHeight: number;
+  onFlatClick: (unit: Unit) => void;
+  onFlatHover: (unit: Unit, e: React.MouseEvent) => void;
+  onFlatHoverEnd: (unitId: string) => void;
+}) {
+  return (
+    <>
+      {flats.map((unit, index) => {
+        if (unit.polygon_points.length < 3) return null;
+        const style = UNIT_STATUS_STYLES[unit.status];
+        return (
+          <polygon
+            key={unit.id}
+            points={toScaledSvgPoints(unit.polygon_points, VB, vbHeight)}
+            fill={style.fill}
+            stroke={style.border}
+            strokeWidth={VB * 0.0025}
+            className="cursor-pointer transition-opacity hover:opacity-80"
+            style={{ animation: "fadeIn 420ms ease-out backwards", animationDelay: `${revealDelay(index)}ms` }}
+            onClick={() => onFlatClick(unit)}
+            onMouseEnter={(e) => onFlatHover(unit, e)}
+            onMouseMove={(e) => onFlatHover(unit, e)}
+            onMouseLeave={() => onFlatHoverEnd(unit.id)}
+          />
+        );
+      })}
+    </>
+  );
+});
 
 export function FloorPlanViewer({
   planImageUrl,
@@ -38,11 +81,15 @@ export function FloorPlanViewer({
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoveredUnit, setHoveredUnit] = useState<{ unit: Unit; x: number; y: number } | null>(null);
 
-  function updateHoverPosition(unit: Unit, e: React.MouseEvent) {
+  const updateHoverPosition = useCallback((unit: Unit, e: React.MouseEvent) => {
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
     setHoveredUnit({ unit, x: e.clientX - rect.left, y: e.clientY - rect.top });
-  }
+  }, []);
+
+  const handleFlatHoverEnd = useCallback((unitId: string) => {
+    setHoveredUnit((prev) => (prev?.unit.id === unitId ? null : prev));
+  }, []);
 
   const transform = useMemo(() => {
     const flat = flats.find((f) => f.id === zoomedId);
@@ -55,11 +102,14 @@ export function FloorPlanViewer({
     return `translate(${tx}px, ${ty}px) scale(${ZOOM_SCALE})`;
   }, [flats, zoomedId, vbHeight]);
 
-  function handleClick(unit: Unit) {
-    setZoomedId(unit.id);
-    setHoveredUnit(null);
-    onFlatClick(unit);
-  }
+  const handleClick = useCallback(
+    (unit: Unit) => {
+      setZoomedId(unit.id);
+      setHoveredUnit(null);
+      onFlatClick(unit);
+    },
+    [onFlatClick],
+  );
 
   return (
     <div ref={containerRef} className="relative h-full w-full">
@@ -76,25 +126,13 @@ export function FloorPlanViewer({
         <svg viewBox={`0 0 ${VB} ${vbHeight}`} className="h-full w-full bg-[#0b1f2e]">
           <g style={{ transform, transformOrigin: "0 0", transition: "transform 550ms var(--ease-cinematic)" }}>
             <image href={planImageUrl} x={0} y={0} width={VB} height={vbHeight} />
-            {flats.map((unit, index) => {
-              if (unit.polygon_points.length < 3) return null;
-              const style = UNIT_STATUS_STYLES[unit.status];
-              return (
-                <polygon
-                  key={unit.id}
-                  points={toScaledSvgPoints(unit.polygon_points, VB, vbHeight)}
-                  fill={style.fill}
-                  stroke={style.border}
-                  strokeWidth={VB * 0.0025}
-                  className="cursor-pointer transition-opacity hover:opacity-80"
-                  style={{ animation: "fadeIn 420ms ease-out backwards", animationDelay: `${revealDelay(index)}ms` }}
-                  onClick={() => handleClick(unit)}
-                  onMouseEnter={(e) => updateHoverPosition(unit, e)}
-                  onMouseMove={(e) => updateHoverPosition(unit, e)}
-                  onMouseLeave={() => setHoveredUnit((prev) => (prev?.unit.id === unit.id ? null : prev))}
-                />
-              );
-            })}
+            <FlatShapes
+              flats={flats}
+              vbHeight={vbHeight}
+              onFlatClick={handleClick}
+              onFlatHover={updateHoverPosition}
+              onFlatHoverEnd={handleFlatHoverEnd}
+            />
           </g>
         </svg>
       </div>
