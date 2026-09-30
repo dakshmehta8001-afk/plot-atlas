@@ -55,3 +55,38 @@ export async function recognizeCrop(canvas: HTMLCanvasElement): Promise<OcrCropR
   const { data } = await worker.recognize(canvas, {}, { text: true });
   return { text: data.text.trim(), confidence: data.confidence };
 }
+
+export interface OcrWordResult {
+  text: string;
+  confidence: number;
+  /** Pixel coordinates WITHIN the crop passed in — same convention Tesseract itself returns, not remapped to any larger image. Callers that OCR a crop taken from a bigger canvas (e.g. detection/faceExtraction.ts, one crop per graph face) are responsible for adding their own crop offset back in if they need a full-image coordinate. */
+  bbox: { x0: number; y0: number; x1: number; y1: number };
+}
+
+// Same worker/crop/PSM.SINGLE_BLOCK discipline as recognizeCrop above (see
+// this file's top doc comment for why that discipline exists at all) — the
+// only difference is requesting Tesseract's hierarchical `blocks` output so
+// each individual WORD's own bounding box comes back, not just one
+// best-guess string for the whole crop. Needed by face-extraction's
+// OCR-center-in-polygon plot-number association (detection/faceExtraction.ts):
+// unlike the single-shape-crop labeling this file was originally built for
+// (where "whatever text is in this shape's crop" was always safe to treat as
+// one label), a graph face's crop can legitimately contain more than one
+// piece of text near its edges, so the caller needs each word's own position
+// to decide which face it actually belongs to, not just "the crop's text".
+export async function recognizeCropWords(canvas: HTMLCanvasElement): Promise<OcrWordResult[]> {
+  const worker = await getWorker();
+  const { data } = await worker.recognize(canvas, {}, { text: true, blocks: true });
+  const words: OcrWordResult[] = [];
+  for (const block of data.blocks ?? []) {
+    for (const paragraph of block.paragraphs) {
+      for (const line of paragraph.lines) {
+        for (const word of line.words) {
+          const text = word.text.trim();
+          if (text) words.push({ text, confidence: word.confidence, bbox: word.bbox });
+        }
+      }
+    }
+  }
+  return words;
+}

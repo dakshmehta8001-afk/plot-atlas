@@ -226,6 +226,78 @@ function pairBelongsToSinglePlot(a: Segment, b: Segment, plotPolygons: { x: numb
   return plotPolygons.some((polygon) => liesOnPolygonBoundary(a, polygon, tolerance) && liesOnPolygonBoundary(b, polygon, tolerance));
 }
 
+// A real bug found by directly instrumenting and testing against both real
+// plans (Naman Infracity, BALAJI VIHAR): corridorPlotCoverage below was the
+// single largest rejector of otherwise-good road candidates, by a wide
+// margin over every other check combined. Root cause traced to
+// detectPlotContours' own documented T-junction contour-merging limitation
+// (see plots.ts) — on a real subdivided grid it occasionally produces one
+// oversized "plot" contour spanning what should be several separate plots
+// AND the open road gap right along their shared edge, which is ALSO one
+// of THIS pair's own two candidate edges (a or b). corridorPlotCoverage
+// then samples the corridor and finds it "covered" by that same blob,
+// wrongly vetoing the very candidate whose own boundary the blob is
+// tracing. Excluding a polygon from the coverage check ONLY when one of
+// the pair's own edges actually lies on that specific polygon's boundary
+// (reusing pairBelongsToSinglePlot's own liesOnPolygonBoundary check, just
+// applied per-polygon instead of requiring BOTH edges on the SAME one) is
+// deliberately narrow: a genuinely different, unrelated large area
+// (confirmed still a real risk via testing — a big undivided parcel
+// sitting in a corridor's path, unconnected to either candidate edge)
+// still counts as real coverage and correctly rejects the pair, exactly
+// as before. This is deliberately NOT a fix to detectPlotContours itself
+// (out of scope here) — it only makes road detection's OWN cross-check
+// more robust to that one specific, confirmed failure mode.
+function excludePolygonsOwningEdge(
+  plotPolygons: { x: number; y: number }[][],
+  a: Segment,
+  b: Segment,
+  tolerance: number,
+): { x: number; y: number }[][] {
+  return plotPolygons.filter((polygon) => !liesOnPolygonBoundary(a, polygon, tolerance) && !liesOnPolygonBoundary(b, polygon, tolerance));
+}
+
+function polygonArea(points: { x: number; y: number }[]): number {
+  let sum = 0;
+  for (let i = 0; i < points.length; i++) {
+    const p1 = points[i];
+    const p2 = points[(i + 1) % points.length];
+    sum += p1.x * p2.y - p2.x * p1.y;
+  }
+  return Math.abs(sum) / 2;
+}
+
+// The edge-identity check above (excludePolygonsOwningEdge) turned out NOT
+// to be the actual mechanism — confirmed by direct testing: it made zero
+// difference to Naman's coverage-rejection count. The real cause, found by
+// checking WHICH polygons the rejected corridors' sample points actually
+// fell inside: a T-junction-merged "plot" blob spatially bulging across a
+// corridor doesn't need to share a literal edge with either candidate
+// (roads.ts derives its own candidate edges independently of
+// detectPlotContours' contours) — it only needs to geometrically overlap
+// the sampled strip, which a grossly oversized blob does easily regardless
+// of edge identity. This is the actual fix: treat a plot polygon as
+// trustworthy "real occupied ground" for the coverage check only if its
+// own area is within a plan's normal range — anything far above that is
+// far more likely to be a merge artifact than a real, single, giant plot.
+// The ratio is kept deliberately high (not the first, tighter value tried)
+// specifically because a too-low threshold was confirmed via testing to
+// ALSO strip legitimately large real areas on a DIFFERENT plan (BALAJI
+// VIHAR), reopening false positives elsewhere — this value is well below
+// the smallest confirmed real merge-artifact blob measured on Naman
+// (33x-176x its plan's own median plot area) while still comfortably
+// clearing a real plan's normal size spread.
+const MAX_PLOT_AREA_OUTLIER_RATIO = 6;
+
+function excludeOversizedPlotOutliers(plotPolygons: { x: number; y: number }[][]): { x: number; y: number }[][] {
+  if (plotPolygons.length < 4) return plotPolygons; // too few for a median to mean anything
+  const withArea = plotPolygons.map((poly) => ({ poly, area: polygonArea(poly) }));
+  const sortedAreas = withArea.map((w) => w.area).sort((x, y) => x - y);
+  const median = sortedAreas[Math.floor(sortedAreas.length / 2)];
+  if (median <= 0) return plotPolygons;
+  return withArea.filter((w) => w.area <= median * MAX_PLOT_AREA_OUTLIER_RATIO).map((w) => w.poly);
+}
+
 // Even-odd ray-casting point-in-polygon test, in pixel space (roads.ts
 // works in pixels throughout; src/lib/svgPolygon.ts's version works in the
 // fractional 0..1 space instead, so this stays local rather than importing
@@ -554,9 +626,9 @@ export function detectRoadSegments(
     (s) => length(s) >= longEdge * 0.04,
   );
 
-  const plotPolygons = plotShapes
-    .filter((s) => s.points.length >= 3)
-    .map((s) => s.points.map((p) => ({ x: p.x * imageWidth, y: p.y * imageHeight })));
+  const plotPolygons = excludeOversizedPlotOutliers(
+    plotShapes.filter((s) => s.points.length >= 3).map((s) => s.points.map((p) => ({ x: p.x * imageWidth, y: p.y * imageHeight }))),
+  );
   const samePlotTolerance = longEdge * SAME_PLOT_TOLERANCE_FRACTION;
 
   const candidates: CorridorCandidate[] = [];
@@ -584,7 +656,11 @@ export function detectRoadSegments(
       // plots, or a site plan's own title text (individual letters get
       // picked up as small spurious "plot" contours, a known limitation of
       // detectPlotContours), can otherwise satisfy every other check here.
-      const plotCoverage = corridorPlotCoverage(centerline, overlap.gap, plotPolygons);
+      // excludePolygonsOwningEdge strips out only the (rare) polygon(s)
+      // that this SPECIFIC pair's own edges trace — see that function's
+      // doc comment for the merged-blob failure mode this prevents.
+      const coveragePolygons = excludePolygonsOwningEdge(plotPolygons, a, b, samePlotTolerance);
+      const plotCoverage = corridorPlotCoverage(centerline, overlap.gap, coveragePolygons);
       if (plotCoverage > 0.25) continue;
 
       const uniformity = sampleUniformity(gray, centerline, overlap.gap, imageWidth, imageHeight);

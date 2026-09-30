@@ -120,6 +120,22 @@ function roadStrokeWidth(widthLabel: string): number {
   return ROAD_STROKE_MIN + t * (ROAD_STROKE_MAX - ROAD_STROKE_MIN);
 }
 
+// Strips the alpha channel from an "rgba(r,g,b,a)" string, e.g.
+// "rgba(34,197,94,0.35)" -> "rgb(34,197,94)". UNIT_STATUS_STYLES/
+// SITE_FEATURE_STYLES's fill colors were designed as translucent overlays
+// meant to sit on top of the uploaded plan photo underneath — since that
+// photo is no longer rendered here at all (this is now a fully redrawn
+// flat map, not shapes traced over a visible photo — see the removed
+// <image> below), blending at 35% opacity against nothing just reads as
+// washed-out gray-navy. Rendering the SAME hue at full opacity instead is
+// what actually makes a plot read as a clean, flat color the way the
+// reference site plan's own artwork does.
+function opaqueRgba(rgba: string): string {
+  const match = rgba.match(/rgba\((\d+),\s*(\d+),\s*(\d+)/);
+  if (!match) return rgba;
+  return `rgb(${match[1]}, ${match[2]}, ${match[3]})`;
+}
+
 // The point exactly halfway along a road's traced length — a road is an
 // open path (often just two endpoints, sometimes bent), so a bounding-box
 // center can land off the path entirely, and picking the middle VERTEX by
@@ -208,12 +224,12 @@ const MapShapes = memo(function MapShapes({
     const statusDimmed = highlightStatus !== null && unit.status !== highlightStatus;
     if (colorMode === "zone") {
       const dimmed = dimmedBySelection || (highlightZone !== null && unit.category !== highlightZone) || statusDimmed;
-      if (!unit.category) return { fill: "rgba(148,163,184,0.25)", border: "#64748b", opacity: dimmed ? 0.25 : 1, isSelected };
+      if (!unit.category) return { fill: "rgb(148,163,184)", border: "#64748b", opacity: dimmed ? 0.25 : 1, isSelected };
       const color = zoneColorFor(unit.category, zones);
-      return { fill: `${color}59`, border: color, opacity: dimmed ? 0.25 : 1, isSelected };
+      return { fill: color, border: color, opacity: dimmed ? 0.25 : 1, isSelected };
     }
     const style = UNIT_STATUS_STYLES[unit.status];
-    return { fill: style.fill, border: style.border, opacity: dimmedBySelection || statusDimmed ? 0.25 : 1, isSelected };
+    return { fill: opaqueRgba(style.fill), border: style.border, opacity: dimmedBySelection || statusDimmed ? 0.25 : 1, isSelected };
   }
 
   return (
@@ -462,7 +478,7 @@ const MapShapes = memo(function MapShapes({
           >
             <polygon
               points={toScaledSvgPoints(building.polygon_points, VB, vbHeight)}
-              fill="rgba(99,102,241,0.35)"
+              fill="rgb(99,102,241)"
               stroke="#6366f1"
               strokeWidth={isSelected ? VB * 0.005 : VB * 0.0025}
               strokeDasharray={`${VB * 0.006} ${VB * 0.004}`}
@@ -510,7 +526,7 @@ const MapShapes = memo(function MapShapes({
           >
             <polygon
               points={toScaledSvgPoints(feature.polygon_points, VB, vbHeight)}
-              fill={style.fill}
+              fill={opaqueRgba(style.fill)}
               stroke={style.border}
               strokeWidth={VB * 0.002}
             >
@@ -892,7 +908,20 @@ export function SitePlanViewer({
               transition: "transform 650ms var(--ease-cinematic)",
             }}
           >
-            <image href={planImageUrl} x={0} y={0} width={VB} height={vbHeight} />
+            {/* The uploaded plan photo itself is deliberately NOT rendered
+                here any more — per the user's explicit choice, this is now
+                a fully redrawn flat map (clean opaque plot/road/feature
+                colors on the plain dark map background below) rather than
+                shapes traced semi-transparently over a visible photo. The
+                photo's aspect ratio is still what `vbHeight` above is
+                derived from (via useImageAspectRatio(planImageUrl)) — only
+                the VISUAL image is gone, not the coordinate system every
+                traced shape is normalized against. Nothing here reproduces
+                decorative elements that only ever existed in the photo
+                itself (a developer's logo, a legend/distance-meter box, a
+                tree-border) — this redraws exactly what's been traced or
+                detected (plots/roads/features), which is the only data
+                this app actually has. */}
 
             <MapShapes
               roads={roads}

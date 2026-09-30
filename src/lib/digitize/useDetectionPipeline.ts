@@ -90,8 +90,11 @@ export function useDetectionPipeline() {
       // via extensive isolated testing, not assumed.
       let shapes = [...plotShapes, ...roadShapes];
       let ocrFailed = false;
+      let rejectedNonPlotCount = 0;
       try {
-        shapes = await labelShapesWithOcr(shapes, sourceCanvas);
+        const outcome = await labelShapesWithOcr(shapes, sourceCanvas);
+        shapes = outcome.shapes;
+        rejectedNonPlotCount = outcome.rejectedCount;
       } catch (ocrErr) {
         // OCR failing shouldn't block the whole pipeline — the reviewer
         // just gets unlabeled shapes to fill in by hand instead of a hard
@@ -123,6 +126,11 @@ export function useDetectionPipeline() {
       }
       if (ocrFailed || shapes.every((s) => !s.label)) {
         warnings.push("No readable text was found — plot numbers and road widths will need to be entered manually.");
+      }
+      if (rejectedNonPlotCount > 0) {
+        warnings.push(
+          `Excluded ${rejectedNonPlotCount} shape${rejectedNonPlotCount === 1 ? "" : "s"} that looked like a legend, distance table, or title/compass text rather than a real plot — double-check nothing real was skipped.`,
+        );
       }
 
       setStage("done");

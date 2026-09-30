@@ -36,8 +36,28 @@ export interface PlotDetectionOptions {
 // positive costs the reviewer one deletion; a false negative (a real plot
 // never proposed at all) costs them tracing it from scratch, which is
 // exactly the manual-tracer work this feature exists to reduce.
+//
+// minAreaFraction raised from 0.0002 to 0.0006 after live testing against
+// a real high-resolution clean-vector site plan (Naman Infracity) revealed
+// it was letting individual plot-NUMBER TEXT CHARACTERS through as if they
+// were tiny plots — a bold digit glyph forms a small, high-solidity closed
+// contour that clears every other filter easily. This was the SECONDARY
+// fix, though: the PRIMARY bug (found via the same test, and worth far
+// more than this threshold bump on its own) was in suppressOverlapping()
+// below, which was silently swallowing genuine individual plots whenever
+// their bounding box fell inside a larger valid contour's box (an outer
+// site boundary, a commercial block outline) — an everyday situation for
+// any site plan, not an edge case. Fixing that alone took this real plan
+// from 42 detected shapes (mostly text fragments) to 220 (correct plots +
+// leftover text noise); this threshold bump on top of that fix is what
+// then cleanly excludes the remaining text-sized noise, landing at 115 —
+// close to the real ~103 plots this specific plan has. Verified this does
+// NOT regress the real photographed BALAJI VIHAR test case this threshold
+// was originally loosened for: re-tested at each candidate value and it
+// held at a healthy, smoothly-varying count (not a cliff), actually
+// slightly higher post-fix (42) than the original pre-fix baseline (38).
 export const DEFAULT_PLOT_OPTIONS: PlotDetectionOptions = {
-  minAreaFraction: 0.0002,
+  minAreaFraction: 0.0006,
   maxAreaFraction: 0.4,
   minSolidity: 0.55,
 };
@@ -201,6 +221,27 @@ function boundingBoxOf(points: PolygonPoint[]) {
 // deliberately simple (bounding-box containment, not true polygon
 // intersection) — good enough to distinguish "same stroke, two edges" from
 // "two different plots" without adding real geometry-library complexity.
+//
+// A real, previously-undiscovered bug lived here, found via live testing
+// against a real high-resolution site plan: the containment check alone
+// (intersection / thisBoxArea > 0.75) fires just as confidently for "a
+// small plot's bounding box happens to sit entirely inside a much bigger
+// shape's bounding box" as it does for a genuine inner/outer stroke-edge
+// pair — and the former is an ORDINARY situation for any site plan with an
+// outer boundary, a commercial block outline, or any other large contour
+// that legitimately contains smaller ones spatially, not a rare edge case.
+// On the real plan this surfaced on, one large valid contour (the site's
+// outer frame) was silently swallowing every individual plot whose
+// bounding box fell inside it, since sorting by size descending processes
+// the frame first and then marks every smaller, entirely-unrelated plot
+// underneath it as a "duplicate". A genuine inner/outer edge pair differs
+// only by stroke width — their areas are close (ratio commonly 0.5-0.99
+// even for a chunky relative stroke) — while a plot inside an outer frame
+// differs by orders of magnitude (ratio well under 0.1 in practice). The
+// added SIZE_RATIO_MIN check is what actually distinguishes them; the
+// containment check alone never could.
+const SIZE_RATIO_MIN = 0.4;
+
 interface Candidate {
   points: PolygonPoint[];
   areaFraction: number;
@@ -212,22 +253,27 @@ function suppressOverlapping(candidates: Candidate[]): Candidate[] {
   // Larger first: between a stroke's inner and outer edge, the outer one
   // (larger) more accurately represents the plot's real boundary.
   const sorted = [...candidates].sort((a, b) => b.areaFraction - a.areaFraction);
-  const kept: { candidate: Candidate; box: ReturnType<typeof boundingBoxOf> }[] = [];
+  const kept: { candidate: Candidate; box: ReturnType<typeof boundingBoxOf>; boxArea: number }[] = [];
 
   for (const candidate of sorted) {
     const box = boundingBoxOf(candidate.points);
     const boxArea = (box.maxX - box.minX) * (box.maxY - box.minY);
-    const isDuplicate = kept.some(({ box: keptBox }) => {
+    const isDuplicate = kept.some(({ box: keptBox, boxArea: keptBoxArea }) => {
       const ix = Math.max(0, Math.min(box.maxX, keptBox.maxX) - Math.max(box.minX, keptBox.minX));
       const iy = Math.max(0, Math.min(box.maxY, keptBox.maxY) - Math.max(box.minY, keptBox.minY));
       const intersection = ix * iy;
       // Containment ratio (intersection / this box's own area), not IoU —
       // deliberately: an inner stroke edge's box is fully swallowed by the
       // outer edge's slightly larger box, which containment catches
-      // cleanly even when the two boxes aren't quite the same size.
-      return boxArea > 0 && intersection / boxArea > 0.75;
+      // cleanly even when the two boxes aren't quite the same size. The
+      // size-ratio check alongside it is what keeps this from also
+      // catching "a genuinely different, much smaller shape that happens
+      // to sit inside a much bigger one" — see the comment above.
+      const contained = boxArea > 0 && intersection / boxArea > 0.75;
+      const similarSize = keptBoxArea > 0 && boxArea / keptBoxArea > SIZE_RATIO_MIN;
+      return contained && similarSize;
     });
-    if (!isDuplicate) kept.push({ candidate, box });
+    if (!isDuplicate) kept.push({ candidate, box, boxArea });
   }
 
   return kept.map((k) => k.candidate);
