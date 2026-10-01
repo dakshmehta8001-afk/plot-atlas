@@ -247,7 +247,13 @@ const MapShapes = memo(function MapShapes({
         // version had (a wider road gets a proportionally wider, not just
         // absolutely wider, centerline and dash pattern).
         const asphaltWidth = roadStrokeWidth(road.width_label);
-        const centerlineWidth = asphaltWidth * 0.069;
+        // Widened and recolored from a pale slate-gray (#94a3b8) to a bold
+        // road-paint yellow — a real request, not a nicety: the gray
+        // centerline read as just another thin line among the plot
+        // borders, especially next to saturated zone-color fills, instead
+        // of unmistakably signaling "this is a road" the way a real
+        // satellite/game-style map's yellow lane line does at a glance.
+        const centerlineWidth = asphaltWidth * 0.1;
         const dashLength = asphaltWidth * 0.54;
         const dashGap = asphaltWidth * 0.38;
         return (
@@ -293,7 +299,8 @@ const MapShapes = memo(function MapShapes({
             <polyline
               points={toScaledSvgPoints(road.path_points, VB, vbHeight)}
               fill="none"
-              stroke="#94a3b8"
+              stroke="#f5c518"
+              strokeOpacity={0.95}
               strokeWidth={centerlineWidth}
               strokeDasharray={`${dashLength} ${dashGap}`}
               strokeLinecap="round"
@@ -390,8 +397,28 @@ const MapShapes = memo(function MapShapes({
             <polygon
               points={toScaledSvgPoints(unit.polygon_points, VB, vbHeight)}
               fill={style.fill}
-              stroke={style.border}
-              strokeWidth={style.isSelected ? VB * 0.005 : VB * 0.002}
+              // A real bug found via live testing, not a style nicety: once
+              // fills went fully opaque (see opaqueRgba above), a plot's
+              // own status-color border (a few shades darker than its own
+              // fill — fine against the OLD translucent blend, where the
+              // border was the only genuinely saturated part) stopped
+              // reading at all between two ADJACENT plots sharing the SAME
+              // status — the overwhelmingly common case (e.g. a freshly
+              // digitized project where every plot starts "Available").
+              // Two near-identical greens separated by a thin same-hue
+              // line is visually indistinguishable from one solid green
+              // blob — exactly what made a real 112-plot project's entire
+              // grid vanish into a single shape with no internal
+              // boundaries visible at all. A fixed, neutral, dark
+              // separator (independent of status/zone color) is what
+              // every plot boundary actually needs; the status/zone color
+              // still does its job entirely through the fill itself. The
+              // selected plot keeps its colored ring (a deliberate, single
+              // highlight a reviewer is meant to notice, not a boundary
+              // meant to generically separate neighbors).
+              stroke={style.isSelected ? style.border : "#0f2436"}
+              strokeWidth={style.isSelected ? VB * 0.005 : VB * 0.0022}
+              strokeOpacity={style.isSelected ? 1 : 0.55}
               opacity={style.opacity}
               // Hover glow/brighten is deliberately pure CSS (:hover, no
               // React state) — the selected-shape glow below is driven by
