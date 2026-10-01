@@ -632,6 +632,11 @@ export function detectRoadSegments(
   const samePlotTolerance = longEdge * SAME_PLOT_TOLERANCE_FRACTION;
 
   const candidates: CorridorCandidate[] = [];
+  // Tracks which candidateEdges ended up part of at least one ACCEPTED
+  // pair (survived every filter below, not merely attempted) — see the
+  // single-line fallback after this loop, which only ever considers an
+  // edge that never found a real partner.
+  const pairedEdge = new Array(candidateEdges.length).fill(false);
   for (let i = 0; i < candidateEdges.length; i++) {
     for (let j = i + 1; j < candidateEdges.length; j++) {
       const a = candidateEdges[i];
@@ -683,7 +688,35 @@ export function detectRoadSegments(
       if (confidence < MIN_GEOMETRIC_CONFIDENCE) continue;
 
       candidates.push({ centerline, gap: overlap.gap, confidence });
+      pairedEdge[i] = true;
+      pairedEdge[j] = true;
     }
+  }
+
+  // Single-line fallback: a real road drawn with no second parallel
+  // boundary at all — a single dashed centerline, a proposed alignment
+  // with nothing built alongside it yet — can never satisfy the pairing
+  // loop above no matter how its thresholds are tuned, because there is
+  // no partner edge to pair with. Confirmed as a real, common case via
+  // direct evidence (not hypothetical): BALAJI VIHAR's own "ROAD 30' WIDE"
+  // is drawn as one line, and a user-supplied plan showed the same
+  // pattern. Per the explicit product requirement behind this fallback —
+  // a road's own width/name label is strong evidence, but text must never
+  // be the ONLY thing deciding a shape is a road — every unpaired edge
+  // here is emitted at a baseline confidence (0.12) far below
+  // MIN_FINAL_CONFIDENCE (0.4), so it is GEOMETRICALLY invisible noise
+  // unless and until OCR (ocrLabels.ts's labelRoad — the exact same
+  // function, no new OCR code) finds real road text on it and applies its
+  // existing +0.3 keyword boost. An edge that's actually just a plot's own
+  // boundary with an unrelated number nearby reads no road keyword and
+  // stays below threshold, exactly as before.
+  const SINGLE_LINE_BASELINE_CONFIDENCE = 0.12;
+  const SINGLE_LINE_MIN_LENGTH_FRACTION = 0.06;
+  for (let i = 0; i < candidateEdges.length; i++) {
+    if (pairedEdge[i]) continue;
+    const edge = candidateEdges[i];
+    if (length(edge) < longEdge * SINGLE_LINE_MIN_LENGTH_FRACTION) continue;
+    candidates.push({ centerline: edge, gap: 0, confidence: SINGLE_LINE_BASELINE_CONFIDENCE });
   }
 
   // Several candidate pairs commonly describe the same physical road (extra

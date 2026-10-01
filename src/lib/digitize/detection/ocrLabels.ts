@@ -65,13 +65,17 @@ const ROAD_NUMBER = /(\d+)/;
 // 100'/150' WIDE, etc.) since it's a number-shape pattern, not a fixed list.
 const ROAD_WIDTH_LABEL = /(\d{1,3})\s*['’′]?\s*(?:-\s*0\s*["”″]?)?\s*WIDE/i;
 // Confirms a road candidate's OWN OCR crop actually mentions something
-// road-related — used only to BOOST an already-geometrically-plausible
-// candidate's confidence (see detection/roads.ts's corridor scoring), never
-// to decide "is a road" on its own. A plot boundary that happens to have
+// road-related — used to BOOST an already-geometrically-plausible paired
+// candidate's confidence, AND (see detection/roads.ts's single-line
+// fallback) as the ONLY thing standing between a merely-long unpaired
+// line and being treated as a road — a plot boundary that happens to have
 // nearby text reading "40" from an unrelated number should never become a
 // road just because a digit matched; requiring an actual road WORD (not
-// just ROAD_NUMBER) keeps this from being that permissive.
-const ROAD_KEYWORDS = /\b(road|rd|proposed|wide|highway)\b/i;
+// just ROAD_NUMBER) keeps this from being that permissive. "width"
+// (distinct from "wide") added after a real labeling convention was found
+// via direct evidence: a plan labeling one road "TOTAL WIDTH 250" with a
+// plain number, no "WIDE" anywhere in that specific phrase.
+const ROAD_KEYWORDS = /\b(road|rd|proposed|wide|width|highway)\b/i;
 // How much a confirmed keyword match adds to a candidate's confidence —
 // enough to carry a borderline geometric reading (e.g. right at
 // MIN_GEOMETRIC_CONFIDENCE) up past MIN_FINAL_CONFIDENCE, without being so
@@ -171,16 +175,17 @@ async function labelClosedShape(shape: DetectedShape, sourceCanvas: HTMLCanvasEl
 const ROAD_LABEL_SAMPLE_POSITIONS = [0.5, 0.3, 0.7, 0.15, 0.85];
 
 // A real road-width label is never outside this range on any real site
-// plan (single-digit-to-150'+ covers everything from a narrow internal
-// lane to a major highway, per this pipeline's own explicit width list).
+// plan (single-digit internal lanes up to a major arterial/highway).
 // Guards the bare-digit fallback path below, where a nearby but unrelated
 // number — a plot's own ID/area figure, a dimension label bleeding into
 // the crop — could otherwise get printed as if it were the road's width.
 // Found necessary via direct testing against BALAJI VIHAR: an early
 // version of this function's fallback mislabeled a road "23197 ft" (that
 // plan's own PLOT AREA figure, sitting nearby) and another "000 ft".
+// Raised from 200 to 300 after direct evidence of a real plan labeling a
+// road "TOTAL WIDTH 250" — a genuine major-road figure, not a misread.
 const MIN_PLAUSIBLE_ROAD_WIDTH = 8;
-const MAX_PLAUSIBLE_ROAD_WIDTH = 200;
+const MAX_PLAUSIBLE_ROAD_WIDTH = 300;
 
 function plausibleRoadWidthLabel(match: RegExpMatchArray | null): string | null {
   if (!match) return null;
