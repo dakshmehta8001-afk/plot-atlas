@@ -280,7 +280,15 @@ async function labelClosedShape(shape: DetectedShape, sourceCanvas: HTMLCanvasEl
     return null;
   }
 
-  return { ...shape, label: result.text.split(/\s+/)[0] };
+  // Never overwrites an existing label — a plot arriving here already
+  // labeled (faceExtraction.ts's detectPlotFaces assigns plot numbers via
+  // its own, more careful graph-aware OCR-to-face association, including a
+  // plausibility preference over raw OCR confidence) keeps that number;
+  // this crop's own single-position read is only used to fill in a label
+  // that's still blank. A shape from the OLDER plots.ts contour path always
+  // starts with `label: ""`, so this is a no-op there — unchanged behavior
+  // for that path, pure addition for the newer one.
+  return shape.label ? shape : { ...shape, label: result.text.split(/\s+/)[0] };
 }
 
 // Fraction of a road's own length to try, in order — 0.5 (the geometric
@@ -428,6 +436,13 @@ export interface OcrLabelingOutcome {
   rejectedCount: number;
 }
 
+// Same pattern as faceExtraction.ts's own isConfirmedPlotNumber (kept as a
+// separate local constant for the same reason that file's own
+// FACE_OCR_MIN_CONFIDENCE is — see its comment — not a dependency between
+// the two files, just both reusing the same plain real-world convention: a
+// real plot number is a short bare digit string).
+const CONFIRMED_PLOT_NUMBER = /^\d{1,3}$/;
+
 export async function labelShapesWithOcr(shapes: DetectedShape[], sourceCanvas: HTMLCanvasElement): Promise<OcrLabelingOutcome> {
   const results: DetectedShape[] = [];
   let rejectedCount = 0;
@@ -439,6 +454,25 @@ export async function labelShapesWithOcr(shapes: DetectedShape[], sourceCanvas: 
         continue;
       }
       results.push(labeledRoad);
+      continue;
+    }
+    // A plot that arrives here ALREADY labeled with a confirmed plot
+    // number (detectPlotFaces' own graph-aware OCR-to-face association
+    // already did this work, more carefully than a single-crop re-read
+    // could) skips labelClosedShape's own OCR crop entirely, rather than
+    // re-running Tesseract on the same interior just to re-confirm a label
+    // that would be preserved anyway (see labelClosedShape's own final
+    // line). Found necessary via direct timing, not assumed: re-OCRing
+    // every already-numbered plot on a synthetic 39-plot test image added
+    // 36 real seconds to the "reading labels" stage for zero behavior
+    // change — on a real plan with 100+ plots (Naman Infracity), that cost
+    // scales with plot count for no benefit. Deliberately narrow: only a
+    // label that's ALREADY a confirmed bare-digit plot number skips this —
+    // a plot with no label, or with some OTHER text (which could still be
+    // a park/temple/etc. that detectPlotFaces has no concept of
+    // reclassifying), still gets the full check below.
+    if (shape.kind === "plot" && CONFIRMED_PLOT_NUMBER.test(shape.label)) {
+      results.push(shape);
       continue;
     }
     const labeled = await labelClosedShape(shape, sourceCanvas);

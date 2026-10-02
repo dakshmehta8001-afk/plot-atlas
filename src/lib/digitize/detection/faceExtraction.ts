@@ -41,13 +41,13 @@
 //        packed tightly against each other (exactly the case this whole
 //        module exists to handle correctly)
 //
-// Deliberately isolated from the rest of the pipeline: this file is NOT
-// wired into useDetectionPipeline.ts yet. See the debug harness (built
-// alongside this file) for visual verification against the real Naman
-// Infracity plan before that wiring happens — replacing plots.ts's
-// candidate generation is a one-line change once the extracted faces and
-// number associations are confirmed sensible, but that confirmation has to
-// come first.
+// Now wired into useDetectionPipeline.ts, replacing plots.ts's
+// findContours-based candidate generation there — confirmed via the debug
+// harness (built alongside this file) against a synthetic plan with known
+// ground truth and both real scanned plans this project has on hand
+// (BALAJI VIHAR, Naman Infracity): every real plot on all three correctly,
+// individually separated, including the specific real plots that used to
+// merge across a shared thin wall under the old approach.
 //
 // roads.ts is deliberately left completely untouched (not even to add
 // `export` to its private helpers) — the small amount of candidate-edge
@@ -1064,15 +1064,56 @@ export function associateReadingsToFaces(
     else matchesByFace[faceIdx].push(reading);
   }
 
-  // Tentative per-face label, computed BEFORE the corridor-grouping pass
-  // below — "tentative" because a face that isn't a confirmed real plot
-  // number can still get folded into a corridor group and excluded
-  // entirely, below.
+  const isConfirmedPlotNumber = (label: string) => /^\d{1,3}$/.test(label);
+
+  // The single highest-confidence reading per face, independent of whether
+  // it LOOKS plausible — this is deliberately the ONLY thing the
+  // corridor-grouping decision below is allowed to look at. Two different,
+  // tempting-looking alternatives were tried and both made real things
+  // WORSE, confirmed via direct testing against Naman Infracity (112
+  // real plots, visually confirmed via this module's own debug harness to
+  // already be correctly, individually separated at this exact topology —
+  // changing it risks that, not just the label text):
+  //   1. Using the SAME smarter "prefer a plausible digit" selection
+  //      (see tentativeLabel below) for grouping too: a face that used to
+  //      read as non-numeric garbage (correctly swept into its road
+  //      corridor's excluded group) could flip to "confirmed" the moment a
+  //      plausible digit ALSO existed in it, escaping exclusion as a brand
+  //      new spurious "plot" — shape count rose 108 to 114, worst
+  //      duplicate-label warning worsened from 3 to 4 affected plots.
+  //   2. Checking "does ANY reading in the face look plausible" (ignoring
+  //      confidence/rank entirely): even MORE inclusive than #1, same 114
+  //      result — a road corridor's own width-label fragment ("30' WIDE
+  //      ROAD") routinely contains a real, plausible-looking bare digit
+  //      alongside the road keyword, which this is just as happy to match.
+  // The ORIGINAL plain "whatever ranked first" rule has no mechanism to
+  // retroactively "discover" plausibility elsewhere in the face, so it
+  // doesn't share either failure mode — confirmed back at 108 once restored
+  // here. The downstream label DISPLAYED to the reviewer is a separate
+  // concern, fixed without touching this.
+  const topReadingByFace = faces.map((_, i) => [...matchesByFace[i]].sort((a, b) => b.confidence - a.confidence)[0]);
+  const isConfirmedForGrouping = (i: number) => isConfirmedPlotNumber(topReadingByFace[i]?.text ?? "");
+
+  // What gets PERSISTED/displayed as the face's label — a separate concern
+  // from the grouping decision above, which must stay on the plain
+  // highest-confidence rule (see that constant's own doc comment for why).
+  // Here, prefers a PLAUSIBLE plot number over merely-higher-confidence
+  // noise — found necessary via direct testing against real plans (Naman
+  // Infracity, BALAJI VIHAR): a stray boundary-line fragment or watermark
+  // edge routinely OCRs as a single garbage character ("|", "©", "ac") at
+  // confidence Tesseract itself reports as high, which the plain
+  // highest-confidence pick would then persist as the plot's actual label —
+  // discarding a real, lower-confidence-but-correct number read from the
+  // SAME crop. Falls back to the plain highest-confidence reading only when
+  // NOTHING in the face reads as a plausible number at all, so a real
+  // alphanumeric lot code (not covered by isConfirmedPlotNumber's pure-digit
+  // pattern) still surfaces something rather than nothing.
   const tentativeLabel = faces.map((_, i) => {
-    const best = [...matchesByFace[i]].sort((a, b) => b.confidence - a.confidence)[0];
+    const plausible = matchesByFace[i].filter((m) => isConfirmedPlotNumber(m.text));
+    const pool = plausible.length > 0 ? plausible : matchesByFace[i];
+    const best = [...pool].sort((a, b) => b.confidence - a.confidence)[0];
     return best?.text ?? "";
   });
-  const isConfirmedPlotNumber = (label: string) => /^\d{1,3}$/.test(label);
 
   // Groups wall-adjacent NON-numeric faces into corridor candidates before
   // the road-keyword check — the fix for a real gap found via this
@@ -1103,12 +1144,12 @@ export function associateReadingsToFaces(
     if (ra !== rb) parent[ra] = rb;
   }
   for (const [a, b] of adjacency) {
-    if (!isConfirmedPlotNumber(tentativeLabel[a]) && !isConfirmedPlotNumber(tentativeLabel[b])) union(a, b);
+    if (!isConfirmedForGrouping(a) && !isConfirmedForGrouping(b)) union(a, b);
   }
 
   const groups = new Map<number, number[]>();
   faces.forEach((_, i) => {
-    if (isConfirmedPlotNumber(tentativeLabel[i])) return; // a real plot number is never grouped
+    if (isConfirmedForGrouping(i)) return; // a real plot number is never grouped
     const root = find(i);
     const list = groups.get(root) ?? [];
     list.push(i);
@@ -1202,11 +1243,14 @@ export function associationsToDetectedShapes(
 }
 
 // ---------------------------------------------------------------------------
-// End-to-end orchestrator — NOT called anywhere in the production pipeline
-// yet (see this file's top comment). The debug harness calls this directly
-// against the real Naman Infracity plan; useDetectionPipeline.ts continues
-// to call plots.ts's detectPlotContours until that debug output has been
-// inspected and approved.
+// End-to-end orchestrator — wired into production in useDetectionPipeline.ts
+// as of the confirmation testing referenced in this file's top comment
+// (verified via the standalone debug harness against a synthetic plan with
+// known ground truth and both real scanned plans this project has on hand,
+// including a real regression caught and fixed along the way — see
+// associateReadingsToFaces' isConfirmedForGrouping doc comment).
+// plots.ts's detectPlotContours/suppressOverlapping remain in the codebase
+// unused by the live pipeline, not deleted, in case this needs reverting.
 // ---------------------------------------------------------------------------
 
 // A few pixels at typical analysis resolution — generous enough to close a

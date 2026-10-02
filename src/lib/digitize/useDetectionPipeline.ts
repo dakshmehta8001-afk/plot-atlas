@@ -10,7 +10,7 @@ import { useCallback, useState } from "react";
 import { loadOpenCv, type Cv } from "./opencvLoader";
 import { denoise, enhanceContrast, MAX_EDGE_PX, resizeToMaxEdge, toGrayscale } from "./imagePrep";
 import { autoCanny } from "./detection/edges";
-import { detectPlotContours } from "./detection/plots";
+import { detectPlotFaces } from "./detection/faceExtraction";
 import { detectRoadSegments, filterRoadsByConfidence } from "./detection/roads";
 import { labelShapesWithOcr } from "./detection/ocrLabels";
 import { renderPdfFirstPageToCanvas } from "./pdfToImageClient";
@@ -74,8 +74,27 @@ export function useDetectionPipeline() {
       // boundaries: both are parallel, both have a real gap, both can
       // have a uniform interior. Only the plot-contour cross-reference
       // tells them apart.
+      //
+      // detectPlotFaces (planar-graph face extraction, faceExtraction.ts)
+      // replaces the former findContours-based detectPlotContours here —
+      // switched after direct side-by-side testing against both a
+      // synthetic plan with known ground truth and real scanned plans
+      // confirmed it fixes the standing T-junction limitation
+      // findContours-based detection could never fully solve (adjacent
+      // plots sharing a thin wall occasionally merging into one shape, no
+      // matter how much post-hoc geometric filtering got added on top —
+      // see plots.ts's own doc comments for that history). `contrasted` is
+      // passed as its `gray` parameter specifically because its internal
+      // oriented-edge-support check requires the SAME grayscale/contrast-
+      // enhanced Mat `edges` was produced from (see
+      // extractCandidateSegments' own doc comment) — not the earlier,
+      // pre-denoise/contrast `gray` variable above. Awaited here (it also
+      // does its own OCR-to-face association internally, unlike the old
+      // synchronous contour approach), so the tracked Mats below stay alive
+      // for its whole duration, not just the synchronous portion.
       setStage("detecting-plots");
-      const plotShapes = detectPlotContours(cv, edges, analysisWidth, analysisHeight);
+      const plotFaceResult = await detectPlotFaces(cv, edges, contrasted, sourceCanvas, analysisWidth, analysisHeight);
+      const plotShapes = plotFaceResult.shapes;
 
       setStage("detecting-roads");
       const roadShapes = detectRoadSegments(cv, edges, contrasted, analysisWidth, analysisHeight, plotShapes);
@@ -132,6 +151,11 @@ export function useDetectionPipeline() {
           `Excluded ${rejectedNonPlotCount} shape${rejectedNonPlotCount === 1 ? "" : "s"} that looked like a legend, distance table, or title/compass text rather than a real plot — double-check nothing real was skipped.`,
         );
       }
+      // detectPlotFaces' own warnings — ambiguous plot-number associations,
+      // duplicate labels, faces excluded as a road corridor/legend area —
+      // surfaced the same way every other detection-quality signal here
+      // already is, never silently dropped.
+      warnings.push(...plotFaceResult.warnings);
 
       setStage("done");
       return { result: { shapes, warnings }, sourceCanvas };
