@@ -39,8 +39,21 @@ const FEATURE_KEYWORDS: { pattern: RegExp; kind: SiteFeatureKind; label: string 
 // only ever a late veto on a small, explicit set of known non-plot phrases.
 // "commercial" is deliberately absent — a Commercial Plot is real
 // inventory and must survive this check.
+//
+// "entry" added after direct evidence on a synthetic test plan: a
+// geometrically weak road candidate sitting outside the actual site
+// diagram (near a "MAIN ENTRY / APPROACH ROAD (SOUTH)" caption and a scale
+// bar) had no readable ROAD/WIDE text of its own, so it fell through to
+// the weak bare-digit fallback — which grabbed the scale bar's unrelated
+// "50'" tick label. One of the crop's own OCR attempts did fully read
+// "ENTRY" (part of "MAIN ENTRY"), which this veto now catches before the
+// fallback ever gets to use that attempt's number. "entry" alone (not
+// "approach" or "main") is deliberately the only word added here — a real
+// road can legitimately be named "Approach Road", so vetoing on that word
+// risks discarding a genuine label; "entry" by itself is site-plan/caption
+// furniture (entry gate, entry point) that a real road name wouldn't use.
 const NON_PLOT_KEYWORDS =
-  /\b(schedule|legend|distance|meter|km|mtr|bypass|hospital|school|college|airport|township|colony|striving)\b/i;
+  /\b(schedule|legend|distance|meter|km|mtr|bypass|hospital|school|college|airport|township|colony|striving|entry)\b/i;
 
 // A compass rosette's own N/S/E/W labels — checked as an EXACT match on
 // the whole trimmed OCR read, not a substring match, so this can never
@@ -176,17 +189,27 @@ function cropCanvasOriented(
     rctx.fillRect(0, 0, safeSize, safeSize);
     rctx.translate(safeSize / 2, safeSize / 2);
     rctx.rotate(-angleRad);
-    rctx.drawImage(
-      source,
-      Math.max(0, cxPx - safeSize / 2),
-      Math.max(0, cyPx - safeSize / 2),
-      Math.min(safeSize, source.width - Math.max(0, cxPx - safeSize / 2)),
-      Math.min(safeSize, source.height - Math.max(0, cyPx - safeSize / 2)),
-      -safeSize / 2,
-      -safeSize / 2,
-      safeSize,
-      safeSize,
-    );
+    // A road close to the image's own edge (confirmed directly: a vertical
+    // road running near the right edge of a real plan) needs its SOURCE
+    // rectangle clamped to stay in bounds — but the destination rectangle
+    // must shrink by the exact same amount, not stay at the full safeSize.
+    // Stretching a partially-clamped capture to fill the full destination
+    // square distorts the text just enough to break OCR: confirmed
+    // directly on a synthetic test plan where this exact bug was the
+    // reason a road's width label sitting near the image's right edge
+    // never got read, while the mirrored label near the LEFT edge (no
+    // clamping needed there) read correctly with the same code.
+    const idealSx = cxPx - safeSize / 2;
+    const idealSy = cyPx - safeSize / 2;
+    const sx = Math.max(0, idealSx);
+    const sy = Math.max(0, idealSy);
+    const sw = Math.min(safeSize - (sx - idealSx), source.width - sx);
+    const sh = Math.min(safeSize - (sy - idealSy), source.height - sy);
+    const dx = -safeSize / 2 + (sx - idealSx);
+    const dy = -safeSize / 2 + (sy - idealSy);
+    if (sw > 0 && sh > 0) {
+      rctx.drawImage(source, sx, sy, sw, sh, dx, dy, sw, sh);
+    }
   }
 
   const out = document.createElement("canvas");
