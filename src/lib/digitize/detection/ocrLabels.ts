@@ -7,7 +7,7 @@
 // own boundary stroke) and reading it with PSM.SINGLE_BLOCK reads correctly
 // at 90%+ confidence — confirmed empirically, not assumed.
 import type { PolygonPoint, SiteFeatureKind } from "@/lib/types";
-import { recognizeCrop, type OcrCropResult } from "../ocrWorker";
+import { recognizeCrop, recognizeCropWords, type OcrCropResult } from "../ocrWorker";
 import type { DetectedShape } from "../types";
 
 const FEATURE_KEYWORDS: { pattern: RegExp; kind: SiteFeatureKind; label: string }[] = [
@@ -63,7 +63,16 @@ const ROAD_NUMBER = /(\d+)/;
 // label bleeding into the same crop — instead of the road's actual width.
 // Covers every width this pipeline is expected to recognize (30'/40'/60'/
 // 100'/150' WIDE, etc.) since it's a number-shape pattern, not a fixed list.
-const ROAD_WIDTH_LABEL = /(\d{1,3})\s*['’′]?\s*(?:-\s*0\s*["”″]?)?\s*WIDE/i;
+// The apostrophe-like class also accepts a straight/curly DOUBLE quote —
+// found necessary via direct evidence, not a hypothetical: OCR-ing a real
+// road label (BALAJI VIHAR's "ROAD 30' WIDE", after the orientation fix
+// below made it legible at all) read back as `30" WIDE`, Tesseract having
+// misread the foot-mark as a double rather than single quote. Without this,
+// a correctly-oriented, keyword-matched crop would still miss the precise
+// width and fall through to the much weaker bare-digit fallback below,
+// which has no way to prefer "the number right before WIDE" over an
+// unrelated number elsewhere in the same crop.
+const ROAD_WIDTH_LABEL = /(\d{1,3})\s*['’′"”″]?\s*(?:-\s*0\s*["”″]?)?\s*WIDE/i;
 // Confirms a road candidate's OWN OCR crop actually mentions something
 // road-related — used to BOOST an already-geometrically-plausible paired
 // candidate's confidence, AND (see detection/roads.ts's single-line
@@ -75,7 +84,17 @@ const ROAD_WIDTH_LABEL = /(\d{1,3})\s*['’′]?\s*(?:-\s*0\s*["”″]?)?\s*WID
 // (distinct from "wide") added after a real labeling convention was found
 // via direct evidence: a plan labeling one road "TOTAL WIDTH 250" with a
 // plain number, no "WIDE" anywhere in that specific phrase.
-const ROAD_KEYWORDS = /\b(road|rd|proposed|wide|width|highway)\b/i;
+//
+// Deliberately does NOT include the bare abbreviation "rd" — found to be a
+// real false-positive source, not a hypothetical one: on a real plan
+// (BALAJI VIHAR) a short, noisy road crop produced a stray two-letter OCR
+// token that read as "rd" at 62% confidence, purely by coincidence (the
+// actual nearby content was an unrelated plot's dimension figures), which
+// was then enough on its own to mislabel that candidate as a road at
+// confidence 0.42. "road" spelled out in full already covers every real
+// case confirmed so far; a bare two-letter abbreviation is too easy for
+// OCR noise to produce by accident to trust as road-specific evidence.
+const ROAD_KEYWORDS = /\b(road|proposed|wide|width|highway)\b/i;
 // How much a confirmed keyword match adds to a candidate's confidence —
 // enough to carry a borderline geometric reading (e.g. right at
 // MIN_GEOMETRIC_CONFIDENCE) up past MIN_FINAL_CONFIDENCE, without being so
@@ -115,6 +134,88 @@ function cropCanvas(source: HTMLCanvasElement, sx: number, sy: number, sw: numbe
     );
   }
   return canvas;
+}
+
+// Crops a strip of size (along x across) centered at (cxPx,cyPx), rotated so
+// that direction `angleRad` (the road's OWN direction, in source-image
+// pixel space) comes out horizontal — then upscales the result by `scale`.
+// This exists because a steep or diagonal road's own width label is
+// conventionally hand-drafted rotated to run WITH the line, not
+// horizontally on the page. Tesseract's PSM.SINGLE_BLOCK mode (required
+// elsewhere in this file for its own good reasons — see ocrWorker.ts) does
+// NOT itself try rotated text; it just fails. Confirmed directly, not
+// assumed: cropping BALAJI VIHAR's real "PROPOSED ROAD 150' WIDE" label
+// axis-aligned read as pure garbage (confidence 32, nonsense symbols) in
+// EVERY orientation tried (unrotated, and both fixed +/-90 degree
+// rotations) — because that label's actual angle is only ~86 degrees, not
+// exactly 90. Rotating by the road's own measured angle (not a fixed
+// guess) instead read "PROPOSED ROAD 150' WIDE" cleanly at 76% confidence.
+// Implemented as two steps — rotate a generously-sized square first, then
+// crop down tight to just the along x across strip — so the final crop
+// handed to Tesseract stays small and free of unrelated neighboring text,
+// rather than a single wide rotated crop that risks catching a nearby
+// plot's own unrelated dimension number (confirmed as a real risk: an
+// early, wider version of this crop pulled in a neighboring "25'" dimension
+// label alongside the real "30' WIDE" text).
+function cropCanvasOriented(
+  source: HTMLCanvasElement,
+  cxPx: number,
+  cyPx: number,
+  along: number,
+  across: number,
+  angleRad: number,
+  scale: number,
+): HTMLCanvasElement {
+  const safeSize = Math.max(1, Math.round(Math.hypot(along, across)));
+  const rotated = document.createElement("canvas");
+  rotated.width = safeSize;
+  rotated.height = safeSize;
+  const rctx = rotated.getContext("2d");
+  if (rctx) {
+    rctx.fillStyle = "white";
+    rctx.fillRect(0, 0, safeSize, safeSize);
+    rctx.translate(safeSize / 2, safeSize / 2);
+    rctx.rotate(-angleRad);
+    rctx.drawImage(
+      source,
+      Math.max(0, cxPx - safeSize / 2),
+      Math.max(0, cyPx - safeSize / 2),
+      Math.min(safeSize, source.width - Math.max(0, cxPx - safeSize / 2)),
+      Math.min(safeSize, source.height - Math.max(0, cyPx - safeSize / 2)),
+      -safeSize / 2,
+      -safeSize / 2,
+      safeSize,
+      safeSize,
+    );
+  }
+
+  const out = document.createElement("canvas");
+  out.width = Math.max(1, Math.round(along * scale));
+  out.height = Math.max(1, Math.round(across * scale));
+  const octx = out.getContext("2d");
+  if (octx) {
+    octx.imageSmoothingEnabled = true;
+    octx.fillStyle = "white";
+    octx.fillRect(0, 0, out.width, out.height);
+    octx.drawImage(rotated, safeSize / 2 - along / 2, safeSize / 2 - across / 2, along, across, 0, 0, out.width, out.height);
+  }
+  return out;
+}
+
+// Picks an upscale factor from the crop's OWN native size rather than
+// applying a fixed multiplier everywhere — found necessary via direct
+// testing: BALAJI VIHAR (a 1190x1684 scan) needed roughly a 3x bump before
+// Tesseract's confidence crossed MIN_CONFIDENCE at all on its smallest road
+// labels, but blindly applying that same 3x to a much higher-resolution
+// source (e.g. Naman Infracity's 6144px-wide photo, whose native crop is
+// already large) would needlessly multiply that crop's pixel area 9x for
+// no legibility benefit, slowing OCR for no reason. Clamped to never
+// upscale more than 4x (past which blur outweighs any benefit) and never
+// downscale below native resolution.
+const ROAD_LABEL_TARGET_ALONG_PX = 700;
+
+function roadLabelOcrScale(alongPx: number): number {
+  return Math.max(1, Math.min(4, ROAD_LABEL_TARGET_ALONG_PX / alongPx));
 }
 
 // Returns null to mean "drop this shape entirely" — reserved for a plot
@@ -208,46 +309,87 @@ function plausibleRoadWidthLabel(match: RegExpMatchArray | null): string | null 
 async function labelRoad(shape: DetectedShape, sourceCanvas: HTMLCanvasElement): Promise<DetectedShape | null> {
   const a = shape.points[0];
   const b = shape.points[shape.points.length - 1];
-  // A road has no interior to crop — this just samples a fixed-size box
-  // around a point on its own centerline, where a width label is commonly
-  // written next to the line on a real site plan.
-  const boxW = sourceCanvas.width * 0.14;
-  const boxH = sourceCanvas.height * 0.07;
+  // Pixel-space direction, not fractional-coordinate direction — a plan
+  // image is rarely square, so dividing x by width and y by height
+  // separately (as the shape's own stored points do) distorts angles. The
+  // road's own measured angle is what a hand-drafted label is rotated to
+  // match (see cropCanvasOriented's doc comment for the direct evidence),
+  // so getting the real angle right here matters.
+  const aPx = { x: a.x * sourceCanvas.width, y: a.y * sourceCanvas.height };
+  const bPx = { x: b.x * sourceCanvas.width, y: b.y * sourceCanvas.height };
+  const lineAngle = Math.atan2(bPx.y - aPx.y, bPx.x - aPx.x);
 
-  let fallback: OcrCropResult | null = null;
+  const longEdge = Math.max(sourceCanvas.width, sourceCanvas.height);
+  const along = longEdge * 0.14;
+  const across = longEdge * 0.07;
+  const scale = roadLabelOcrScale(along);
+  // A label can be hand-drafted reading either direction along its own
+  // line (see cropCanvasOriented) — both are tried, forward first since
+  // that already matches every currently-working horizontal case (a
+  // horizontal road's lineAngle is ~0, so this is a pure generalization of
+  // the previous unrotated crop, not a behavior change for those).
+  const orientations = [lineAngle, lineAngle + Math.PI];
+
+  let fallback: { text: string; confidence: number } | null = null;
   for (const t of ROAD_LABEL_SAMPLE_POSITIONS) {
-    const cx = a.x + (b.x - a.x) * t;
-    const cy = a.y + (b.y - a.y) * t;
-    const crop = cropCanvas(sourceCanvas, cx * sourceCanvas.width - boxW / 2, cy * sourceCanvas.height - boxH / 2, boxW, boxH);
+    const cxPx = aPx.x + (bPx.x - aPx.x) * t;
+    const cyPx = aPx.y + (bPx.y - aPx.y) * t;
 
-    let result: OcrCropResult;
-    try {
-      result = await recognizeCrop(crop);
-    } catch {
-      continue;
+    for (const angle of orientations) {
+      const crop = cropCanvasOriented(sourceCanvas, cxPx, cyPx, along, across, angle, scale);
+
+      // Per-WORD confidence, not recognizeCrop's whole-block average — a
+      // real, confirmed-necessary distinction for a road crop specifically.
+      // A plot's own interior crop (labelClosedShape, above) is small and
+      // isolated enough that the block average works fine, but a road
+      // label's crop routinely also catches a neighboring plot's unrelated
+      // boundary lines and dimension text in the same frame (this box has
+      // to be fairly generous to tolerate the sample point not landing
+      // exactly on the label — see cropCanvasOriented). Confirmed directly
+      // against BALAJI VIHAR's own "ROAD 30' WIDE": recognizeCrop's block
+      // average on this exact crop was only 36-48 (below MIN_CONFIDENCE)
+      // at every single sample position and orientation tried, even though
+      // the label itself was sitting right there — because several other,
+      // unrelated lines of garbage in the same crop (nearby dimension
+      // numbers, stray boundary strokes) dragged the average down. The
+      // SAME crop's own per-word breakdown reads "ROAD"=96, "30\""=92,
+      // "WIDE"=94 — each far above MIN_CONFIDENCE on its own. Keeping only
+      // words Tesseract itself is actually confident about, and judging
+      // road-relevance from just those, finds the real label without
+      // being penalized by noise elsewhere in the same frame.
+      let words;
+      try {
+        words = await recognizeCropWords(crop);
+      } catch {
+        continue;
+      }
+      const confidentWords = words.filter((w) => w.confidence >= MIN_CONFIDENCE);
+      if (confidentWords.length === 0) continue;
+      const text = confidentWords.map((w) => w.text).join(" ");
+      if (isNonPlotContent(text)) return null;
+      if (!fallback) {
+        fallback = { text, confidence: Math.max(...confidentWords.map((w) => w.confidence)) };
+      }
+
+      // Keyword match is confidence SUPPORT for a candidate the geometric
+      // corridor detector already found plausible on its own — it never
+      // decides "road" by itself (a candidate with no geometric support
+      // never reaches this function with a meaningful confidence to boost).
+      const keywordMatched = ROAD_KEYWORDS.test(text);
+      const widthMatch = text.match(ROAD_WIDTH_LABEL);
+      if (!keywordMatched && !widthMatch) continue; // this crop found text, but nothing road-relevant — try the next orientation/position
+
+      const boostedConfidence = keywordMatched
+        ? Math.min(1, (shape.confidence ?? 0) + ROAD_KEYWORD_CONFIDENCE_BOOST)
+        : shape.confidence;
+      const label = plausibleRoadWidthLabel(widthMatch ?? text.match(ROAD_NUMBER));
+      return label ? { ...shape, label, confidence: boostedConfidence } : { ...shape, confidence: boostedConfidence };
     }
-    if (!result.text || result.confidence < MIN_CONFIDENCE) continue;
-    if (isNonPlotContent(result.text)) return null;
-    if (!fallback) fallback = result; // something readable, kept in case no position ever matches a road pattern
-
-    // Keyword match is confidence SUPPORT for a candidate the geometric
-    // corridor detector already found plausible on its own — it never
-    // decides "road" by itself (a candidate with no geometric support
-    // never reaches this function with a meaningful confidence to boost).
-    const keywordMatched = ROAD_KEYWORDS.test(result.text);
-    const widthMatch = result.text.match(ROAD_WIDTH_LABEL);
-    if (!keywordMatched && !widthMatch) continue; // this crop found text, but nothing road-relevant — try the next position
-
-    const boostedConfidence = keywordMatched
-      ? Math.min(1, (shape.confidence ?? 0) + ROAD_KEYWORD_CONFIDENCE_BOOST)
-      : shape.confidence;
-    const label = plausibleRoadWidthLabel(widthMatch ?? result.text.match(ROAD_NUMBER));
-    return label ? { ...shape, label, confidence: boostedConfidence } : { ...shape, confidence: boostedConfidence };
   }
 
-  // No position matched a road-specific pattern — fall back to whatever
-  // plain digit (if any) the first readable crop found, same as the
-  // original single-crop behavior, rather than giving up on a label
+  // No position/orientation matched a road-specific pattern — fall back to
+  // whatever plain digit (if any) the first readable crop found, same as
+  // the original single-crop behavior, rather than giving up on a label
   // entirely just because "WIDE"/"ROAD" itself wasn't legible. Still
   // gated by plausibleRoadWidthLabel — an unrelated nearby number is
   // exactly what this fallback (weakest evidence: no road keyword at all)

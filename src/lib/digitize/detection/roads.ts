@@ -632,11 +632,22 @@ export function detectRoadSegments(
   const samePlotTolerance = longEdge * SAME_PLOT_TOLERANCE_FRACTION;
 
   const candidates: CorridorCandidate[] = [];
-  // Tracks which candidateEdges ended up part of at least one ACCEPTED
-  // pair (survived every filter below, not merely attempted) — see the
-  // single-line fallback after this loop, which only ever considers an
-  // edge that never found a real partner.
-  const pairedEdge = new Array(candidateEdges.length).fill(false);
+  // Tracks each candidateEdge's BEST pairing confidence (0 if it was never
+  // part of any accepted pair at all) — see the single-line fallback after
+  // this loop, which only considers an edge whose best pairing attempt
+  // still falls short of MIN_FINAL_CONFIDENCE. A real bug, found by
+  // directly tracing why BALAJI VIHAR's own single-line "ROAD 30' WIDE"
+  // still wasn't detected even after the fallback existed: a plain
+  // used/unused boolean marks an edge "already paired" as soon as ANY
+  // pairing attempt clears the loose geometric floor (0.3) and enters
+  // `candidates` — but clearing that floor doesn't mean the pairing will
+  // actually survive the stricter final threshold (0.4) applied later.
+  // This edge was stuck in exactly that trap: a weak 0.39 pairing that was
+  // always going to be filtered out, which nonetheless permanently
+  // disqualified it from ever getting the single-line fallback's OCR-based
+  // chance. Gating on confidence, not mere presence, means an edge is only
+  // excluded once it has a pairing that would actually succeed on its own.
+  const bestPairConfidence = new Array(candidateEdges.length).fill(0);
   for (let i = 0; i < candidateEdges.length; i++) {
     for (let j = i + 1; j < candidateEdges.length; j++) {
       const a = candidateEdges[i];
@@ -688,8 +699,8 @@ export function detectRoadSegments(
       if (confidence < MIN_GEOMETRIC_CONFIDENCE) continue;
 
       candidates.push({ centerline, gap: overlap.gap, confidence });
-      pairedEdge[i] = true;
-      pairedEdge[j] = true;
+      bestPairConfidence[i] = Math.max(bestPairConfidence[i], confidence);
+      bestPairConfidence[j] = Math.max(bestPairConfidence[j], confidence);
     }
   }
 
@@ -713,7 +724,7 @@ export function detectRoadSegments(
   const SINGLE_LINE_BASELINE_CONFIDENCE = 0.12;
   const SINGLE_LINE_MIN_LENGTH_FRACTION = 0.06;
   for (let i = 0; i < candidateEdges.length; i++) {
-    if (pairedEdge[i]) continue;
+    if (bestPairConfidence[i] >= MIN_FINAL_CONFIDENCE) continue;
     const edge = candidateEdges[i];
     if (length(edge) < longEdge * SINGLE_LINE_MIN_LENGTH_FRACTION) continue;
     candidates.push({ centerline: edge, gap: 0, confidence: SINGLE_LINE_BASELINE_CONFIDENCE });
