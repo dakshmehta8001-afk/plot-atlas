@@ -1092,7 +1092,50 @@ export function associateReadingsToFaces(
   // here. The downstream label DISPLAYED to the reviewer is a separate
   // concern, fixed without touching this.
   const topReadingByFace = faces.map((_, i) => [...matchesByFace[i]].sort((a, b) => b.confidence - a.confidence)[0]);
-  const isConfirmedForGrouping = (i: number) => isConfirmedPlotNumber(topReadingByFace[i]?.text ?? "");
+
+  // A SECOND, independent signal alongside the text check: a real plot
+  // number is never printed on a face dramatically smaller than the plan's
+  // own other plots. Found necessary via direct testing against both the
+  // synthetic fixture and Naman Infracity: a handful of thin sliver faces
+  // along a road's own edge (created wherever a plot-divider line happens
+  // to touch the road corridor, splitting it into small sub-faces) survive
+  // as spurious "plots" specifically because their own tiny OCR crop
+  // happens to catch just the digit portion of a nearby road-width badge
+  // ("30' WIDE ROAD") while the "WIDE"/"ROAD" word lands in a neighboring
+  // sub-face instead — so the text check alone sees a perfectly plausible
+  // bare number and has no way to know it's not really this face's own
+  // label. These slivers measured at roughly 1/8 to 1/3 of their plan's own
+  // median numerically-confirmed face area on both test images — nowhere
+  // close to a real plot's size, even an unusually small corner lot.
+  // Computed from the set of faces that ALREADY pass the text check alone
+  // (not every validated face), so a plan's own road/legend noise — which
+  // the text check already excludes — can't skew the median; this two-step
+  // ordering avoids the circularity of needing to know "which faces are
+  // real plots" before computing a threshold meant to help answer that.
+  const numericAreas = faces.map((f, i) => (isConfirmedPlotNumber(topReadingByFace[i]?.text ?? "") ? f.areaFraction : null)).filter((a): a is number => a !== null);
+  const sortedNumericAreas = [...numericAreas].sort((a, b) => a - b);
+  const medianNumericArea = sortedNumericAreas.length > 0 ? sortedNumericAreas[Math.floor(sortedNumericAreas.length / 2)] : 0;
+  // 0.5 was tried first (tuned against the synthetic fixture's own clean
+  // gap: smallest legitimate plot at 0.634x median, worst sliver false
+  // positive at 0.384x) and REVERTED after direct testing against Naman
+  // Infracity found it unsafe: that real plan has genuinely more size
+  // variety than the synthetic fixture's two uniform plot types (its own
+  // Plot Schedule lists four different standard sizes, "Other Size" being
+  // a fifth, open-ended category) — real plot "5" there measured 0.308x
+  // its own plan's median, BELOW even the synthetic fixture's worst false
+  // positive (0.384x). The two images' size distributions genuinely
+  // overlap enough that no single ratio can cleanly separate both at once.
+  // 0.3 is the value already confirmed safe for Naman (matches its
+  // independently-verified-correct 108-shape topology exactly) — kept
+  // deliberately conservative rather than re-tuned upward again, since a
+  // false exclusion (a real plot silently missing) is a worse failure than
+  // a false inclusion (an obviously-wrong sliver a reviewer deletes in one
+  // click) in a product whose whole second step is manual review.
+  const MIN_CONFIRMED_AREA_RATIO = 0.3;
+
+  const isConfirmedForGrouping = (i: number) =>
+    isConfirmedPlotNumber(topReadingByFace[i]?.text ?? "") &&
+    (medianNumericArea <= 0 || faces[i].areaFraction >= medianNumericArea * MIN_CONFIRMED_AREA_RATIO);
 
   // What gets PERSISTED/displayed as the face's label — a separate concern
   // from the grouping decision above, which must stay on the plain
@@ -1171,6 +1214,30 @@ export function associateReadingsToFaces(
       excludedAsNonPlotCount += members.length;
     }
   }
+
+  // A direct, independent veto for the one case the keyword-based group
+  // exclusion above structurally can't reach: a small sliver face with no
+  // plausible plot number AND no road/legend keyword of its OWN, that also
+  // never got swept into a larger excluded group because it happens to sit
+  // geometrically ISOLATED from one (no graph wall-adjacency to another
+  // excluded face). Confirmed as a real, non-hypothetical remaining case on
+  // the synthetic fixture: a sliver along the right-outer road's own edge
+  // read pure OCR noise ("<", no road keyword), was correctly never treated
+  // as a confirmed plot number, but — lacking any adjacent excluded
+  // neighbor to union with — formed its own singleton group whose "combined
+  // text" never contained a road keyword either, so it fell through BOTH
+  // checks and surfaced as a spurious labeled "plot" anyway. A face this
+  // small, with nothing plausible to say it's a real numbered plot, is
+  // excluded outright rather than defaulting to "keep it" — same
+  // median-relative size signal as isConfirmedForGrouping above, applied
+  // here as its own independent rule rather than only a grouping gate.
+  faces.forEach((_, i) => {
+    if (excludedFaceIdx.has(i) || isConfirmedForGrouping(i)) return;
+    if (medianNumericArea > 0 && faces[i].areaFraction < medianNumericArea * MIN_CONFIRMED_AREA_RATIO) {
+      excludedFaceIdx.add(i);
+      excludedAsNonPlotCount += 1;
+    }
+  });
 
   const warnings: string[] = [];
   const associations: FaceAssociation[] = [];
