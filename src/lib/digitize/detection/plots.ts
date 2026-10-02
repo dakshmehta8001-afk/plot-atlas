@@ -142,14 +142,67 @@ export function detectPlotContours(
     // one by the same PROPORTION of detail, rather than over-simplifying
     // small contours or under-simplifying large ones with one fixed number.
     const perimeter = cv.arcLength(contour, true);
+
+    // Circularity (isoperimetric quotient: 1.0 for a perfect circle, ~0.79
+    // for a square, lower still for any more elongated rectangle) — a real
+    // plot is built from straight boundary walls and is never this round,
+    // but a compass rosette's own ring is exactly this shape, and (unlike
+    // every other false "plot" this file filters) dodges every other
+    // check here: it's small (not oversized), perfectly square in bbox
+    // (not elongated), and highly solid (a circle IS already convex).
+    // Found necessary via direct testing against a synthetic plan with
+    // known ground truth: a compass ring was the one false "plot" of 20
+    // that survived the area/aspect-ratio/vertex-count fixes above.
+    const circularity = perimeter > 0 ? (4 * Math.PI * area) / (perimeter * perimeter) : 0;
+    const MAX_CIRCULARITY = 0.9;
+    if (circularity > MAX_CIRCULARITY) {
+      contour.delete();
+      continue;
+    }
+
     const approx = new cv.Mat();
     cv.approxPolyDP(contour, approx, 0.02 * perimeter, true);
 
     const vertexCount = approx.rows;
     // >= 3 (not 4): real layouts routinely have triangular corner plots —
     // excluding them outright was an oversight in the original thresholds,
-    // not a deliberate choice.
-    if (vertexCount < 3 || vertexCount > 14) {
+    // not a deliberate choice. Upper bound tightened from 14 to 10 after
+    // direct testing against a synthetic plan with known ground truth: a
+    // stylized, bold, drop-shadowed title ("RESIDENTIAL PLOT LAYOUT PLAN")
+    // simplifies to 12-14 vertices per word, well above anything a real
+    // plot (quadrilateral, occasionally an irregular 5-8 sided corner lot)
+    // ever produced across every test image checked, including every real
+    // plot on both real scanned plans used throughout this project.
+    if (vertexCount < 3 || vertexCount > 10) {
+      contour.delete();
+      approx.delete();
+      continue;
+    }
+
+    // Bounding-box aspect ratio — a real plot, even an irregular corner
+    // lot, is never this elongated. A thin strip this shape is instead a
+    // road-width text badge, a caption line, or a scale-bar tick, all of
+    // which otherwise look plot-like (small, reasonably solid, low vertex
+    // count). Found necessary via direct testing against the same
+    // synthetic plan: 11 of its 20 false "plot" detections were exactly
+    // this shape (6:1 to 17:1 width:height), none anywhere near a real
+    // plot's own proportions.
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
+    for (let v = 0; v < vertexCount; v++) {
+      const x = approx.data32S[v * 2];
+      const y = approx.data32S[v * 2 + 1];
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+    const boxW = maxX - minX;
+    const boxH = maxY - minY;
+    const MAX_ASPECT_RATIO = 5;
+    if (boxW <= 0 || boxH <= 0 || Math.max(boxW / boxH, boxH / boxW) > MAX_ASPECT_RATIO) {
       contour.delete();
       approx.delete();
       continue;
@@ -172,7 +225,7 @@ export function detectPlotContours(
   contours.delete();
 
   const shapes: DetectedShape[] = [];
-  for (const candidate of suppressOverlapping(candidates)) {
+  for (const candidate of suppressOverlapping(excludeOversizedOutliers(candidates))) {
     // A rough, purely-geometric confidence hint for the review UI (e.g. a
     // dashed outline on low-confidence shapes) — how comfortably this
     // contour clears the thresholds above. Never persisted, never shown as
@@ -277,4 +330,35 @@ function suppressOverlapping(candidates: Candidate[]): Candidate[] {
   }
 
   return kept.map((k) => k.candidate);
+}
+
+// Anything far above the plan's own typical plot size is far more likely a
+// mis-detected whole-diagram outer frame or a per-block outer border than
+// a real individual plot — both confirmed as real, direct false positives
+// via testing against a synthetic plan with known ground truth (36 real
+// plots; these two shape classes sat at ~13x and ~70x the real median plot
+// area). A THIRD false positive found the same way — an open road
+// surface's own uniform gray fill, at a more moderate ~8x the median — is
+// deliberately NOT what this ratio is tuned against: it's a long, thin
+// band (~7:1 width:height), already caught independently by the aspect
+// ratio filter above regardless of area. That distinction matters because
+// the ratio here was initially set to 6 (matching roads.ts's own
+// excludeOversizedPlotOutliers) and found, via direct testing against a
+// REAL plan, to be too tight: Naman Infracity's own Commercial Plot — a
+// genuinely larger, legitimately real block, not a detection artifact —
+// sits at ~7.2x that plan's own median plot area, which a 6x cutoff
+// deleted outright. 6x and ~7.2x (a real plot) turned out to be too close
+// to the ~8x a false road-band also produces to separate with one ratio;
+// raised to 10x specifically because the aspect-ratio filter already
+// handles the elongated false-positive case on its own, leaving this
+// check free to use a safer margin for the near-square giant shapes
+// (frame, block borders) it actually needs to catch.
+const MAX_PLOT_AREA_OUTLIER_RATIO = 10;
+
+function excludeOversizedOutliers(candidates: Candidate[]): Candidate[] {
+  if (candidates.length < 4) return candidates; // too few for a median to mean anything
+  const sortedAreas = candidates.map((c) => c.areaFraction).sort((a, b) => a - b);
+  const median = sortedAreas[Math.floor(sortedAreas.length / 2)];
+  if (median <= 0) return candidates;
+  return candidates.filter((c) => c.areaFraction <= median * MAX_PLOT_AREA_OUTLIER_RATIO);
 }
