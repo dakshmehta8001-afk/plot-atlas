@@ -7,6 +7,7 @@
 // message with Try again / Reload.
 import { useEffect, useState } from "react";
 import { markAndReload, shouldAutoReload } from "@/lib/staleBuildRecovery";
+import { reportClientError } from "@/lib/reportClientError";
 
 const button: React.CSSProperties = {
   padding: "8px 16px",
@@ -24,6 +25,7 @@ export default function GlobalError({ error, retry }: { error: Error & { digest?
 
   useEffect(() => {
     console.error(error);
+    reportClientError(reloading ? "boundary-stale-build" : "boundary", error);
     if (reloading) markAndReload();
   }, [error, reloading]);
 

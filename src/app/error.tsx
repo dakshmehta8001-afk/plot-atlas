@@ -10,6 +10,7 @@
 //   Next 16 names the recovery callback `retry` (it was `reset` before).
 import { useEffect, useState } from "react";
 import { markAndReload, shouldAutoReload } from "@/lib/staleBuildRecovery";
+import { reportClientError } from "@/lib/reportClientError";
 
 export default function AppError({ error, retry }: { error: Error & { digest?: string }; retry: () => void }) {
   // Decided once, at mount — the effect below only carries it out.
@@ -17,6 +18,7 @@ export default function AppError({ error, retry }: { error: Error & { digest?: s
 
   useEffect(() => {
     console.error(error);
+    reportClientError(reloading ? "boundary-stale-build" : "boundary", error);
     if (reloading) markAndReload();
   }, [error, reloading]);
 
