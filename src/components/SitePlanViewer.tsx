@@ -41,7 +41,8 @@ import {
   type UnitStatus,
 } from "@/lib/types";
 import { useImageAspectRatio } from "@/lib/useImageAspectRatio";
-import { toScaledSvgPoints, toScaledSvgPathD, scaledBoundingBoxCenter } from "@/lib/svgPolygon";
+import { toScaledSvgPoints, scaledBoundingBoxCenter } from "@/lib/svgPolygon";
+import { buildScene, insetPolygon, toPoly } from "@/lib/mapScenery";
 import { clientPointToLocalFraction } from "@/lib/svgCoords";
 
 const VB = MAP_VIEWBOX_SIZE;
@@ -136,36 +137,92 @@ function opaqueRgba(rgba: string): string {
   return `rgb(${match[1]}, ${match[2]}, ${match[3]})`;
 }
 
-// The point exactly halfway along a road's traced length — a road is an
-// open path (often just two endpoints, sometimes bent), so a bounding-box
-// center can land off the path entirely, and picking the middle VERTEX by
-// array index is wrong too: a straight two-point road has no middle
-// vertex, only its two endpoints, which is the common case this needs to
-// get right. Walking the path by cumulative length instead works for any
-// point count, including two.
-function pathMidpoint(points: { x: number; y: number }[], vbWidth: number, vbHeight: number): { x: number; y: number } {
-  const px = points.map((p) => p.x * vbWidth);
-  const py = points.map((p) => p.y * vbHeight);
-  if (px.length === 1) return { x: px[0], y: py[0] };
+// ---- Scenery (ground, wall, trees, road surface, traffic) ----
+// Sizes are in map units (the viewBox is VB wide). The car and walker sprites
+// are drawn at a base size and scaled by the numbers below.
+//  - Car: base 40 x 17.5 units; CAR_SCALE 2 => 80 x 35, which is 2.5x the old
+//    32 x 15 car. Walker: base 14 units across the shoulders; WALKER_SCALE 2.14
+//    => 30, which is 3x the old 10-unit dot.
+//  - Both are capped to fit the road they are on (see CAR_MAX_ROAD_FRACTION),
+//    so a narrow road never shows a car wider than the road itself.
+const CAR_SCALE = 2;
+const CAR_BASE_WIDTH = 17.5;
+const CAR_MAX_ROAD_FRACTION = 0.72;
+const WALKER_SCALE = 2.14;
+const WALKER_BASE_WIDTH = 14;
+const WALKER_MAX_ROAD_FRACTION = 0.5;
+// The white edge line sits this far inside the road's edge (so the plot
+// borders drawn on top of the road's rim don't hide it) and is this thick.
+const ROAD_EDGE_INSET = 3.5;
+const ROAD_EDGE_LINE = 1.6;
+const CAR_COLORS = ["#d7473f", "#f4f4f2", "#2f6fb5", "#b8bcc4", "#1f2933", "#e0a526"];
+const WALKER_COLORS = ["#e2553f", "#3f7fd9", "#f2c14e", "#7a5bd6", "#3aa57a"];
+// Cars drive about this fast (map units per second); walkers about this fast.
+const CAR_SPEED = 70;
+const WALKER_SPEED = 16;
 
-  const segmentLengths: number[] = [];
-  let totalLength = 0;
-  for (let i = 1; i < px.length; i++) {
-    const d = Math.hypot(px[i] - px[i - 1], py[i] - py[i - 1]);
-    segmentLengths.push(d);
-    totalLength += d;
-  }
-  if (totalLength === 0) return { x: px[0], y: py[0] };
-
-  let remaining = totalLength / 2;
-  for (let i = 0; i < segmentLengths.length; i++) {
-    if (remaining <= segmentLengths[i]) {
-      const t = remaining / segmentLengths[i];
-      return { x: px[i] + (px[i + 1] - px[i]) * t, y: py[i] + (py[i + 1] - py[i]) * t };
-    }
-    remaining -= segmentLengths[i];
-  }
-  return { x: px[px.length - 1], y: py[px.length - 1] };
+// Shared drawings, defined once and drawn many times with <use>: that keeps
+// the DOM small (one tree = one <use>, not five shapes) which is what keeps
+// panning smooth on a low-end phone.
+function SceneryDefs() {
+  return (
+    <defs>
+      <linearGradient id="sp-grass" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stopColor="#8fcf8a" />
+        <stop offset="1" stopColor="#6fb26f" />
+      </linearGradient>
+      <g id="sp-tree-a">
+        <circle cx="1.5" cy="2.5" r="10" fill="#000" opacity="0.22" />
+        <circle r="10" fill="#2f7a3f" />
+        <circle cx="-2" cy="-2.5" r="7" fill="#3f9a4f" />
+        <circle cx="-3.5" cy="-4" r="3.6" fill="#62b86a" opacity="0.85" />
+      </g>
+      <g id="sp-tree-b">
+        <circle cx="1.5" cy="2.5" r="9.5" fill="#000" opacity="0.22" />
+        <circle cx="-4.5" cy="0" r="5.5" fill="#276b37" />
+        <circle cx="4.5" cy="0" r="5.5" fill="#276b37" />
+        <circle cx="0" cy="-4.5" r="5.5" fill="#2d7a40" />
+        <circle cx="0" cy="4.5" r="5.5" fill="#276b37" />
+        <circle cx="0" cy="0" r="5.5" fill="#3a9150" />
+        <circle cx="-1.5" cy="-1.5" r="2.4" fill="#62b86a" opacity="0.8" />
+      </g>
+      {/* Top-down car, nose pointing +x. Body colour comes from the <use>'s
+          `color` (currentColor); glass, lights, mirrors and wheels are fixed. */}
+      <g id="sp-car">
+        <ellipse cx="1" cy="2" rx="21" ry="10" fill="#000" opacity="0.28" />
+        <rect x="-12" y="-9.8" width="7" height="2.4" rx="1" fill="#111" />
+        <rect x="9" y="-9.8" width="7" height="2.4" rx="1" fill="#111" />
+        <rect x="-12" y="7.4" width="7" height="2.4" rx="1" fill="#111" />
+        <rect x="9" y="7.4" width="7" height="2.4" rx="1" fill="#111" />
+        <path
+          d="M-20,-5.6 Q-20,-8.75 -15,-8.75 L13,-8.75 Q20,-8.2 20,-4 L20,4 Q20,8.2 13,8.75 L-15,8.75 Q-20,8.75 -20,5.6 Z"
+          fill="currentColor"
+          stroke="#000"
+          strokeOpacity="0.45"
+          strokeWidth="0.8"
+        />
+        <path d="M3.5,-6.6 L10.5,-5.2 L10.5,5.2 L3.5,6.6 Z" fill="#1b2a38" opacity="0.88" />
+        <path d="M-12.5,-6.2 L-8.5,-6.8 L-8.5,6.8 L-12.5,6.2 Z" fill="#1b2a38" opacity="0.88" />
+        <rect x="-8.5" y="-6.6" width="12" height="13.2" rx="2" fill="#fff" opacity="0.2" />
+        <path d="M10.5,-7.4 L16.5,-6.2 M10.5,7.4 L16.5,6.2" stroke="#000" strokeOpacity="0.25" strokeWidth="0.7" />
+        <rect x="17.4" y="-7.4" width="2.6" height="3.2" rx="1" fill="#fff6c8" />
+        <rect x="17.4" y="4.2" width="2.6" height="3.2" rx="1" fill="#fff6c8" />
+        <rect x="-20" y="-7.4" width="2" height="3.2" rx="0.8" fill="#ff3b30" />
+        <rect x="-20" y="4.2" width="2" height="3.2" rx="0.8" fill="#ff3b30" />
+        <rect x="4.5" y="-10.4" width="3" height="2" rx="0.8" fill="#222" />
+        <rect x="4.5" y="8.4" width="3" height="2" rx="0.8" fill="#222" />
+      </g>
+      {/* Top-down walker facing +x: shoulders, arms, head, hair. */}
+      <g id="sp-walker">
+        <ellipse cx="0.5" cy="1.2" rx="5" ry="8.2" fill="#000" opacity="0.25" />
+        <ellipse cx="0.5" cy="-6.6" rx="2.2" ry="1.7" fill="#e9c4a0" />
+        <ellipse cx="0.5" cy="6.6" rx="2.2" ry="1.7" fill="#e9c4a0" />
+        <ellipse cx="0" cy="0" rx="3.4" ry="7" fill="currentColor" stroke="#000" strokeOpacity="0.4" strokeWidth="0.6" />
+        <circle cx="1" cy="0" r="3.5" fill="#e9c4a0" stroke="#000" strokeOpacity="0.35" strokeWidth="0.5" />
+        <path d="M-2.3,-2.2 A3.5,3.5 0 0 0 -2.3,2.2 Q0.8,0 -2.3,-2.2 Z" fill="#2b2118" />
+      </g>
+    </defs>
+  );
 }
 
 // Extracted specifically so pan/zoom (`view`) and hover-tooltip
@@ -218,6 +275,26 @@ const MapShapes = memo(function MapShapes({
   onPlotHover: (unit: Unit, e: React.MouseEvent) => void;
   onPlotHoverEnd: (unitId: string) => void;
 }) {
+  // Computed once per data change, never per pan/zoom frame (this component
+  // is memoised and none of these inputs change while panning).
+  const scene = useMemo(
+    () => buildScene(roads, plots, [...buildings, ...features], VB, vbHeight, roadStrokeWidth),
+    [roads, plots, buildings, features, vbHeight],
+  );
+  const plotGeoms = useMemo(() => {
+    const map = new Map<string, { points: string; center: { x: number; y: number }; inner: string | null }>();
+    for (const unit of plots) {
+      if (unit.polygon_points.length < 3) continue;
+      const inner = insetPolygon(toPoly(unit.polygon_points, VB, vbHeight), VB * 0.006);
+      map.set(unit.id, {
+        points: toScaledSvgPoints(unit.polygon_points, VB, vbHeight),
+        center: scaledBoundingBoxCenter(unit.polygon_points, VB, vbHeight),
+        inner: inner ? inner.map((q) => `${q.x},${q.y}`).join(" ") : null,
+      });
+    }
+    return map;
+  }, [plots, vbHeight]);
+
   function plotStyle(unit: Unit): { fill: string; border: string; opacity: number; isSelected: boolean } {
     const isSelected = selectedId === unit.id;
     const dimmedBySelection = selectedId !== null && !isSelected;
@@ -244,168 +321,135 @@ const MapShapes = memo(function MapShapes({
 
   return (
     <>
-      {roads.map((road, index) => {
-        if (road.path_points.length < 2) return null;
-        const mid = pathMidpoint(road.path_points, VB, vbHeight);
-        const motionPathId = `road-motion-${road.id}`;
-        // Varying the duration a little per road, rather than one
-        // fixed number, is what keeps several cars on screen at once
-        // from all being in lockstep.
-        const driveDuration = 7 + (index % 4) * 1.5;
-        // Both the asphalt strip and its dashed centerline scale off the
-        // same parsed width, keeping the same proportions the flat-width
-        // version had (a wider road gets a proportionally wider, not just
-        // absolutely wider, centerline and dash pattern).
-        const asphaltWidth = roadStrokeWidth(road.width_label);
-        // Widened and recolored from a pale slate-gray (#94a3b8) to a bold
-        // road-paint yellow — a real request, not a nicety: the gray
-        // centerline read as just another thin line among the plot
-        // borders, especially next to saturated zone-color fills, instead
-        // of unmistakably signaling "this is a road" the way a real
-        // satellite/game-style map's yellow lane line does at a glance.
-        const centerlineWidth = asphaltWidth * 0.1;
-        const dashLength = asphaltWidth * 0.54;
-        const dashGap = asphaltWidth * 0.38;
-        return (
-          <g
-            key={road.id}
-            className="pointer-events-none"
-            // Reveal-in on first mount only — `animationFillMode:
-            // "backwards"` applies the from-keyframe during the
-            // staggered delay (so later shapes don't flash at full
-            // opacity before their turn), but does NOT persist after
-            // the animation ends, so it can never permanently override
-            // anything. Re-renders (toggling the zone/status filter,
-            // etc.) don't replay this — it only plays once, when the
-            // shape's own DOM node is first created, since none of
-            // these props change on re-render. The plain `opacity` here
-            // (separate from the animation) is what gives the "focus"
-            // dimming when a plot/building is selected — the animation's
-            // own opacity keyframe only controls the entrance and never
-            // persists afterward (backwards, not forwards/both), so this
-            // takes over cleanly once the reveal finishes.
-            style={{
-              animation: "fadeIn 420ms ease-out backwards",
-              animationDelay: `${revealDelay(index)}ms`,
-              opacity: selectedId !== null ? 0.4 : 1,
-              transition: "opacity 300ms ease",
-            }}
-          >
-            {/* Clean architectural/blueprint road styling — a light band
-                (matching a printed site plan's plain "gap between plots"
-                look, e.g. the Naman Infracity reference) with a thin
-                dashed centerline, replacing the earlier dark-asphalt
-                treatment. Still fully synthesized from the traced path
-                (not the plan artwork itself), so this looks right on ANY
-                uploaded image regardless of what that image already drew
-                in its own road gaps. */}
-            <polyline
-              points={toScaledSvgPoints(road.path_points, VB, vbHeight)}
-              fill="none"
-              stroke="#eef1f4"
-              strokeWidth={asphaltWidth}
-              strokeLinecap="round"
-            />
-            <polyline
-              points={toScaledSvgPoints(road.path_points, VB, vbHeight)}
-              fill="none"
-              stroke="#f5c518"
-              strokeOpacity={0.95}
-              strokeWidth={centerlineWidth}
-              strokeDasharray={`${dashLength} ${dashGap}`}
-              strokeLinecap="round"
-            />
+      <SceneryDefs />
 
-            {/* An invisible copy of the same path, purely so the car
-                below has something to run animateMotion along —
-                <mpath> only works off a real <path>, not a <polyline>. */}
-            <path id={motionPathId} d={toScaledSvgPathD(road.path_points, VB, vbHeight)} fill="none" stroke="none" />
-            {/* A real, simple top-down 2D car — a rounded body, a darker
-                windshield band across the middle (reads as "front/back"
-                even at small map scale, which the old plain rect never
-                did), and four small wheel marks at the corners. Bigger and
-                fully opaque (the old rect was tiny and easy to miss), and
-                driven noticeably slower (driveDuration below is roughly
-                double the old per-road value) — both changes specifically
-                so it's actually visible as a car while panning/zooming,
-                not just a barely-noticeable colored speck. */}
-            <g>
-              <g
-                style={{ animation: `fadeIn 420ms ease-out backwards`, animationDelay: `${revealDelay(index)}ms` }}
-              >
-                <rect x={-VB * 0.016} y={-VB * 0.0075} width={VB * 0.032} height={VB * 0.015} rx={VB * 0.004} fill={index % 2 === 0 ? "#d7473f" : "#f4f4f2"} stroke="#0f2436" strokeWidth={VB * 0.0009} />
-                <rect x={-VB * 0.009} y={-VB * 0.005} width={VB * 0.018} height={VB * 0.006} rx={VB * 0.0015} fill="#0f2436" opacity={0.55} />
-                <circle cx={-VB * 0.01} cy={-VB * 0.0075} r={VB * 0.0022} fill="#0f2436" />
-                <circle cx={VB * 0.01} cy={-VB * 0.0075} r={VB * 0.0022} fill="#0f2436" />
-                <circle cx={-VB * 0.01} cy={VB * 0.0075} r={VB * 0.0022} fill="#0f2436" />
-                <circle cx={VB * 0.01} cy={VB * 0.0075} r={VB * 0.0022} fill="#0f2436" />
-              </g>
-              <animateMotion
-                dur={`${driveDuration * 1.8}s`}
-                repeatCount="indefinite"
-                rotate="auto"
-                keyPoints="0;1;0"
-                keyTimes="0;0.5;1"
-                calcMode="linear"
-              >
-                <mpath href={`#${motionPathId}`} />
-              </animateMotion>
-            </g>
-            {/* A slow-walking pedestrian dot along the same motion path as
-                the car — same <mpath> trick, deliberately NOT synced with
-                it (a much longer duration, a staggered `begin` per road,
-                and keyPoints inset slightly from the road's very endpoints
-                rather than running the car's full length) so it reads as
-                independent ambient life on the road rather than a second
-                copy of the same car animation. This is the one small,
-                genuinely optional touch from the "ambient life" item in the
-                visual-polish pass — everything else on this map is
-                functional; this purely make it feel inhabited. */}
-            <g opacity={0.75}>
-              <circle r={VB * 0.005} fill="#f4d9a0" stroke="#0f2436" strokeWidth={VB * 0.0012} />
-              <animateMotion
-                dur={`${driveDuration * 2.6}s`}
-                repeatCount="indefinite"
-                rotate="auto"
-                keyPoints="0.05;0.95;0.05"
-                keyTimes="0;0.5;1"
-                calcMode="linear"
-                begin={`${(index % 3) * 1.4}s`}
-              >
-                <mpath href={`#${motionPathId}`} />
-              </animateMotion>
-            </g>
-            {/* Sitting directly on the road's own light band, matching
-                the reference's plain look — a thin white halo (paintOrder
-                stroke) keeps it legible without needing a solid dark
-                pill behind it, now that the road itself is light rather
-                than dark asphalt. */}
-            <text
-              x={mid.x}
-              y={mid.y + VB * 0.003}
-              textAnchor="middle"
-              fontSize={VB * 0.013}
-              fill="#334155"
-              stroke="#eef1f4"
-              strokeWidth={VB * 0.0035}
-              paintOrder="stroke"
-              className="select-none font-medium"
-            >
-              {road.width_label}
-            </text>
+      {/* Ground: soft grass under the whole site, a boundary wall, and rows
+          of trees just inside the wall and beside the roads. */}
+      {scene.ground && (
+        <g className="pointer-events-none">
+          <rect x={scene.ground.x} y={scene.ground.y} width={scene.ground.w} height={scene.ground.h} rx={14} fill="url(#sp-grass)" />
+          <rect x={scene.ground.wall.x} y={scene.ground.wall.y} width={scene.ground.wall.w} height={scene.ground.wall.h} rx={6} fill="none" stroke="#5f5a50" strokeWidth={7} />
+          <rect x={scene.ground.wall.x} y={scene.ground.wall.y} width={scene.ground.wall.w} height={scene.ground.wall.h} rx={6} fill="none" stroke="#d9d3c5" strokeWidth={4.4} />
+          <rect x={scene.ground.wall.x} y={scene.ground.wall.y} width={scene.ground.wall.w} height={scene.ground.wall.h} rx={6} fill="none" stroke="#f1ede3" strokeWidth={1} strokeOpacity={0.9} />
+          {scene.trees.map((t, i) => (
+            <use key={i} href={t.variant === 1 ? "#sp-tree-b" : "#sp-tree-a"} transform={`translate(${t.x} ${t.y}) scale(${t.scale})`} />
+          ))}
+        </g>
+      )}
+
+      {/* Roads, drawn in passes across ALL roads so crossings stay clean:
+          asphalt rim -> white edge line -> asphalt surface -> yellow dashes.
+          Each road is as wide as the real gap between the plot blocks either
+          side of it (measured in buildScene), not a fixed stroke. */}
+      <g
+        className="pointer-events-none"
+        style={{ animation: "fadeIn 420ms ease-out backwards", opacity: selectedId !== null ? 0.4 : 1, transition: "opacity 300ms ease" }}
+      >
+        {scene.roads.map((r) => (
+          <polyline key={`rim-${r.id}`} points={r.points} fill="none" stroke="#2a2f38" strokeWidth={r.width} strokeLinejoin="round" />
+        ))}
+        {scene.roads.map((r) => (
+          <polyline key={`edge-${r.id}`} points={r.points} fill="none" stroke="#f1f3f5" strokeWidth={Math.max(1, r.width - 2 * ROAD_EDGE_INSET)} strokeLinejoin="round" />
+        ))}
+        {scene.roads.map((r) => (
+          <polyline
+            key={`surface-${r.id}`}
+            points={r.points}
+            fill="none"
+            stroke="#2a2f38"
+            strokeWidth={Math.max(1, r.width - 2 * ROAD_EDGE_INSET - 2 * ROAD_EDGE_LINE)}
+            strokeLinejoin="round"
+          />
+        ))}
+        {scene.roads.map((r) => (
+          <polyline
+            key={`centre-${r.id}`}
+            points={r.points}
+            fill="none"
+            stroke="#f5c518"
+            strokeWidth={Math.max(2, r.width * 0.06)}
+            strokeDasharray={`${r.width * 0.4} ${r.width * 0.3}`}
+            strokeLinejoin="round"
+          />
+        ))}
+        {/* Invisible copies of each road path for the traffic to follow
+            (<mpath> needs a real <path>): forward, and reversed. */}
+        {scene.roads.map((r) => (
+          <g key={`paths-${r.id}`}>
+            <path id={`sp-road-${r.id}`} d={r.d} fill="none" stroke="none" />
+            <path id={`sp-road-${r.id}-r`} d={r.dRev} fill="none" stroke="none" />
           </g>
-        );
-      })}
+        ))}
+        {scene.roads.map((r, index) => {
+          // One-way traffic: both cars on a road go the same way (alternate
+          // roads run opposite ways, like a one-way system); they start half
+          // a trip apart so there are always two on the road. A walker goes
+          // the other way along the edge.
+          const reversed = index % 2 === 1;
+          const carPath = `#sp-road-${r.id}${reversed ? "-r" : ""}`;
+          const walkPath = `#sp-road-${r.id}${reversed ? "" : "-r"}`;
+          const carScale = Math.min(CAR_SCALE, (CAR_MAX_ROAD_FRACTION * r.width) / CAR_BASE_WIDTH);
+          const walkerScale = Math.min(WALKER_SCALE, (WALKER_MAX_ROAD_FRACTION * r.width) / WALKER_BASE_WIDTH);
+          const carDur = Math.min(24, Math.max(7, r.length / CAR_SPEED));
+          const walkDur = Math.min(70, Math.max(20, r.length / WALKER_SPEED));
+          const carLane = -r.width * 0.1;
+          const walkLane = Math.max(0, r.width / 2 - ROAD_EDGE_INSET - 2 - (WALKER_BASE_WIDTH * walkerScale) / 2);
+          return (
+            <g key={`traffic-${r.id}`}>
+              {[0, 1].map((k) => {
+                const begin = `${-(k * carDur) / 2}s`;
+                return (
+                  <g key={k}>
+                    <g transform={`translate(0 ${carLane}) scale(${carScale})`}>
+                      <use href="#sp-car" color={CAR_COLORS[(index * 2 + k) % CAR_COLORS.length]} />
+                    </g>
+                    <animateMotion dur={`${carDur}s`} begin={begin} repeatCount="indefinite" rotate="auto" keyPoints="0;1" keyTimes="0;1" calcMode="linear">
+                      <mpath href={carPath} />
+                    </animateMotion>
+                    <animate attributeName="opacity" dur={`${carDur}s`} begin={begin} repeatCount="indefinite" values="0;1;1;0" keyTimes="0;0.06;0.94;1" />
+                  </g>
+                );
+              })}
+              <g>
+                <g transform={`translate(0 ${walkLane}) scale(${walkerScale})`}>
+                  <use href="#sp-walker" color={WALKER_COLORS[index % WALKER_COLORS.length]} />
+                </g>
+                <animateMotion dur={`${walkDur}s`} begin={`${-(index % 3) * 4}s`} repeatCount="indefinite" rotate="auto" keyPoints="0.04;0.96" keyTimes="0;1" calcMode="linear">
+                  <mpath href={walkPath} />
+                </animateMotion>
+              </g>
+            </g>
+          );
+        })}
+        {scene.roads.map((r) => (
+          <text
+            key={`label-${r.id}`}
+            x={r.mid.x}
+            y={r.mid.y + VB * 0.003}
+            textAnchor="middle"
+            fontSize={VB * 0.013}
+            fill="#f1f5f9"
+            stroke="#1f2430"
+            strokeWidth={VB * 0.0035}
+            paintOrder="stroke"
+            className="select-none font-medium"
+          >
+            {r.label}
+          </text>
+        ))}
+      </g>
 
       {plots.map((unit, index) => {
         if (unit.polygon_points.length < 3) return null;
+        const geom = plotGeoms.get(unit.id);
+        if (!geom) return null;
         const style = plotStyle(unit);
-        const center = scaledBoundingBoxCenter(unit.polygon_points, VB, vbHeight);
+        const center = geom.center;
         const zoneColor = unit.category ? zoneColorFor(unit.category, zones) : null;
         return (
           <g key={unit.id}>
             <polygon
-              points={toScaledSvgPoints(unit.polygon_points, VB, vbHeight)}
+              points={geom.points}
               fill={style.fill}
               // A real bug found via live testing, not a style nicety: once
               // fills went fully opaque (see opaqueRgba above), a plot's
@@ -461,22 +505,20 @@ const MapShapes = memo(function MapShapes({
               onMouseMove={(e) => onPlotHover(unit, e)}
               onMouseLeave={() => onPlotHoverEnd(unit.id)}
             />
-            {/* Zone/category accent — a small colored dot independent of
-                colorMode, so "Premium"/"Corner"/"Standard" stays visually
-                identifiable even while plots are colored by sale status.
-                Gated by showLabels (LOD) same as the number label below,
-                since it's the same "only show detail once zoomed in
-                enough" clutter concern. */}
-            {zoneColor && (
-              <circle
-                cx={unit.polygon_points[0].x * VB}
-                cy={unit.polygon_points[0].y * vbHeight}
-                r={VB * 0.008}
-                fill={zoneColor}
-                stroke="#0b1f2e"
-                strokeWidth={VB * 0.0015}
+            {/* Zone/category accent: a thin border just inside the plot, in the
+                zone's colour, so Premium/Corner/Standard stays identifiable
+                while plots are coloured by sale status. (Replaces the old
+                corner dot.) Skipped in zone-colour mode, where the whole
+                fill already IS the zone colour. */}
+            {zoneColor && geom.inner && colorMode === "status" && (
+              <polygon
+                points={geom.inner}
+                fill="none"
+                stroke={zoneColor}
+                strokeWidth={VB * 0.0028}
+                strokeLinejoin="round"
                 className="pointer-events-none"
-                style={{ opacity: showLabels ? 1 : 0, transition: "opacity 300ms ease" }}
+                style={{ opacity: style.opacity }}
               />
             )}
             <text
