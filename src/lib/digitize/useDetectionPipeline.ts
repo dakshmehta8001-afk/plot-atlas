@@ -11,7 +11,7 @@ import { loadOpenCv, type Cv } from "./opencvLoader";
 import { denoise, enhanceContrast, MAX_EDGE_PX, resizeToMaxEdge, toGrayscale } from "./imagePrep";
 import { autoCanny } from "./detection/edges";
 import { detectPlotFaces } from "./detection/faceExtraction";
-import { dedupeSameLabelRoads, detectRoadSegments, filterRoadsByConfidence } from "./detection/roads";
+import { dedupeSameLabelRoads, detectRoadSegments, dropRoadPiecesDetectedAsPlots, filterRoadsByConfidence } from "./detection/roads";
 import { labelShapesWithOcr } from "./detection/ocrLabels";
 import { renderPdfFirstPageToCanvas } from "./pdfToImageClient";
 import type { DetectionResult, PipelineStage } from "./types";
@@ -97,7 +97,20 @@ export function useDetectionPipeline() {
       const plotShapes = plotFaceResult.shapes;
 
       setStage("detecting-roads");
-      const roadShapes = detectRoadSegments(cv, edges, contrasted, analysisWidth, analysisHeight, plotShapes);
+      // Only NUMBERED plots are passed as "definitely a plot" for road
+      // pairing. A blank face is often a piece of a road itself (plot walls
+      // lining up across a road cut it into plot-sized cells), and letting
+      // it count as a plot made roads.ts reject that road's own two edges
+      // as "two sides of one plot" — confirmed on the synthetic fixture,
+      // where the whole centre road went undetected because of it.
+      const roadShapes = detectRoadSegments(
+        cv,
+        edges,
+        contrasted,
+        analysisWidth,
+        analysisHeight,
+        plotShapes.filter((s) => s.label),
+      );
 
       owned.forEach((m) => m.delete());
 
@@ -139,6 +152,9 @@ export function useDetectionPipeline() {
       // rather than shown to the reviewer as a confident auto-detection.
       // Plots/features are untouched (the filter is a no-op for them).
       shapes = filterRoadsByConfidence(shapes);
+      // Must run after the confidence filter, so only roads we're actually
+      // keeping can remove blank road-cell "plots" (see its doc comment).
+      shapes = dropRoadPiecesDetectedAsPlots(shapes, analysisWidth, analysisHeight);
 
       setStage("building-map");
 

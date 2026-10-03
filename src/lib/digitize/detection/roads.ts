@@ -765,6 +765,54 @@ export function filterRoadsByConfidence(shapes: DetectedShape[], threshold: numb
   return shapes.filter((s) => s.kind !== "road" || (s.confidence ?? 0) >= threshold);
 }
 
+// How close (fraction of the image's long edge) a blank shape's centre must
+// be to a road's centre line to count as "sitting on the road". Road cells
+// measured on the synthetic fixture sit within ~2px of it; half a typical
+// road width is ~0.024, so this stays well inside the road itself.
+const ROAD_CELL_CENTRE_TOLERANCE = 0.015;
+
+// Drops plot shapes that are really pieces of a road. When plot walls on
+// both sides of a road line up, they cross the road and cut it into
+// plot-sized cells (confirmed on the synthetic fixture: the centre road,
+// the middle road and the main road each became extra "plots"). A shape is
+// dropped only when its centre lies on a final (confidence-filtered)
+// road's centre line AND either it has no readable text at all, or it's a
+// thin strip (4:1 or longer) — e.g. the inside of a road's own vertical
+// "30' WIDE ROAD" badge, which OCR misread as "2".
+//
+// Why a number alone doesn't condemn a shape: on Naman Infracity about 40
+// real, numbered plots have their centre on a falsely detected road line
+// (one runs along a plot-row wall). A "number duplicates another plot"
+// rule was tried and removed two of them (plot 1, and plot 31 misread as
+// "5"). Those real plots are all at most 2.2:1, so the 4:1 thinness cut
+// leaves a wide margin.
+const ROAD_STRIP_MIN_ASPECT = 4;
+
+export function dropRoadPiecesDetectedAsPlots(shapes: DetectedShape[], imageWidth: number, imageHeight: number): DetectedShape[] {
+  const longEdge = Math.max(imageWidth, imageHeight);
+  const roads = shapes.filter((s) => s.kind === "road").map((s) => segmentFromPoints(s, imageWidth, imageHeight));
+  if (roads.length === 0) return shapes;
+  return shapes.filter((s) => {
+    if (s.kind !== "plot") return true;
+    const xs = s.points.map((p) => p.x * imageWidth);
+    const ys = s.points.map((p) => p.y * imageHeight);
+    const w = Math.max(...xs) - Math.min(...xs);
+    const h = Math.max(...ys) - Math.min(...ys);
+    const isThinStrip = Math.min(w, h) > 0 && Math.max(w, h) / Math.min(w, h) >= ROAD_STRIP_MIN_ASPECT;
+    if (s.label && !isThinStrip) return true;
+    const cx = (s.points.reduce((sum, p) => sum + p.x, 0) / s.points.length) * imageWidth;
+    const cy = (s.points.reduce((sum, p) => sum + p.y, 0) / s.points.length) * imageHeight;
+    return !roads.some((r) => {
+      const dx = r.x2 - r.x1;
+      const dy = r.y2 - r.y1;
+      const lenSq = dx * dx + dy * dy;
+      if (lenSq === 0) return false;
+      const t = ((cx - r.x1) * dx + (cy - r.y1) * dy) / lenSq;
+      return t >= 0 && t <= 1 && perpDistanceToLine(r, cx, cy) <= longEdge * ROAD_CELL_CENTRE_TOLERANCE;
+    });
+  });
+}
+
 function segmentFromPoints(shape: DetectedShape, imageWidth: number, imageHeight: number): Segment {
   const a = shape.points[0];
   const b = shape.points[shape.points.length - 1];
@@ -802,7 +850,14 @@ const LABEL_DEDUPE_MIN_OVERLAP_FRACTION = 0.6;
 // any label exists, where being too generous risks silently merging two
 // genuinely distinct roads), two different real roads practically never
 // carry the exact same width label while also running this close together.
-const LABEL_DEDUPE_GAP_FRACTION = 0.05;
+//
+// Tightened from 0.05 to 0.03 after a live upload of the synthetic fixture
+// showed the dimension ruler above the site ("TOTAL WIDTH 290'", whose
+// "30'" tick OCRs as "30 ft") being treated as the same road as the real
+// top "30' WIDE ROAD" ~0.04 of the long edge below it — dedup kept the
+// longer ruler and deleted the real road. The genuine duplicates this
+// exists for measured ~0.025 apart.
+const LABEL_DEDUPE_GAP_FRACTION = 0.03;
 
 export function dedupeSameLabelRoads(shapes: DetectedShape[], imageWidth: number, imageHeight: number): DetectedShape[] {
   const longEdge = Math.max(imageWidth, imageHeight);

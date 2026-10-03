@@ -126,10 +126,14 @@ function perpDistanceToLine(line: Segment, px: number, py: number): number {
 // (both are "some segments, roughly collinear") but look very different
 // once actually checked against the edge map, which is the right place to
 // tell them apart.
-function mergeSegments(segs: Segment[], angleTolRad: number, distTol: number): Segment[] {
+// Clusters collinear segments into one longest span each, and also returns
+// which input segments each merged line was built from — needed to
+// "un-merge" a merged line that turns out to be mostly empty space (see
+// POST_MERGE_MIN_SUPPORT_FRACTION in extractCandidateSegments).
+function mergeSegmentsWithMembers(segs: Segment[], angleTolRad: number, distTol: number): { merged: Segment; members: Segment[] }[] {
   const used = new Array(segs.length).fill(false);
   const order = segs.map((_, i) => i).sort((a, b) => segLength(segs[b]) - segLength(segs[a]));
-  const merged: Segment[] = [];
+  const merged: { merged: Segment; members: Segment[] }[] = [];
 
   for (const i of order) {
     if (used[i]) continue;
@@ -179,7 +183,7 @@ function mergeSegments(segs: Segment[], angleTolRad: number, distTol: number): S
         }
       }
     }
-    merged.push({ x1: minPt.x, y1: minPt.y, x2: maxPt.x, y2: maxPt.y });
+    merged.push({ merged: { x1: minPt.x, y1: minPt.y, x2: maxPt.x, y2: maxPt.y }, members: cluster });
   }
 
   return merged;
@@ -423,10 +427,35 @@ export function extractCandidateSegments(cv: Cv, edges: unknown, gray: unknown, 
   // Naman-plan evidence and a recommended follow-up (detecting and
   // excluding decorative regions by their own visual signature, rather
   // than broadly penalizing every long merged segment).
-  return mergeSegments(raw, (10 * Math.PI) / 180, longEdge * 0.012).filter(
-    (s) => segLength(s) >= longEdge * MIN_SEGMENT_LENGTH_FRACTION,
-  );
+  // Un-merge check. mergeSegments joins ANY collinear pieces, however far
+  // apart along the line — so a row of identical size labels ("30'x50'" in
+  // three neighbouring plots) plus the empty road between them became one
+  // long fake "wall" that chopped every plot it fully crossed. Found via a
+  // user report (plots 8, 14, 18, 28-32 on the synthetic fixture cut off at
+  // their size-text line, the bottom strip left uncovered). Measured on the
+  // synthetic fixture: every such fake wall had only 34-38% of its length
+  // backed by real, correctly-oriented ink; genuine walls sit at 70%+.
+  //
+  // A low-support merged line is NOT deleted — it's replaced by the
+  // original pieces it was built from. Some low-support lines are a real
+  // wall that also got merged with unrelated collinear junk (e.g. a column
+  // wall merged up into the title text); un-merging keeps the real wall's
+  // own pieces and only drops the long bridge across empty space. This is
+  // deliberately different from the reverted "no single large gap" check
+  // above (which deleted whole lines and cost real plots on Naman).
+  return mergeSegmentsWithMembers(raw, (10 * Math.PI) / 180, longEdge * 0.012)
+    .flatMap(({ merged, members }) =>
+      members.length > 1 &&
+      orientedEdgeSupportFraction(edgeData, gradients, imageWidth, imageHeight, merged) < POST_MERGE_MIN_SUPPORT_FRACTION
+        ? members
+        : [merged],
+    )
+    .filter((s) => segLength(s) >= longEdge * MIN_SEGMENT_LENGTH_FRACTION);
 }
+
+// See the un-merge check at the end of extractCandidateSegments. Set
+// between the measured fake-wall ceiling (0.38) and genuine walls (0.70+).
+const POST_MERGE_MIN_SUPPORT_FRACTION = 0.5;
 
 // ---------------------------------------------------------------------------
 // Planar graph construction: snap segment endpoints + true crossings +
@@ -1237,6 +1266,24 @@ export function associateReadingsToFaces(
       excludedFaceIdx.add(i);
       excludedAsNonPlotCount += 1;
     }
+  });
+
+  // Isolated-and-blank veto: a face with NO readable text at all that also
+  // shares no wall with any other face is a stray box, not a plot — found
+  // on Naman Infracity, where the coloured swatches in the "PLOT SCHEDULE"
+  // legend each became a "plot". Both conditions are required on purpose:
+  // real plots there whose number OCR can't read (8, 32, 77) still share
+  // walls with their neighbours and are kept, and anything with readable
+  // text is never touched by this rule.
+  const hasNeighbour = new Set<number>();
+  for (const [a, b] of adjacency) {
+    hasNeighbour.add(a);
+    hasNeighbour.add(b);
+  }
+  faces.forEach((_, i) => {
+    if (excludedFaceIdx.has(i) || matchesByFace[i].length > 0 || hasNeighbour.has(i)) return;
+    excludedFaceIdx.add(i);
+    excludedAsNonPlotCount += 1;
   });
 
   const warnings: string[] = [];
