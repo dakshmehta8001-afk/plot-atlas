@@ -20,7 +20,7 @@ import { uploadPlanImage, setProjectCalibration } from "@/lib/actions/projects";
 import { saveDigitizedShapes } from "@/lib/actions/digitize";
 import { useDetectionPipeline, loadFileToCanvas, loadUrlToCanvas } from "@/lib/digitize/useDetectionPipeline";
 import type { DetectedShape } from "@/lib/digitize/types";
-import { feetPerUnit, quadEdgeLengthsFt, formatDimensions, polygonAreaSqft, northAngleFromPoints } from "@/lib/calibration";
+import { computeDimensionFields, feetPerUnit, northAngleFromPoints } from "@/lib/calibration";
 import { UploadDropzone } from "./UploadDropzone";
 import { CornerWarpTool } from "./CornerWarpTool";
 import { ProcessingProgress } from "./ProcessingProgress";
@@ -35,28 +35,6 @@ import { ExportMenu } from "./ExportMenu";
 import { useUndoRedo } from "./useUndoRedo";
 
 const VB = MAP_VIEWBOX_SIZE;
-
-// Computed once per points-change, inline in whichever handler changed
-// them (never in a useEffect — recomputing here means a plain event-driven
-// state update, not an effect reacting to its own output, so there's no
-// risk of the kind of render loop/lint issue an effect-based version would
-// need to guard against). null calibration or a non-quad shape both
-// resolve to needsDimensionReview: true — see calibration.ts's own doc
-// comments for why each function returns null in those cases.
-function computeDimensionFields(
-  points: PolygonPoint[],
-  calibration: MapCalibration | null,
-  vbWidth: number,
-  vbHeight: number,
-): { dimensions?: string; areaSqft?: number; needsDimensionReview: boolean } {
-  if (!calibration) return { needsDimensionReview: true };
-  const perUnit = feetPerUnit(calibration.pointA, calibration.pointB, calibration.realDistanceFt, vbWidth, vbHeight);
-  if (!perUnit) return { needsDimensionReview: true };
-  const areaSqft = polygonAreaSqft(points, perUnit, vbWidth, vbHeight);
-  const edges = quadEdgeLengthsFt(points, perUnit, vbWidth, vbHeight);
-  if (!edges) return { areaSqft, needsDimensionReview: true };
-  return { dimensions: formatDimensions(edges.widthFt, edges.heightFt), areaSqft, needsDimensionReview: false };
-}
 
 type Stage = "upload" | "warp" | "processing" | "review" | "saving" | "done";
 

@@ -134,7 +134,7 @@ export async function setProjectStatus(projectId: string, status: "draft" | "pub
       .single();
     if (projectError) return { error: projectError.message };
     if (!project?.map_calibration) {
-      return { error: "Set a scale reference (calibrate the map) before publishing." };
+      return { error: "Set the map scale first — use the Set scale button above the map, then publish." };
     }
 
     const { count, error: countError } = await supabase
@@ -201,6 +201,55 @@ export async function updateMapBounds(projectId: string, bounds: MapBounds): Pro
 // exact dimensions/area are computed from it, and setProjectStatus below
 // refuses to publish until it exists). Same shape as updateMapBounds
 // above: a plain update, RLS-gated by ownership, not a bulk digitize save.
+// The project page's own "Set scale" button. The digitize screen recomputes
+// plot sizes in the browser and saves them with the shapes; on the project
+// page the plots are already saved, so the new scale and every plot's
+// recomputed size (computed client-side with the same computeDimensionFields
+// helper) are written here together. Without this, a project saved before
+// setting a scale had no way to set one at all once the auto-digitize
+// banner was removed — Publish stayed blocked.
+export interface PlotSizeUpdate {
+  id: string;
+  dimensions: string | null;
+  areaSqft: number | null;
+  needsDimensionReview: boolean;
+}
+
+export async function calibrateProjectFromPlan(
+  projectId: string,
+  calibration: MapCalibration,
+  plotSizes: PlotSizeUpdate[],
+): Promise<ActionResult> {
+  if (!(calibration.realDistanceFt > 0) || !Number.isFinite(calibration.realDistanceFt)) {
+    return { error: "Enter a real distance greater than 0 ft." };
+  }
+  const supabase = await createClient();
+
+  const { error } = await supabase.from("projects").update({ map_calibration: calibration }).eq("id", projectId);
+  if (error) return { error: error.message };
+
+  // Scoped by project_id too, so a forged id can't touch another project's
+  // plot (RLS already limits writes to the owner's own projects).
+  const results = await Promise.all(
+    plotSizes.map((p) =>
+      supabase
+        .from("units")
+        .update({
+          dimensions: p.dimensions,
+          area_sqft: p.areaSqft !== null && Number.isFinite(p.areaSqft) ? Math.round(p.areaSqft) : null,
+          needs_dimension_review: p.needsDimensionReview,
+        })
+        .eq("id", p.id)
+        .eq("project_id", projectId),
+    ),
+  );
+  const failed = results.find((r) => r.error);
+  if (failed?.error) return { error: `Scale saved, but updating plot sizes failed: ${failed.error.message}` };
+
+  revalidatePath(`/dashboard/projects/${projectId}`);
+  return {};
+}
+
 export async function setProjectCalibration(projectId: string, calibration: MapCalibration): Promise<ActionResult> {
   const supabase = await createClient();
 

@@ -42,6 +42,10 @@ export interface TraceAction {
   label: string;
   shapeKind?: "polygon" | "line";
   onComplete: (points: PolygonPoint[]) => void;
+  /** Finish automatically after exactly this many clicks (e.g. 2 for "Set scale"), with no Finish button. */
+  pointCount?: number;
+  /** Instruction shown while this action is active, replacing the default "trace the outline" text. */
+  hint?: string;
 }
 
 export function PolygonTracer({
@@ -60,15 +64,23 @@ export function PolygonTracer({
   const svgRef = useRef<SVGSVGElement>(null);
   const aspectRatio = useImageAspectRatio(planImageUrl);
   const drawing = activeActionIndex !== null;
+  const activeAction = activeActionIndex !== null ? traceActions[activeActionIndex] : null;
   const activeShapeKind = activeActionIndex !== null ? traceActions[activeActionIndex].shapeKind ?? "polygon" : "polygon";
   const minPoints = activeShapeKind === "line" ? 2 : 3;
 
   function handleSvgClick(event: React.MouseEvent<SVGSVGElement>) {
-    if (!drawing || !svgRef.current) return;
+    if (!activeAction || !svgRef.current) return;
     const rect = svgRef.current.getBoundingClientRect();
     const x = (event.clientX - rect.left) / rect.width;
     const y = (event.clientY - rect.top) / rect.height;
-    setPoints((prev) => [...prev, { x, y }]);
+    const next = [...points, { x, y }];
+    if (activeAction.pointCount && next.length >= activeAction.pointCount) {
+      activeAction.onComplete(next);
+      setActiveActionIndex(null);
+      setPoints([]);
+      return;
+    }
+    setPoints(next);
   }
 
   function startDrawing(actionIndex: number) {
@@ -109,7 +121,7 @@ export function PolygonTracer({
         ) : (
           <>
             <span className="text-sm text-gray-500">
-              Click points on the image to trace the outline ({points.length} point
+              {activeAction?.hint ?? "Click points on the image to trace the outline"} ({points.length} point
               {points.length === 1 ? "" : "s"} so far).
             </span>
             <button
@@ -120,14 +132,16 @@ export function PolygonTracer({
             >
               Undo point
             </button>
-            <button
-              type="button"
-              onClick={finishShape}
-              disabled={points.length < minPoints}
-              className="rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-50"
-            >
-              Finish {activeShapeKind === "line" ? "road" : "shape"}
-            </button>
+            {!activeAction?.pointCount && (
+              <button
+                type="button"
+                onClick={finishShape}
+                disabled={points.length < minPoints}
+                className="rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-50"
+              >
+                Finish {activeShapeKind === "line" ? "road" : "shape"}
+              </button>
+            )}
             <button type="button" onClick={cancelDrawing} className="text-sm text-gray-500 hover:underline">
               Cancel
             </button>

@@ -70,6 +70,7 @@ export default async function ManageProjectPage(props: PageProps<"/dashboard/pro
           plots={plots}
           buildings={typedBuildings}
           roads={typedRoads}
+          calibration={typedProject.map_calibration ?? null}
         />
       ) : (
         <PlanImageUpload projectId={id} />

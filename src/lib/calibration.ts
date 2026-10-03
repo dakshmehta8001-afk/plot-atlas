@@ -14,7 +14,7 @@
 // is derived from the plan image's true aspect ratio — which is exactly
 // the property this needs too: a single feet-per-unit factor is only
 // valid on both axes if they're already isotropic in this way.
-import type { PolygonPoint } from "@/lib/types";
+import type { MapCalibration, PolygonPoint } from "@/lib/types";
 
 function scaledPoint(p: PolygonPoint, vbWidth: number, vbHeight: number): { x: number; y: number } {
   return { x: p.x * vbWidth, y: p.y * vbHeight };
@@ -117,4 +117,24 @@ export function polygonAreaSqft(points: PolygonPoint[], feetPerUnitValue: number
   }
   const areaInScaledUnits = Math.abs(sum) / 2;
   return areaInScaledUnits * feetPerUnitValue * feetPerUnitValue;
+}
+
+// A plot's size fields under a given calibration. Shared by the digitize
+// review screen and the project page's own "Set scale" button, so both
+// compute sizes identically. No calibration, or a shape that isn't a clean
+// four-sided plot, resolves to needsDimensionReview: true (the "ask, don't
+// guess" signal — see quadEdgeLengthsFt above).
+export function computeDimensionFields(
+  points: PolygonPoint[],
+  calibration: MapCalibration | null,
+  vbWidth: number,
+  vbHeight: number,
+): { dimensions?: string; areaSqft?: number; needsDimensionReview: boolean } {
+  if (!calibration) return { needsDimensionReview: true };
+  const perUnit = feetPerUnit(calibration.pointA, calibration.pointB, calibration.realDistanceFt, vbWidth, vbHeight);
+  if (!perUnit) return { needsDimensionReview: true };
+  const areaSqft = polygonAreaSqft(points, perUnit, vbWidth, vbHeight);
+  const edges = quadEdgeLengthsFt(points, perUnit, vbWidth, vbHeight);
+  if (!edges) return { areaSqft, needsDimensionReview: true };
+  return { dimensions: formatDimensions(edges.widthFt, edges.heightFt), areaSqft, needsDimensionReview: false };
 }
