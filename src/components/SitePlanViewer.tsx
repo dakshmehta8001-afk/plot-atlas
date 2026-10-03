@@ -222,6 +222,16 @@ const MapShapes = memo(function MapShapes({
     const isSelected = selectedId === unit.id;
     const dimmedBySelection = selectedId !== null && !isSelected;
     const statusDimmed = highlightStatus !== null && unit.status !== highlightStatus;
+    const dimmed = dimmedBySelection || statusDimmed;
+    // A commercial/office block reads as visually distinct regardless of
+    // colorMode — the same idea as a building always rendering in a fixed
+    // indigo "structure" color instead of status/zone color. Teal picked
+    // specifically to not collide with any UNIT_STATUS_STYLES or zone
+    // palette color already in use. Checked before the zone/status branches
+    // below so neither can override it.
+    if (unit.category && /\b(commercial|office)\b/i.test(unit.category)) {
+      return { fill: "rgb(20,184,166)", border: "#0d9488", opacity: dimmed ? 0.25 : 1, isSelected };
+    }
     if (colorMode === "zone") {
       const dimmed = dimmedBySelection || (highlightZone !== null && unit.category !== highlightZone) || statusDimmed;
       if (!unit.category) return { fill: "rgb(148,163,184)", border: "#64748b", opacity: dimmed ? 0.25 : 1, isSelected };
