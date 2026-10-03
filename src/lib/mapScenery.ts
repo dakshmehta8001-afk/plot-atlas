@@ -8,6 +8,7 @@
 // Everything is in "scaled" map units: x = fraction * VB, y = fraction *
 // vbHeight (the same convention toScaledSvgPoints uses).
 import type { PolygonPoint } from "@/lib/types";
+import { connectRoads, edgeMidpoint, roadMetrics, type Network } from "@/lib/mapTraffic";
 
 export interface Pt {
   x: number;
@@ -152,11 +153,10 @@ export function measureRoadGap(path: Pt[], plots: Poly[], maxReach: number): num
 export interface RoadGeom {
   id: string;
   points: string;
-  d: string;
-  dRev: string;
   width: number;
   label: string;
-  mid: Pt;
+  /** Where the width label sits: on the pavement strip, rotated along the road (never upside down). */
+  labelPos: { x: number; y: number; angle: number };
   length: number;
 }
 
@@ -171,6 +171,8 @@ export interface Scene {
   ground: { x: number; y: number; w: number; h: number; wall: { x: number; y: number; w: number; h: number } } | null;
   trees: Tree[];
   roads: RoadGeom[];
+  /** Road graph used by the traffic simulation; also supplies the DRAWN (extended/trimmed) road paths. */
+  network: Network;
 }
 
 interface RoadInput {
@@ -205,29 +207,41 @@ export function buildScene(
   const otherPolys = others.filter((p) => p.polygon_points.length >= 3).map((p) => toPoly(p.polygon_points, vb, vbHeight));
   const blockers = [...plotPolys, ...otherPolys];
 
-  const roadGeoms: (RoadGeom & { path: Pt[] })[] = [];
+  const raw: { id: string; label: string; path: Pt[]; width: number }[] = [];
   for (const r of roads) {
     if (r.path_points.length < 2) continue;
     const path = r.path_points.map((p) => ({ x: p.x * vb, y: p.y * vbHeight }));
     const measured = measureRoadGap(path, plotPolys, vb * 0.1);
     const width = Math.min(vb * MAX_ROAD_WIDTH_FRACTION, Math.max(MIN_ROAD_WIDTH, measured ?? fallbackWidth(r.width_label)));
-    const length = path.slice(1).reduce((s, p, i) => s + Math.hypot(p.x - path[i].x, p.y - path[i].y), 0);
-    const m = pathAt(path, 0.5);
-    roadGeoms.push({
+    raw.push({ id: r.id, label: r.width_label, path, width });
+  }
+
+  // Join roads that nearly meet (display only — saved data is untouched).
+  const network = connectRoads(raw.map((r) => ({ id: r.id, path: r.path, width: r.width })));
+  const roadGeoms: (RoadGeom & { path: Pt[] })[] = raw.map((r) => {
+    const path = network.paths.get(r.id) ?? r.path;
+    const length = path.slice(1).reduce((sum, p, i) => sum + Math.hypot(p.x - path[i].x, p.y - path[i].y), 0);
+    const longest = network.edges.filter((e) => e.roadId === r.id).sort((a, b) => b.len - a.len)[0];
+    const m = longest ? edgeMidpoint(longest) : pathAt(path, 0.5);
+    const mid = "p" in m ? m.p : { x: m.x, y: m.y };
+    const tan = "p" in m ? m.t : { x: m.tx, y: m.ty };
+    const lateral = roadMetrics(r.width).walkerLateral;
+    let angle = (Math.atan2(tan.y, tan.x) * 180) / Math.PI;
+    if (angle > 90) angle -= 180;
+    if (angle < -90) angle += 180;
+    return {
       id: r.id,
       path,
       points: path.map((p) => `${p.x},${p.y}`).join(" "),
-      d: path.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" "),
-      dRev: [...path].reverse().map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" "),
-      width,
-      label: r.width_label,
-      mid: { x: m.x, y: m.y },
+      width: r.width,
+      label: r.label,
+      labelPos: { x: mid.x + tan.y * lateral, y: mid.y - tan.x * lateral, angle },
       length,
-    });
-  }
+    };
+  });
 
   const all: Pt[] = [...blockers.flatMap((b) => b.pts), ...roadGeoms.flatMap((r) => r.path)];
-  if (all.length === 0) return { ground: null, trees: [], roads: roadGeoms };
+  if (all.length === 0) return { ground: null, trees: [], roads: [], network };
   const minX = Math.min(...all.map((p) => p.x));
   const maxX = Math.max(...all.map((p) => p.x));
   const minY = Math.min(...all.map((p) => p.y));
@@ -294,6 +308,7 @@ export function buildScene(
   return {
     ground,
     trees,
-    roads: roadGeoms.map((r) => ({ id: r.id, points: r.points, d: r.d, dRev: r.dRev, width: r.width, label: r.label, mid: r.mid, length: r.length })),
+    roads: roadGeoms.map((r) => ({ id: r.id, points: r.points, width: r.width, label: r.label, labelPos: r.labelPos, length: r.length })),
+    network,
   };
 }

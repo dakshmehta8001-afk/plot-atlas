@@ -43,6 +43,8 @@ import {
 import { useImageAspectRatio } from "@/lib/useImageAspectRatio";
 import { toScaledSvgPoints, scaledBoundingBoxCenter } from "@/lib/svgPolygon";
 import { buildScene, insetPolygon, toPoly } from "@/lib/mapScenery";
+import { EDGE_INSET, EDGE_LINE, roadMetrics } from "@/lib/mapTraffic";
+import { MapTraffic } from "@/components/MapTraffic";
 import { clientPointToLocalFraction } from "@/lib/svgCoords";
 
 const VB = MAP_VIEWBOX_SIZE;
@@ -137,29 +139,14 @@ function opaqueRgba(rgba: string): string {
   return `rgb(${match[1]}, ${match[2]}, ${match[3]})`;
 }
 
-// ---- Scenery (ground, wall, trees, road surface, traffic) ----
-// Sizes are in map units (the viewBox is VB wide). The car and walker sprites
-// are drawn at a base size and scaled by the numbers below.
-//  - Car: base 40 x 17.5 units; CAR_SCALE 2 => 80 x 35, which is 2.5x the old
-//    32 x 15 car. Walker: base 14 units across the shoulders; WALKER_SCALE 2.14
-//    => 30, which is 3x the old 10-unit dot.
-//  - Both are capped to fit the road they are on (see CAR_MAX_ROAD_FRACTION),
-//    so a narrow road never shows a car wider than the road itself.
-const CAR_SCALE = 2;
-const CAR_BASE_WIDTH = 17.5;
-const CAR_MAX_ROAD_FRACTION = 0.72;
-const WALKER_SCALE = 2.14;
-const WALKER_BASE_WIDTH = 14;
-const WALKER_MAX_ROAD_FRACTION = 0.5;
-// The white edge line sits this far inside the road's edge (so the plot
-// borders drawn on top of the road's rim don't hide it) and is this thick.
-const ROAD_EDGE_INSET = 3.5;
-const ROAD_EDGE_LINE = 1.6;
-const CAR_COLORS = ["#d7473f", "#f4f4f2", "#2f6fb5", "#b8bcc4", "#1f2933", "#e0a526"];
-const WALKER_COLORS = ["#e2553f", "#3f7fd9", "#f2c14e", "#7a5bd6", "#3aa57a"];
-// Cars drive about this fast (map units per second); walkers about this fast.
-const CAR_SPEED = 70;
-const WALKER_SPEED = 16;
+// ---- Scenery (ground, wall, trees, road surface) ----
+// Cars and walkers are moved by <MapTraffic> (lib/mapTraffic.ts holds the
+// road graph and simulation); this file only draws their sprites (below) and
+// the road surface they drive on. Road cross-section constants (edge line,
+// pavement strip, lanes) live in lib/mapTraffic.ts so drawing and traffic
+// always agree.
+const ROAD_COLOR = "#2a2f38";
+const PAVEMENT_COLOR = "#c8ccd2";
 
 // Shared drawings, defined once and drawn many times with <use>: that keeps
 // the DOM small (one tree = one <use>, not five shapes) which is what keeps
@@ -338,28 +325,34 @@ const MapShapes = memo(function MapShapes({
       )}
 
       {/* Roads, drawn in passes across ALL roads so crossings stay clean:
-          asphalt rim -> white edge line -> asphalt surface -> yellow dashes.
-          Each road is as wide as the real gap between the plot blocks either
-          side of it (measured in buildScene), not a fixed stroke. */}
+          asphalt rim -> white edge line -> pavement strip -> carriageway ->
+          yellow dashes. Each road is as wide as the real gap between the plot
+          blocks either side of it (measured in buildScene) and its ends are
+          extended to meet the roads they join (display only). The whole layer
+          is clipped to the site boundary (the wall), so no road pokes out. */}
+      {scene.ground && (
+        <defs>
+          <clipPath id="sp-site-clip">
+            <rect x={scene.ground.wall.x} y={scene.ground.wall.y} width={scene.ground.wall.w} height={scene.ground.wall.h} rx={6} />
+          </clipPath>
+        </defs>
+      )}
       <g
         className="pointer-events-none"
+        clipPath={scene.ground ? "url(#sp-site-clip)" : undefined}
         style={{ animation: "fadeIn 420ms ease-out backwards", opacity: selectedId !== null ? 0.4 : 1, transition: "opacity 300ms ease" }}
       >
         {scene.roads.map((r) => (
-          <polyline key={`rim-${r.id}`} points={r.points} fill="none" stroke="#2a2f38" strokeWidth={r.width} strokeLinejoin="round" />
+          <polyline key={`rim-${r.id}`} points={r.points} fill="none" stroke={ROAD_COLOR} strokeWidth={r.width} strokeLinejoin="round" />
         ))}
         {scene.roads.map((r) => (
-          <polyline key={`edge-${r.id}`} points={r.points} fill="none" stroke="#f1f3f5" strokeWidth={Math.max(1, r.width - 2 * ROAD_EDGE_INSET)} strokeLinejoin="round" />
+          <polyline key={`edge-${r.id}`} points={r.points} fill="none" stroke="#f1f3f5" strokeWidth={Math.max(1, r.width - 2 * EDGE_INSET)} strokeLinejoin="round" />
         ))}
         {scene.roads.map((r) => (
-          <polyline
-            key={`surface-${r.id}`}
-            points={r.points}
-            fill="none"
-            stroke="#2a2f38"
-            strokeWidth={Math.max(1, r.width - 2 * ROAD_EDGE_INSET - 2 * ROAD_EDGE_LINE)}
-            strokeLinejoin="round"
-          />
+          <polyline key={`pave-${r.id}`} points={r.points} fill="none" stroke={PAVEMENT_COLOR} strokeWidth={Math.max(1, r.width - 2 * (EDGE_INSET + EDGE_LINE))} strokeLinejoin="round" />
+        ))}
+        {scene.roads.map((r) => (
+          <polyline key={`lane-${r.id}`} points={r.points} fill="none" stroke={ROAD_COLOR} strokeWidth={roadMetrics(r.width).carriageway} strokeLinejoin="round" />
         ))}
         {scene.roads.map((r) => (
           <polyline
@@ -367,76 +360,17 @@ const MapShapes = memo(function MapShapes({
             points={r.points}
             fill="none"
             stroke="#f5c518"
-            strokeWidth={Math.max(2, r.width * 0.06)}
-            strokeDasharray={`${r.width * 0.4} ${r.width * 0.3}`}
+            strokeWidth={Math.max(1.6, r.width * 0.035)}
+            strokeDasharray={`${r.width * 0.3} ${r.width * 0.22}`}
             strokeLinejoin="round"
           />
         ))}
-        {/* Invisible copies of each road path for the traffic to follow
-            (<mpath> needs a real <path>): forward, and reversed. */}
-        {scene.roads.map((r) => (
-          <g key={`paths-${r.id}`}>
-            <path id={`sp-road-${r.id}`} d={r.d} fill="none" stroke="none" />
-            <path id={`sp-road-${r.id}-r`} d={r.dRev} fill="none" stroke="none" />
-          </g>
-        ))}
-        {scene.roads.map((r, index) => {
-          // One-way traffic: both cars on a road go the same way (alternate
-          // roads run opposite ways, like a one-way system); they start half
-          // a trip apart so there are always two on the road. A walker goes
-          // the other way along the edge.
-          const reversed = index % 2 === 1;
-          const carPath = `#sp-road-${r.id}${reversed ? "-r" : ""}`;
-          const walkPath = `#sp-road-${r.id}${reversed ? "" : "-r"}`;
-          const carScale = Math.min(CAR_SCALE, (CAR_MAX_ROAD_FRACTION * r.width) / CAR_BASE_WIDTH);
-          const walkerScale = Math.min(WALKER_SCALE, (WALKER_MAX_ROAD_FRACTION * r.width) / WALKER_BASE_WIDTH);
-          const carDur = Math.min(24, Math.max(7, r.length / CAR_SPEED));
-          const walkDur = Math.min(70, Math.max(20, r.length / WALKER_SPEED));
-          const carLane = -r.width * 0.1;
-          const walkLane = Math.max(0, r.width / 2 - ROAD_EDGE_INSET - 2 - (WALKER_BASE_WIDTH * walkerScale) / 2);
-          return (
-            <g key={`traffic-${r.id}`}>
-              {[0, 1].map((k) => {
-                const begin = `${-(k * carDur) / 2}s`;
-                return (
-                  <g key={k}>
-                    <g transform={`translate(0 ${carLane}) scale(${carScale})`}>
-                      <use href="#sp-car" color={CAR_COLORS[(index * 2 + k) % CAR_COLORS.length]} />
-                    </g>
-                    <animateMotion dur={`${carDur}s`} begin={begin} repeatCount="indefinite" rotate="auto" keyPoints="0;1" keyTimes="0;1" calcMode="linear">
-                      <mpath href={carPath} />
-                    </animateMotion>
-                    <animate attributeName="opacity" dur={`${carDur}s`} begin={begin} repeatCount="indefinite" values="0;1;1;0" keyTimes="0;0.06;0.94;1" />
-                  </g>
-                );
-              })}
-              <g>
-                <g transform={`translate(0 ${walkLane}) scale(${walkerScale})`}>
-                  <use href="#sp-walker" color={WALKER_COLORS[index % WALKER_COLORS.length]} />
-                </g>
-                <animateMotion dur={`${walkDur}s`} begin={`${-(index % 3) * 4}s`} repeatCount="indefinite" rotate="auto" keyPoints="0.04;0.96" keyTimes="0;1" calcMode="linear">
-                  <mpath href={walkPath} />
-                </animateMotion>
-              </g>
-            </g>
-          );
-        })}
-        {scene.roads.map((r) => (
-          <text
-            key={`label-${r.id}`}
-            x={r.mid.x}
-            y={r.mid.y + VB * 0.003}
-            textAnchor="middle"
-            fontSize={VB * 0.013}
-            fill="#f1f5f9"
-            stroke="#1f2430"
-            strokeWidth={VB * 0.0035}
-            paintOrder="stroke"
-            className="select-none font-medium"
-          >
-            {r.label}
-          </text>
-        ))}
+      </g>
+
+      {/* Cars and walkers: one animation loop (see MapTraffic), not SVG
+          animateMotion, so they follow the road network and turn. */}
+      <g style={{ opacity: selectedId !== null ? 0.4 : 1, transition: "opacity 300ms ease" }}>
+        <MapTraffic network={scene.network} seedKey={roads.map((r) => r.id).join("|")} />
       </g>
 
       {plots.map((unit, index) => {
@@ -624,6 +558,24 @@ const MapShapes = memo(function MapShapes({
           </g>
         );
       })}
+
+      {/* Road width labels, drawn last so nothing covers them. Cars keep left
+          in BOTH directions, so both lanes carry traffic — the label sits on
+          the pavement strip at the road's edge, on the road's longest stretch
+          (away from junctions), rotated along the road. */}
+      <g className="pointer-events-none" style={{ opacity: selectedId !== null ? 0.4 : 1, transition: "opacity 300ms ease" }}>
+        {scene.roads.map((r) => {
+          const w = r.label.length * 5.6 + 10;
+          return (
+            <g key={`label-${r.id}`} transform={`translate(${r.labelPos.x} ${r.labelPos.y}) rotate(${r.labelPos.angle})`}>
+              <rect x={-w / 2} y={-6} width={w} height={12} rx={3} fill="#1f2430" fillOpacity={0.88} stroke="#f1f3f5" strokeOpacity={0.55} strokeWidth={0.8} />
+              <text textAnchor="middle" dominantBaseline="central" fontSize={9.5} fill="#f1f5f9" className="select-none font-medium">
+                {r.label}
+              </text>
+            </g>
+          );
+        })}
+      </g>
     </>
   );
 });
