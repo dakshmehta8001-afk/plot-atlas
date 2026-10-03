@@ -23,6 +23,7 @@
 import type { PolygonPoint } from "@/lib/types";
 import type { Cv } from "../opencvLoader";
 import type { DetectedShape } from "../types";
+import { pointInPolygon } from "@/lib/svgPolygon";
 
 interface Segment {
   x1: number;
@@ -554,9 +555,13 @@ function mergeCorridors(candidates: CorridorCandidate[], angleTolRad: number, di
         }
       }
     }
+    // Width = median of the members that actually measured one. A
+    // single-line member reports gap 0 ("no partner edge"), not "zero-wide
+    // road", so averaging it in would shrink a real road's width.
+    const measuredGaps = cluster.map((c) => c.gap).filter((g) => g > 0).sort((a, b) => a - b);
     merged.push({
       centerline: { x1: minPt.x, y1: minPt.y, x2: maxPt.x, y2: maxPt.y },
-      gap: totalGap / cluster.length,
+      gap: measuredGaps.length > 0 ? measuredGaps[Math.floor(measuredGaps.length / 2)] : totalGap / cluster.length,
       confidence: maxConfidence,
     });
   }
@@ -748,6 +753,7 @@ export function detectRoadSegments(
       points,
       label: "",
       confidence: c.confidence,
+      roadWidthFraction: c.gap / longEdge,
       source: "detected" as const,
       // Roads aren't subject to the dimension-review gate at all (only
       // plots are) — false here is simply "not applicable", not a claim.
@@ -765,53 +771,21 @@ export function filterRoadsByConfidence(shapes: DetectedShape[], threshold: numb
   return shapes.filter((s) => s.kind !== "road" || (s.confidence ?? 0) >= threshold);
 }
 
-// How close (fraction of the image's long edge) a blank shape's centre must
-// be to a road's centre line to count as "sitting on the road". Road cells
-// measured on the synthetic fixture sit within ~2px of it; half a typical
-// road width is ~0.024, so this stays well inside the road itself.
-const ROAD_CELL_CENTRE_TOLERANCE = 0.015;
 
-// Drops plot shapes that are really pieces of a road. When plot walls on
-// both sides of a road line up, they cross the road and cut it into
-// plot-sized cells (confirmed on the synthetic fixture: the centre road,
-// the middle road and the main road each became extra "plots"). A shape is
-// dropped only when its centre lies on a final (confidence-filtered)
-// road's centre line AND either it has no readable text at all, or it's a
-// thin strip (4:1 or longer) — e.g. the inside of a road's own vertical
-// "30' WIDE ROAD" badge, which OCR misread as "2".
-//
-// Why a number alone doesn't condemn a shape: on Naman Infracity about 40
-// real, numbered plots have their centre on a falsely detected road line
-// (one runs along a plot-row wall). A "number duplicates another plot"
-// rule was tried and removed two of them (plot 1, and plot 31 misread as
-// "5"). Those real plots are all at most 2.2:1, so the 4:1 thinness cut
-// leaves a wide margin.
-const ROAD_STRIP_MIN_ASPECT = 4;
-
-export function dropRoadPiecesDetectedAsPlots(shapes: DetectedShape[], imageWidth: number, imageHeight: number): DetectedShape[] {
-  const longEdge = Math.max(imageWidth, imageHeight);
-  const roads = shapes.filter((s) => s.kind === "road").map((s) => segmentFromPoints(s, imageWidth, imageHeight));
-  if (roads.length === 0) return shapes;
-  return shapes.filter((s) => {
-    if (s.kind !== "plot") return true;
-    const xs = s.points.map((p) => p.x * imageWidth);
-    const ys = s.points.map((p) => p.y * imageHeight);
-    const w = Math.max(...xs) - Math.min(...xs);
-    const h = Math.max(...ys) - Math.min(...ys);
-    const isThinStrip = Math.min(w, h) > 0 && Math.max(w, h) / Math.min(w, h) >= ROAD_STRIP_MIN_ASPECT;
-    if (s.label && !isThinStrip) return true;
-    const cx = (s.points.reduce((sum, p) => sum + p.x, 0) / s.points.length) * imageWidth;
-    const cy = (s.points.reduce((sum, p) => sum + p.y, 0) / s.points.length) * imageHeight;
-    return !roads.some((r) => {
-      const dx = r.x2 - r.x1;
-      const dy = r.y2 - r.y1;
-      const lenSq = dx * dx + dy * dy;
-      if (lenSq === 0) return false;
-      const t = ((cx - r.x1) * dx + (cy - r.y1) * dy) / lenSq;
-      return t >= 0 && t <= 1 && perpDistanceToLine(r, cx, cy) <= longEdge * ROAD_CELL_CENTRE_TOLERANCE;
-    });
-  });
-}
+// ---------------------------------------------------------------------------
+// Post-OCR clean-up, built directly from the plain-language definitions the
+// user gave for this product (kept in project memory):
+//   - A ROAD is open space between two boundaries that runs BETWEEN or
+//     AROUND plots — never through one, and never off on its own.
+//   - A PLOT is a closed shape with its own number inside; a piece of a
+//     road is never a plot.
+// Each rule below uses the road's own measured width (roadWidthFraction)
+// rather than a fixed size, because real plans are irregular and roads of
+// very different widths sit side by side. Earlier fixed-number patches
+// tuned to the square synthetic sample (a 4:1 "thin strip" cut, a
+// same-label dedup distance, a "blank shape on the centre line" rule) were
+// replaced by these.
+// ---------------------------------------------------------------------------
 
 function segmentFromPoints(shape: DetectedShape, imageWidth: number, imageHeight: number): Segment {
   const a = shape.points[0];
@@ -819,70 +793,220 @@ function segmentFromPoints(shape: DetectedShape, imageWidth: number, imageHeight
   return { x1: a.x * imageWidth, y1: a.y * imageHeight, x2: b.x * imageWidth, y2: b.y * imageHeight };
 }
 
-// A short, weak single-line-fallback fragment sitting right beside a real
-// road's own width badge/label can independently OCR-read the exact same
-// width text as the real road, while sitting just OUTSIDE mergeCorridors'
-// own tolerance above (so it never got folded into that road there) —
-// found as a real, visible bug via direct evidence on the synthetic
-// 36-plot fixture: two separate final road entries, 0.52% of the image's
-// long edge apart, both read "30 ft" and rendered as two overlapping,
-// colliding text labels on the review canvas.
-//
-// Deliberately gated on an EXACT, non-empty label match rather than purely
-// on geometry (a looser geometric tolerance was tried first and rejected):
-// direct measurement on this exact case showed the fragment's raw
-// perpendicular gap was actually SMALLER to a completely different,
-// unrelated, UNLABELED line nearby (a dimension/ruler marking, not a road)
-// than to the real road it was actually duplicating — geometry alone picks
-// the wrong neighbor here. The shared, OCR-confirmed label is the one
-// signal that correctly identifies which pair is really the same road, so
-// this only ever runs AFTER OCR labeling, never before. Two entries with
-// different (or no) labels are never touched — two real roads of different
-// widths legitimately running close together must survive untouched, and
-// an unlabeled geometric false-positive (a separate, already-known, lower-
-// priority issue) is left exactly as the rest of the pipeline already
-// produces it.
-const LABEL_DEDUPE_ANGLE_TOL = (10 * Math.PI) / 180;
-const LABEL_DEDUPE_MIN_OVERLAP_FRACTION = 0.6;
-// A generous gap tolerance is safe here specifically because the shared
-// label already did the hard work of confirming these two entries are the
-// same real road — unlike mergeCorridors' own tolerance (applied before
-// any label exists, where being too generous risks silently merging two
-// genuinely distinct roads), two different real roads practically never
-// carry the exact same width label while also running this close together.
-//
-// Tightened from 0.05 to 0.03 after a live upload of the synthetic fixture
-// showed the dimension ruler above the site ("TOTAL WIDTH 290'", whose
-// "30'" tick OCRs as "30 ft") being treated as the same road as the real
-// top "30' WIDE ROAD" ~0.04 of the long edge below it — dedup kept the
-// longer ruler and deleted the real road. The genuine duplicates this
-// exists for measured ~0.025 apart.
-const LABEL_DEDUPE_GAP_FRACTION = 0.03;
+interface RoadGeom {
+  shape: DetectedShape;
+  seg: Segment;
+  len: number;
+  ux: number; // unit vector along the road
+  uy: number;
+  halfWidth: number; // px; 0 for a single-line road
+}
 
-export function dedupeSameLabelRoads(shapes: DetectedShape[], imageWidth: number, imageHeight: number): DetectedShape[] {
+function roadGeom(shape: DetectedShape, imageWidth: number, imageHeight: number, longEdge: number): RoadGeom {
+  const seg = segmentFromPoints(shape, imageWidth, imageHeight);
+  const len = Math.hypot(seg.x2 - seg.x1, seg.y2 - seg.y1) || 1;
+  return {
+    shape,
+    seg,
+    len,
+    ux: (seg.x2 - seg.x1) / len,
+    uy: (seg.y2 - seg.y1) / len,
+    halfWidth: ((shape.roadWidthFraction ?? 0) * longEdge) / 2,
+  };
+}
+
+// Where point (x,y) sits relative to a road: `t` along it (0..1 = within
+// its length) and `d` signed distance across it.
+function roadCoords(r: RoadGeom, x: number, y: number): { t: number; d: number } {
+  const px = x - r.seg.x1;
+  const py = y - r.seg.y1;
+  return { t: (px * r.ux + py * r.uy) / r.len, d: px * -r.uy + py * r.ux };
+}
+
+// How far beyond a road's own edge to look for the plots it should run
+// between. Small on purpose: plots border a road directly.
+const PLOT_SEARCH_MARGIN = 0.02;
+// Samples along the road that must find a plot beside it. Two, not one, so a
+// single stray shape can't vouch for a line that otherwise runs past nothing.
+const MIN_PLOT_HITS = 2;
+// Slack (fraction of long edge) for "lies inside a road's band" — covers
+// stroke width and detection noise.
+const BAND_SLACK = 0.01;
+// How far out (fraction of long edge) to search for the plots that bound a
+// road on each side.
+const BAND_SEARCH_MAX = 0.08;
+// A line passing through this many real, uniquely-numbered plots is not a
+// road (see Rule 0).
+const MAX_UNIQUE_PLOTS_CROSSED = 2;
+
+const SAMPLE_TS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9];
+
+export function applyRoadAndPlotRules(shapes: DetectedShape[], imageWidth: number, imageHeight: number): DetectedShape[] {
   const longEdge = Math.max(imageWidth, imageHeight);
-  const roadEntries = shapes
-    .map((shape, index) => ({ shape, index }))
-    .filter(({ shape }) => shape.kind === "road" && shape.label)
-    .sort((a, b) => length(segmentFromPoints(b.shape, imageWidth, imageHeight)) - length(segmentFromPoints(a.shape, imageWidth, imageHeight)));
+  const toFrac = (x: number, y: number) => ({ x: x / imageWidth, y: y / imageHeight });
 
-  const dropped = new Set<number>();
-  for (let a = 0; a < roadEntries.length; a++) {
-    const longer = roadEntries[a];
-    if (dropped.has(longer.index)) continue;
-    const longSeg = segmentFromPoints(longer.shape, imageWidth, imageHeight);
-    for (let b = a + 1; b < roadEntries.length; b++) {
-      const shorter = roadEntries[b];
-      if (dropped.has(shorter.index) || shorter.shape.label !== longer.shape.label) continue;
-      const shortSeg = segmentFromPoints(shorter.shape, imageWidth, imageHeight);
-      const rawDiff = Math.abs(angleOf(longSeg) - angleOf(shortSeg));
-      const angleDiff = Math.min(rawDiff, Math.PI - rawDiff);
-      if (angleDiff > LABEL_DEDUPE_ANGLE_TOL) continue;
-      const overlap = computeOverlapAndGap(longSeg, shortSeg);
-      if (!overlap || overlap.overlapFraction < LABEL_DEDUPE_MIN_OVERLAP_FRACTION) continue;
-      if (overlap.gap > longEdge * LABEL_DEDUPE_GAP_FRACTION) continue;
-      dropped.add(shorter.index);
+  const plots = shapes
+    .filter((s) => s.kind === "plot")
+    .map((shape) => {
+      const px = shape.points.map((p) => ({ x: p.x * imageWidth, y: p.y * imageHeight }));
+      // Bounding-box centre, not the average of the corners: a shape with
+      // many corners on one side (e.g. a whole road band traced around a
+      // label badge) skews a corner average well off its real centre.
+      const xs = px.map((p) => p.x);
+      const ys = px.map((p) => p.y);
+      return {
+        shape,
+        px,
+        cx: (Math.min(...xs) + Math.max(...xs)) / 2,
+        cy: (Math.min(...ys) + Math.max(...ys)) / 2,
+      };
+    });
+  // A number that appears on exactly one plot is strong evidence that shape
+  // is a real plot. Junk OCR inside road cells ("1" from a dash) usually
+  // repeats a real plot's number, so it doesn't count here.
+  const labelCount = new Map<string, number>();
+  for (const p of plots) if (p.shape.label) labelCount.set(p.shape.label, (labelCount.get(p.shape.label) ?? 0) + 1);
+  const isUniquelyNumbered = (s: DetectedShape) => !!s.label && /\d/.test(s.label) && labelCount.get(s.label) === 1;
+
+  // A shape straddles a road when the road's centre line passes through
+  // the middle of it — at least a quarter of the shape's own width lies on
+  // each side — not merely when it sits nearby or touches it at an edge.
+  // Relative to the shape's own size, so it works for small and large plots
+  // alike. Found necessary on Naman Infracity: some roads there are
+  // detected as a single EDGE line, and a nearness test swallowed the whole
+  // row of real plots lying alongside that edge (36 real plots removed).
+  const straddles = (r: RoadGeom, p: (typeof plots)[number]) => {
+    const c = roadCoords(r, p.cx, p.cy);
+    if (c.t < 0 || c.t > 1) return false;
+    const across = p.px.map((pt) => roadCoords(r, pt.x, pt.y).d);
+    const lo = Math.min(...across);
+    const hi = Math.max(...across);
+    const quarter = (hi - lo) / 4;
+    return lo < -quarter && hi > quarter;
+  };
+  const pointAt = (r: RoadGeom, t: number) => ({ x: r.seg.x1 + (r.seg.x2 - r.seg.x1) * t, y: r.seg.y1 + (r.seg.y2 - r.seg.y1) * t });
+  let roads = shapes.filter((s) => s.kind === "road").map((s) => roadGeom(s, imageWidth, imageHeight, longEdge));
+
+  // Rule 0 — a road never runs through plots. A line passing through the
+  // middle of two or more real, uniquely-numbered plots is a wall or a
+  // stray line, not a road — so the line is dropped, never the plots.
+  // Found on Naman Infracity: such a line through plots 19 and 20 also
+  // passed through plot 1 (whose number OCR had duplicated), and was
+  // otherwise deleting it as a "road piece". Junk numbers inside real road
+  // cells usually repeat a real plot's number, so they don't count here.
+  roads = roads.filter(
+    (r) => plots.filter((p) => isUniquelyNumbered(p.shape) && straddles(r, p)).length < MAX_UNIQUE_PLOTS_CROSSED,
+  );
+
+  // Rule 1 — a road runs between or around plots. Look just past each edge
+  // of the road at points along its length; a real road finds plots there.
+  // Drops lines outside the site such as a dimension ruler ("TOTAL WIDTH
+  // 290'"), whose "30'" tick otherwise gets read as a "30 ft" road.
+  roads = roads.filter((r) => {
+    if (plots.length === 0) return true;
+    const reach = r.halfWidth + longEdge * PLOT_SEARCH_MARGIN;
+    let hits = 0;
+    for (const t of SAMPLE_TS) {
+      const c = pointAt(r, t);
+      for (const side of [1, -1]) {
+        const p = toFrac(c.x - r.uy * reach * side, c.y + r.ux * reach * side);
+        if (plots.some((plot) => pointInPolygon(p, plot.shape.points))) {
+          hits++;
+          break;
+        }
+      }
+    }
+    return hits >= MIN_PLOT_HITS;
+  });
+
+  // A road's real width is the space between the plots on either side of
+  // it (the user's own definition). Measured by stepping outward from the
+  // centre line until reaching a plot, ignoring shapes that straddle the
+  // centre line — those are candidate road pieces, not its walls. Used
+  // instead of the boundary-pair gap alone, which on the synthetic fixture
+  // measured roads at ~2/3 of their real width (it paired a road edge with
+  // the road's own dashed centre line).
+  const bands = new Map<RoadGeom, { left: number; right: number }>();
+  for (const r of roads) {
+    const walls = plots.filter((p) => !straddles(r, p));
+    const step = longEdge * 0.003;
+    const sideDistance = (side: number) => {
+      const found: number[] = [];
+      for (const t of SAMPLE_TS) {
+        const c = pointAt(r, t);
+        for (let d = step; d <= longEdge * BAND_SEARCH_MAX; d += step) {
+          const p = toFrac(c.x - r.uy * d * side, c.y + r.ux * d * side);
+          if (walls.some((w) => pointInPolygon(p, w.shape.points))) {
+            found.push(d);
+            break;
+          }
+        }
+      }
+      if (found.length < 3) return null;
+      found.sort((a, b) => a - b);
+      return found[Math.floor(found.length / 2)];
+    };
+    // A road's centre line sits midway between its two edges, so a side
+    // with no plots in reach (e.g. the main road along the site's outer
+    // edge) takes the distance measured on the other side.
+    const right = sideDistance(1);
+    const left = sideDistance(-1);
+    bands.set(r, { right: right ?? left ?? r.halfWidth, left: left ?? right ?? r.halfWidth });
+  }
+
+  // Rule 2 — one physical road is one road. A shorter road lying entirely
+  // inside a longer road's band is the same road detected twice; it's
+  // folded in, keeping its width label if the longer one had none.
+  roads.sort((a, b) => b.len - a.len);
+  const absorbed = new Set<RoadGeom>();
+  for (let i = 0; i < roads.length; i++) {
+    const host = roads[i];
+    if (absorbed.has(host)) continue;
+    const band = bands.get(host)!;
+    const slack = longEdge * BAND_SLACK;
+    for (let j = i + 1; j < roads.length; j++) {
+      const r = roads[j];
+      if (absorbed.has(r)) continue;
+      if (Math.abs(host.ux * r.uy - host.uy * r.ux) > Math.sin((10 * Math.PI) / 180)) continue; // not parallel
+      const inside = (c: { t: number; d: number }) =>
+        // A copy may run a little past either end of the longer road
+        // (found on Balaji Vihar: a second "30 ft" edge line ran 6% past
+        // the road it duplicated and wasn't folded in).
+        c.t >= -0.15 && c.t <= 1.15 && c.d >= -band.left - slack && c.d <= band.right + slack;
+      if (!inside(roadCoords(host, r.seg.x1, r.seg.y1)) || !inside(roadCoords(host, r.seg.x2, r.seg.y2))) continue;
+      absorbed.add(r);
+      if (!host.shape.label && r.shape.label) host.shape = { ...host.shape, label: r.shape.label };
     }
   }
-  return dropped.size === 0 ? shapes : shapes.filter((_, index) => !dropped.has(index));
+  roads = roads.filter((r) => !absorbed.has(r));
+
+  // Rule 3 — a piece of a road is never a plot. Where plot walls on both
+  // sides of a road line up, they cut the road into plot-sized cells. A
+  // shape the road's centre line passes through, and which fits between the
+  // plots bounding that road, is one of those cells, whatever OCR read
+  // inside it (a dash read as "1", a badge read as "2").
+  const keptPlots = plots.filter((p) => {
+    return !roads.some((r) => {
+      const band = bands.get(r)!;
+      if (band.left === 0 && band.right === 0) return false;
+      if (!straddles(r, p)) return false;
+      const c = roadCoords(r, p.cx, p.cy);
+      if (c.d < -band.left || c.d > band.right) return false;
+      // A road with no width label of its own is weaker evidence: it may
+      // never remove a numbered plot. (Uniqueness alone wasn't enough on
+      // Naman — real plot 1 shared its number with a misread plot 11.)
+      if (!r.shape.label && p.shape.label) return false;
+      const slack = longEdge * BAND_SLACK;
+      return p.px.every((pt) => {
+        const d = roadCoords(r, pt.x, pt.y).d;
+        return d >= -band.left - slack && d <= band.right + slack;
+      });
+    });
+  });
+
+  const keep = new Set<DetectedShape>([...keptPlots.map((p) => p.shape), ...roads.map((r) => r.shape)]);
+  const replaced = new Map(roads.map((r) => [r.shape.localId, r.shape]));
+  return shapes
+    .map((s) => (s.kind === "road" ? (replaced.get(s.localId) ?? s) : s))
+    .filter((s) => (s.kind === "plot" || s.kind === "road" ? keep.has(s) : true));
 }

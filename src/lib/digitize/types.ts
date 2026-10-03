@@ -22,6 +22,8 @@ export interface DetectedShape {
   featureKind?: SiteFeatureKind;
   /** Rough 0..1 heuristic from the contour filters in detection/plots.ts — a review-UI hint (e.g. a dashed outline), never persisted and never claimed as real accuracy. */
   confidence?: number;
+  /** Detected roads only, never persisted: the measured gap between the road's two boundary lines, as a fraction of the image's long edge (0 for a single-line road). Lets post-detection clean-up use each road's real width rather than one fixed number. */
+  roadWidthFraction?: number;
   source: "detected" | "manual";
   /** Plots only. "30' x 60'" — computed from the shape's own traced points
    * once the project has a real-world scale reference (see

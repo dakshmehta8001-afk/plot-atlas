@@ -11,7 +11,7 @@ import { loadOpenCv, type Cv } from "./opencvLoader";
 import { denoise, enhanceContrast, MAX_EDGE_PX, resizeToMaxEdge, toGrayscale } from "./imagePrep";
 import { autoCanny } from "./detection/edges";
 import { detectPlotFaces } from "./detection/faceExtraction";
-import { dedupeSameLabelRoads, detectRoadSegments, dropRoadPiecesDetectedAsPlots, filterRoadsByConfidence } from "./detection/roads";
+import { applyRoadAndPlotRules, detectRoadSegments, filterRoadsByConfidence } from "./detection/roads";
 import { labelShapesWithOcr } from "./detection/ocrLabels";
 import { renderPdfFirstPageToCanvas } from "./pdfToImageClient";
 import type { DetectionResult, PipelineStage } from "./types";
@@ -135,16 +135,6 @@ export function useDetectionPipeline() {
         ocrFailed = true;
       }
 
-      // Two final road entries that both independently read the exact same
-      // width label and sit right alongside each other are almost always
-      // one physical road counted twice (a weak fragment mergeCorridors'
-      // own geometric pass narrowly failed to fold in) — collapsed here,
-      // after labeling, since the shared label is what actually
-      // disambiguates this correctly (see dedupeSameLabelRoads' own doc
-      // comment for the direct evidence that geometry alone picks the
-      // wrong neighbor in this exact case).
-      shapes = dedupeSameLabelRoads(shapes, analysisWidth, analysisHeight);
-
       // A road candidate cleared the GEOMETRIC bar in detectRoadSegments,
       // but OCR (just run, above) may or may not have found supporting
       // road-keyword text to boost it — this is where a still-weak
@@ -152,9 +142,11 @@ export function useDetectionPipeline() {
       // rather than shown to the reviewer as a confident auto-detection.
       // Plots/features are untouched (the filter is a no-op for them).
       shapes = filterRoadsByConfidence(shapes);
-      // Must run after the confidence filter, so only roads we're actually
-      // keeping can remove blank road-cell "plots" (see its doc comment).
-      shapes = dropRoadPiecesDetectedAsPlots(shapes, analysisWidth, analysisHeight);
+      // Road/plot definitions applied to the final set: roads must run
+      // between plots, one road is one road, a road piece is never a plot
+      // (see applyRoadAndPlotRules). After the confidence filter, so only
+      // roads we're actually keeping can affect plots.
+      shapes = applyRoadAndPlotRules(shapes, analysisWidth, analysisHeight);
 
       setStage("building-map");
 
