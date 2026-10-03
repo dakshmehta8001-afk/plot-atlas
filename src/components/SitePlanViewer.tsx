@@ -771,7 +771,13 @@ export function SitePlanViewer({
     if (!panState.current) return;
     const dx = e.clientX - panState.current.startX;
     const dy = e.clientY - panState.current.startY;
-    setView((prev) => ({ ...prev, tx: panState.current!.origTx + dx, ty: panState.current!.origTy + dy }));
+    // Copied out BEFORE the state update: React runs the updater function
+    // later, and by then pointer-up may already have cleared panState — which
+    // crashed the whole page ("Cannot read properties of null (reading
+    // 'origTx')") whenever a drag ended quickly. Confirmed from the
+    // production crash log, not guessed.
+    const { origTx, origTy } = panState.current;
+    setView((prev) => ({ ...prev, tx: origTx + dx, ty: origTy + dy }));
   }
 
   function handleBackgroundPointerUp(e: React.PointerEvent<SVGSVGElement>) {

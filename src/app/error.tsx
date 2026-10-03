@@ -23,30 +23,30 @@ export default function AppError({ error, retry }: { error: Error & { digest?: s
   }, [error, reloading]);
 
   if (reloading) {
-    return <p className="mx-auto max-w-md px-4 py-24 text-center text-sm text-slate-600">Loading the latest version…</p>;
+    return <p className="mx-auto max-w-md px-4 py-24 text-center text-sm text-gray-600 dark:text-gray-300">Loading the latest version…</p>;
   }
 
   return (
     <div className="mx-auto max-w-md px-4 py-24 text-center">
-      <h1 className="text-xl font-semibold text-slate-900">Something went wrong on this page</h1>
-      <p className="mt-2 text-sm text-slate-600">
+      <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Something went wrong on this page</h1>
+      <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
         Your saved work is safe. Try again, or reload the page. If it keeps happening, note what you clicked just before
         and let us know.
       </p>
-      {error.digest && <p className="mt-2 text-xs text-slate-400">Reference: {error.digest}</p>}
+      {error.digest && <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">Reference: {error.digest}</p>}
       <div className="mt-6 flex justify-center gap-2">
-        <button onClick={() => retry()} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">
+        <button onClick={() => retry()} className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200">
           Try again
         </button>
         <button
           onClick={() => window.location.reload()}
-          className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
         >
           Reload
         </button>
         <button
           onClick={() => window.history.back()}
-          className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
         >
           Back
         </button>
