@@ -54,30 +54,15 @@ export default async function ManageProjectPage(props: PageProps<"/dashboard/pro
         {typedFeatures.length} area(s) traced
       </p>
 
-      {/* Only shown for a genuinely empty project — once anything (a plot,
-          building, road, or traced area) already exists, the upsell for a
-          feature the sub-admin has clearly already used (or traced by hand
-          instead) is just noise on a page they'll visit repeatedly. The
-          "Auto-digitize a plan" link itself stays reachable for a non-empty
-          project too (it's not hidden anywhere else), this only hides the
-          one-time first-use prompt. */}
-      {plots.length === 0 && typedBuildings.length === 0 && flats.length === 0 && typedRoads.length === 0 && typedFeatures.length === 0 && (
-        <div className="mb-4 flex items-center justify-between rounded-lg border border-dashed border-gray-300 p-4 dark:border-gray-700">
-          <div>
-            <p className="text-sm font-medium">Have a photographed or scanned plan?</p>
-            <p className="text-xs text-gray-500">
-              Auto-digitize it: automatic plot/road/area detection you can then review and correct, instead of tracing by hand.
-            </p>
-          </div>
-          <Link
-            href={`/dashboard/projects/${id}/digitize`}
-            className="shrink-0 rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 dark:bg-white dark:text-gray-900"
-          >
-            Auto-digitize a plan
-          </Link>
-        </div>
-      )}
-
+      {/* No separate "Auto-digitize a plan" prompt here anymore — uploading
+          a plan image (at project creation, or via PlanImageUpload below
+          for a project that didn't have one yet) now goes straight into
+          the auto-digitize flow itself (see createProject/PlanImageUpload's
+          own redirects), so there's no longer a distinct "image uploaded,
+          now go click a separate button to detect it" step for this page
+          to prompt. The +Trace new plot/building/road tools on
+          ProjectTracerClient below are UNCHANGED — still here for adding or
+          correcting shapes by hand at any time. */}
       {typedProject.plan_image_url ? (
         <ProjectTracerClient
           projectId={id}

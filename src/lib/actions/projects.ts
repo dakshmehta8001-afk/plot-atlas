@@ -67,7 +67,14 @@ export async function createProject(formData: FormData): Promise<ActionResult> {
   if (!project) return { error: "Project could not be created." };
 
   revalidatePath("/dashboard");
-  redirect(`/dashboard/projects/${project.id}`);
+  // Straight into auto-digitize when a plan image came with the project —
+  // the sub-admin just picked that file once; landing on the plain project
+  // page first, with a SEPARATE "Auto-digitize a plan" prompt to click
+  // through, asked them to notice and act on that prompt before detection
+  // could run at all. No image yet (planImageUrl still null) falls back to
+  // the ordinary project page, where PlanImageUpload covers adding one
+  // later — same redirect-into-digitize happens there too.
+  redirect(planImageUrl ? `/dashboard/projects/${project.id}/digitize` : `/dashboard/projects/${project.id}`);
 }
 
 export async function updateProject(projectId: string, formData: FormData): Promise<ActionResult> {

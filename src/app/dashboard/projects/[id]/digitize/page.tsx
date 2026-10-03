@@ -39,6 +39,7 @@ export default async function DigitizePage(props: PageProps<"/dashboard/projects
         projectId={id}
         projectName={project.name}
         hasExistingPlanImage={!!project.plan_image_url}
+        planImageUrl={project.plan_image_url}
         initialCalibration={project.map_calibration as MapCalibration | null}
       />
     </div>

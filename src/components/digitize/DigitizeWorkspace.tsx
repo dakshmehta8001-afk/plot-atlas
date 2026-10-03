@@ -13,12 +13,12 @@
 // this pass) a restored draft couldn't actually be re-displayed — a
 // "save" that can't be shown back is worse than no save at all. The
 // reviewer is warned on screen; "Save to project" is the only durable step.
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MAP_VIEWBOX_SIZE, type MapCalibration, type PolygonPoint } from "@/lib/types";
 import { uploadPlanImage, setProjectCalibration } from "@/lib/actions/projects";
 import { saveDigitizedShapes } from "@/lib/actions/digitize";
-import { useDetectionPipeline, loadFileToCanvas } from "@/lib/digitize/useDetectionPipeline";
+import { useDetectionPipeline, loadFileToCanvas, loadUrlToCanvas } from "@/lib/digitize/useDetectionPipeline";
 import type { DetectedShape } from "@/lib/digitize/types";
 import { feetPerUnit, quadEdgeLengthsFt, formatDimensions, polygonAreaSqft, northAngleFromPoints } from "@/lib/calibration";
 import { UploadDropzone } from "./UploadDropzone";
@@ -76,11 +76,14 @@ export function DigitizeWorkspace({
   projectId,
   projectName,
   hasExistingPlanImage,
+  planImageUrl,
   initialCalibration,
 }: {
   projectId: string;
   projectName: string;
   hasExistingPlanImage: boolean;
+  /** The project's already-saved plan image, if it has one — auto-loaded on mount so a sub-admin who already uploaded a plan (at project creation, or via PlanImageUpload) never has to pick the same file again just to run detection on it. `null` for a project with no plan image yet, which falls through to the ordinary upload dropzone below. */
+  planImageUrl: string | null;
   initialCalibration: MapCalibration | null;
 }) {
   const router = useRouter();
@@ -88,6 +91,7 @@ export function DigitizeWorkspace({
 
   const [stage, setStage] = useState<Stage>("upload");
   const [previewCanvas, setPreviewCanvas] = useState<HTMLCanvasElement | null>(null);
+  const [autoLoadError, setAutoLoadError] = useState<string | null>(null);
   const [sourceCanvas, setSourceCanvas] = useState<HTMLCanvasElement | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -131,6 +135,34 @@ export function DigitizeWorkspace({
       console.error(err);
     }
   }
+
+  // Skips the upload dropzone entirely when the project already has a plan
+  // image — the user already went through the trouble of picking a file
+  // once (at project creation, or via PlanImageUpload), so asking them to
+  // do it again just to reach auto-digitize is pure friction. Runs once on
+  // mount only (the `useRef` guard, not just the empty dependency array,
+  // matters here: React 18 Strict Mode's dev-only double-invoke of effects
+  // would otherwise start loading the same image twice in parallel, racing
+  // two `setStage("warp")` calls against each other).
+  const autoLoadStarted = useRef(false);
+  useEffect(() => {
+    if (!planImageUrl || autoLoadStarted.current) return;
+    autoLoadStarted.current = true;
+    loadUrlToCanvas(planImageUrl)
+      .then((canvas) => {
+        setPreviewCanvas(canvas);
+        setStage("warp");
+      })
+      .catch((err) => {
+        // Falls back to the ordinary upload dropzone (stage stays "upload")
+        // rather than leaving the reviewer stuck on a blank screen — a
+        // re-upload of the same file still works even if the saved one
+        // can't be fetched for some reason (deleted from storage, a CORS
+        // misconfiguration, etc).
+        setAutoLoadError(err instanceof Error ? err.message : "Could not load the saved plan image.");
+        console.error(err);
+      });
+  }, [planImageUrl]);
 
   async function runDetection(canvas: HTMLCanvasElement) {
     setStage("processing");
@@ -320,7 +352,21 @@ export function DigitizeWorkspace({
   }
 
   if (stage === "upload") {
-    return <UploadDropzone onStart={handleStart} />;
+    // planImageUrl set + no error yet = the auto-load effect above is still
+    // in flight (or about to start) — shown instead of the dropzone so a
+    // sub-admin who already uploaded a plan doesn't see "upload your plan"
+    // flash by before their saved image loads.
+    if (planImageUrl && !autoLoadError) {
+      return <div className="flex h-64 items-center justify-center text-sm text-gray-400">Loading your plan image…</div>;
+    }
+    return (
+      <div>
+        {autoLoadError && (
+          <p className="mb-3 text-sm text-amber-600">{autoLoadError} You can upload it again below.</p>
+        )}
+        <UploadDropzone onStart={handleStart} />
+      </div>
+    );
   }
 
   if (stage === "warp" && previewCanvas) {

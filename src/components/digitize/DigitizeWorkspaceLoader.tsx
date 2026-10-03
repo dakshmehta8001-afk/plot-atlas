@@ -20,6 +20,7 @@ export function DigitizeWorkspaceLoader(props: {
   projectId: string;
   projectName: string;
   hasExistingPlanImage: boolean;
+  planImageUrl: string | null;
   initialCalibration: MapCalibration | null;
 }) {
   return <DigitizeWorkspace {...props} />;

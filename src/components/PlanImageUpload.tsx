@@ -23,7 +23,12 @@ export function PlanImageUpload({ projectId }: { projectId: string }) {
       setError(result.error);
       return;
     }
-    router.refresh();
+    // Into auto-digitize immediately, same as the new-project flow — the
+    // sub-admin just picked this file specifically to start tracing/
+    // digitizing from, so landing back on the plain project page (with yet
+    // another prompt to click through) would be the exact redundant step
+    // this whole change exists to remove.
+    router.push(`/dashboard/projects/${projectId}/digitize`);
   }
 
   return (

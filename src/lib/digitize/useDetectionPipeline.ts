@@ -230,3 +230,35 @@ function loadImageElement(src: string): Promise<HTMLImageElement> {
     img.src = src;
   });
 }
+
+// Loads a project's ALREADY-UPLOADED plan_image_url directly into a canvas —
+// used so a sub-admin who uploaded their plan at project-creation time (or
+// via PlanImageUpload afterward) isn't asked to pick the SAME file again
+// just to run auto-digitize on it. `crossOrigin = "anonymous"` is required
+// here specifically (loadFileToCanvas above never needs it, since an
+// object: URL is always same-origin): without it, a cross-origin image
+// (Supabase Storage is a different origin from the app) taints the canvas,
+// and every later pixel read this pipeline depends on (OpenCV's cv.imread,
+// toDataURL for the review canvas, toBlob when re-saving) throws a
+// SecurityError instead of failing quietly — confirmed safe to set
+// unconditionally since plot-atlas's plan-images bucket is public-read with
+// CORS already open for the same reason the public site viewers can already
+// load this exact URL cross-origin via a plain <img>.
+export async function loadUrlToCanvas(url: string): Promise<HTMLCanvasElement> {
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  const loaded = await new Promise<HTMLImageElement>((resolve, reject) => {
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Could not load the saved plan image — it may have been moved or deleted."));
+    img.src = url;
+  });
+  const longEdge = Math.max(loaded.naturalWidth, loaded.naturalHeight);
+  const scale = Math.min(1, MAX_SOURCE_EDGE_PX / longEdge);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(loaded.naturalWidth * scale);
+  canvas.height = Math.round(loaded.naturalHeight * scale);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Could not create a 2D canvas context.");
+  ctx.drawImage(loaded, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
