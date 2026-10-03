@@ -98,7 +98,47 @@ export function ShapeLayer({
               }}
               onDoubleClick={handleShapeDoubleClick}
             />
-            {shape.label && (
+            {shape.label && shape.kind === "road" && (
+              // A road's own width label is read from a crop centered right
+              // on top of the plan's own pre-printed width badge — so this
+              // text and that badge's own printed text land on the exact
+              // same spot by construction, not by accident. A thin stroke
+              // halo (still used for plots/features below, where the
+              // underlying fill is a flat color, not more text) isn't
+              // enough contrast there: found as a real, visible bug via
+              // direct evidence — on a real plan this collided and both
+              // texts became unreadable. A solid background plate behind
+              // the text guarantees legibility regardless of what's
+              // underneath, the way any map's road/place labels do it.
+              // Width is a rough per-character estimate (SVG has no layout
+              // pass to measure against before paint) generous enough to
+              // never clip, at the cost of sometimes being a bit wider than
+              // the text actually needs.
+              <>
+                <rect
+                  x={center.x - (shape.label.length * VB * 0.0098) / 2 - VB * 0.006}
+                  y={center.y - VB * 0.013}
+                  width={shape.label.length * VB * 0.0098 + VB * 0.012}
+                  height={VB * 0.022}
+                  rx={VB * 0.003}
+                  fill="#111827"
+                  fillOpacity={0.85}
+                  className="pointer-events-none"
+                />
+                <text
+                  x={center.x}
+                  y={center.y}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fontSize={VB * 0.016}
+                  fill="#fef3c7"
+                  className="pointer-events-none select-none font-medium"
+                >
+                  {shape.label}
+                </text>
+              </>
+            )}
+            {shape.label && shape.kind !== "road" && (
               <text
                 x={center.x}
                 y={center.y}
