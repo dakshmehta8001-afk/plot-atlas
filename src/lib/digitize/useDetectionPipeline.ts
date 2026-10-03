@@ -11,7 +11,7 @@ import { loadOpenCv, type Cv } from "./opencvLoader";
 import { denoise, enhanceContrast, MAX_EDGE_PX, resizeToMaxEdge, toGrayscale } from "./imagePrep";
 import { autoCanny } from "./detection/edges";
 import { detectPlotFaces } from "./detection/faceExtraction";
-import { detectRoadSegments, filterRoadsByConfidence } from "./detection/roads";
+import { dedupeSameLabelRoads, detectRoadSegments, filterRoadsByConfidence } from "./detection/roads";
 import { labelShapesWithOcr } from "./detection/ocrLabels";
 import { renderPdfFirstPageToCanvas } from "./pdfToImageClient";
 import type { DetectionResult, PipelineStage } from "./types";
@@ -121,6 +121,16 @@ export function useDetectionPipeline() {
         console.error("OCR failed:", ocrErr);
         ocrFailed = true;
       }
+
+      // Two final road entries that both independently read the exact same
+      // width label and sit right alongside each other are almost always
+      // one physical road counted twice (a weak fragment mergeCorridors'
+      // own geometric pass narrowly failed to fold in) — collapsed here,
+      // after labeling, since the shared label is what actually
+      // disambiguates this correctly (see dedupeSameLabelRoads' own doc
+      // comment for the direct evidence that geometry alone picks the
+      // wrong neighbor in this exact case).
+      shapes = dedupeSameLabelRoads(shapes, analysisWidth, analysisHeight);
 
       // A road candidate cleared the GEOMETRIC bar in detectRoadSegments,
       // but OCR (just run, above) may or may not have found supporting

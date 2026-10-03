@@ -764,3 +764,70 @@ export function detectRoadSegments(
 export function filterRoadsByConfidence(shapes: DetectedShape[], threshold: number = MIN_FINAL_CONFIDENCE): DetectedShape[] {
   return shapes.filter((s) => s.kind !== "road" || (s.confidence ?? 0) >= threshold);
 }
+
+function segmentFromPoints(shape: DetectedShape, imageWidth: number, imageHeight: number): Segment {
+  const a = shape.points[0];
+  const b = shape.points[shape.points.length - 1];
+  return { x1: a.x * imageWidth, y1: a.y * imageHeight, x2: b.x * imageWidth, y2: b.y * imageHeight };
+}
+
+// A short, weak single-line-fallback fragment sitting right beside a real
+// road's own width badge/label can independently OCR-read the exact same
+// width text as the real road, while sitting just OUTSIDE mergeCorridors'
+// own tolerance above (so it never got folded into that road there) —
+// found as a real, visible bug via direct evidence on the synthetic
+// 36-plot fixture: two separate final road entries, 0.52% of the image's
+// long edge apart, both read "30 ft" and rendered as two overlapping,
+// colliding text labels on the review canvas.
+//
+// Deliberately gated on an EXACT, non-empty label match rather than purely
+// on geometry (a looser geometric tolerance was tried first and rejected):
+// direct measurement on this exact case showed the fragment's raw
+// perpendicular gap was actually SMALLER to a completely different,
+// unrelated, UNLABELED line nearby (a dimension/ruler marking, not a road)
+// than to the real road it was actually duplicating — geometry alone picks
+// the wrong neighbor here. The shared, OCR-confirmed label is the one
+// signal that correctly identifies which pair is really the same road, so
+// this only ever runs AFTER OCR labeling, never before. Two entries with
+// different (or no) labels are never touched — two real roads of different
+// widths legitimately running close together must survive untouched, and
+// an unlabeled geometric false-positive (a separate, already-known, lower-
+// priority issue) is left exactly as the rest of the pipeline already
+// produces it.
+const LABEL_DEDUPE_ANGLE_TOL = (10 * Math.PI) / 180;
+const LABEL_DEDUPE_MIN_OVERLAP_FRACTION = 0.6;
+// A generous gap tolerance is safe here specifically because the shared
+// label already did the hard work of confirming these two entries are the
+// same real road — unlike mergeCorridors' own tolerance (applied before
+// any label exists, where being too generous risks silently merging two
+// genuinely distinct roads), two different real roads practically never
+// carry the exact same width label while also running this close together.
+const LABEL_DEDUPE_GAP_FRACTION = 0.05;
+
+export function dedupeSameLabelRoads(shapes: DetectedShape[], imageWidth: number, imageHeight: number): DetectedShape[] {
+  const longEdge = Math.max(imageWidth, imageHeight);
+  const roadEntries = shapes
+    .map((shape, index) => ({ shape, index }))
+    .filter(({ shape }) => shape.kind === "road" && shape.label)
+    .sort((a, b) => length(segmentFromPoints(b.shape, imageWidth, imageHeight)) - length(segmentFromPoints(a.shape, imageWidth, imageHeight)));
+
+  const dropped = new Set<number>();
+  for (let a = 0; a < roadEntries.length; a++) {
+    const longer = roadEntries[a];
+    if (dropped.has(longer.index)) continue;
+    const longSeg = segmentFromPoints(longer.shape, imageWidth, imageHeight);
+    for (let b = a + 1; b < roadEntries.length; b++) {
+      const shorter = roadEntries[b];
+      if (dropped.has(shorter.index) || shorter.shape.label !== longer.shape.label) continue;
+      const shortSeg = segmentFromPoints(shorter.shape, imageWidth, imageHeight);
+      const rawDiff = Math.abs(angleOf(longSeg) - angleOf(shortSeg));
+      const angleDiff = Math.min(rawDiff, Math.PI - rawDiff);
+      if (angleDiff > LABEL_DEDUPE_ANGLE_TOL) continue;
+      const overlap = computeOverlapAndGap(longSeg, shortSeg);
+      if (!overlap || overlap.overlapFraction < LABEL_DEDUPE_MIN_OVERLAP_FRACTION) continue;
+      if (overlap.gap > longEdge * LABEL_DEDUPE_GAP_FRACTION) continue;
+      dropped.add(shorter.index);
+    }
+  }
+  return dropped.size === 0 ? shapes : shapes.filter((_, index) => !dropped.has(index));
+}
