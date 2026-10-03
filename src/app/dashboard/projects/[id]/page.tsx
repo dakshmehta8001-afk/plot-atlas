@@ -14,6 +14,7 @@ import { MediaManager } from "@/components/MediaManager";
 import { PublishToggle } from "@/components/PublishToggle";
 import { ProjectDetailsForm } from "@/components/ProjectDetailsForm";
 import { StatusBadge, CategoryBadge } from "@/components/StatusBadge";
+import { sortByUnitNumber } from "@/lib/sortUnits";
 import type { Building, Project, ProjectMedia, Road, SiteFeature, Unit } from "@/lib/types";
 
 export default async function ManageProjectPage(props: PageProps<"/dashboard/projects/[id]">) {
@@ -32,7 +33,7 @@ export default async function ManageProjectPage(props: PageProps<"/dashboard/pro
   ]);
 
   const typedProject = project as Project;
-  const allUnits = (units ?? []) as Unit[];
+  const allUnits = sortByUnitNumber((units ?? []) as Unit[]);
   const plots = allUnits.filter((u) => u.unit_type === "plot");
   const flats = allUnits.filter((u) => u.unit_type === "flat");
   const typedBuildings = (buildings ?? []) as Building[];

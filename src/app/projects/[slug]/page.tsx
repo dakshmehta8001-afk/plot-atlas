@@ -3,6 +3,7 @@
 // into the nested structure BuildingDrilldown expects, then hands off to
 // ProjectMapClient — the MapBhoomi-style dark panel with the header/stats/
 // legend overlay, the map/media/about tabs, and the "I'm interested" flow.
+import { sortByUnitNumber } from "@/lib/sortUnits";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ProjectMapClient } from "@/components/ProjectMapClient";
@@ -41,7 +42,7 @@ export default async function ProjectPage(props: PageProps<"/projects/[slug]">) 
       supabase.rpc("sub_admin_display_name", { sub_admin_id: project.sub_admin_id }),
     ]);
 
-  const allUnits = (units ?? []) as Unit[];
+  const allUnits = sortByUnitNumber((units ?? []) as Unit[]);
   const plots = allUnits.filter((u) => u.unit_type === "plot");
   const typedFloors = (floors ?? []) as Floor[];
 

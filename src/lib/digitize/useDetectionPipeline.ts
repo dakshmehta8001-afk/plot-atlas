@@ -13,6 +13,7 @@ import { autoCanny } from "./detection/edges";
 import { detectPlotFaces } from "./detection/faceExtraction";
 import { applyRoadAndPlotRules, detectRoadSegments, filterRoadsByConfidence } from "./detection/roads";
 import { labelShapesWithOcr } from "./detection/ocrLabels";
+import { fillSingleMissingPlotNumber } from "./detection/fillMissingPlotNumber";
 import { renderPdfFirstPageToCanvas } from "./pdfToImageClient";
 import type { DetectionResult, PipelineStage } from "./types";
 
@@ -147,6 +148,8 @@ export function useDetectionPipeline() {
       // (see applyRoadAndPlotRules). After the confidence filter, so only
       // roads we're actually keeping can affect plots.
       shapes = applyRoadAndPlotRules(shapes, analysisWidth, analysisHeight);
+      const filled = fillSingleMissingPlotNumber(shapes);
+      shapes = filled.shapes;
 
       setStage("building-map");
 
@@ -164,6 +167,7 @@ export function useDetectionPipeline() {
       if (ocrFailed || shapes.every((s) => !s.label)) {
         warnings.push("No readable text was found — plot numbers and road widths will need to be entered manually.");
       }
+      if (filled.note) warnings.push(filled.note);
       if (rejectedNonPlotCount > 0) {
         warnings.push(
           `Excluded ${rejectedNonPlotCount} shape${rejectedNonPlotCount === 1 ? "" : "s"} that looked like a legend, distance table, or title/compass text rather than a real plot — double-check nothing real was skipped.`,
