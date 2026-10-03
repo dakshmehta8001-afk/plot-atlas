@@ -77,7 +77,16 @@ export async function updateUnit(
 ): Promise<ActionResult> {
   const supabase = await createClient();
 
-  const { error } = await supabase.from("units").update(input).eq("id", unitId);
+  // A size typed in by the sub-admin is a human confirmation, so it clears
+  // the "needs dimensions confirmed" flag that blocks publishing. Without
+  // this, a plot whose detected outline isn't a clean four-sided shape (no
+  // size can be computed for it) could never be cleared from the project
+  // page, and Publish stayed blocked.
+  const confirmsSize = typeof input.dimensions === "string" && input.dimensions.trim() !== "";
+  const { error } = await supabase
+    .from("units")
+    .update(confirmsSize ? { ...input, needs_dimension_review: false } : input)
+    .eq("id", unitId);
   if (error) return { error: error.message };
 
   revalidatePath(`/dashboard/projects/${projectId}`, "layout");

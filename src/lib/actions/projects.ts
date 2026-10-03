@@ -137,14 +137,19 @@ export async function setProjectStatus(projectId: string, status: "draft" | "pub
       return { error: "Set the map scale first — use the Set scale button above the map, then publish." };
     }
 
-    const { count, error: countError } = await supabase
+    const { data: unsized, error: countError } = await supabase
       .from("units")
-      .select("id", { count: "exact", head: true })
+      .select("unit_number")
       .eq("project_id", projectId)
       .eq("needs_dimension_review", true);
     if (countError) return { error: countError.message };
-    if (count && count > 0) {
-      return { error: `${count} plot${count === 1 ? "" : "s"} still need${count === 1 ? "s" : ""} dimensions confirmed before publishing.` };
+    const count = unsized?.length ?? 0;
+    if (count > 0) {
+      // Name the plots, so the sub-admin knows which ones to open and give a size.
+      const names = unsized!.map((u) => u.unit_number || "(no number)").slice(0, 12).join(", ");
+      return {
+        error: `${count} plot${count === 1 ? "" : "s"} still need${count === 1 ? "s" : ""} a size before publishing: ${names}${count > 12 ? "…" : ""}. Click each on the map and enter its size.`,
+      };
     }
   }
 
