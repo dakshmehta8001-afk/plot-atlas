@@ -236,8 +236,28 @@ export function buildScene(
     };
     const da = away(ea);
     const db = away(eb);
-    if (da.x * db.x + da.y * db.y > -0.9) // The NARROWER road's width, so the fillet never bulges past the outer edge of either road.
-    corners.push({ x: nd.x, y: nd.y, width: Math.min(ea.width, eb.width) });
+    if (da.x * db.x + da.y * db.y > -0.9) {
+      // The fillet is a disc tangent to the OUTER edge of both roads, with the
+      // narrower road's half-width as its radius. Roads of different widths
+      // have outer edges at different distances from the junction point, so
+      // the disc centre is moved outwards along the wider road's normal; a disc
+      // centred on the junction point would stop short of (or poke past) one
+      // of the two edges.
+      const hwA = ea.width / 2;
+      const hwB = eb.width / 2;
+      const r = Math.min(hwA, hwB);
+      const outward = (d: Pt, other: Pt): Pt => {
+        const n = { x: -d.y, y: d.x };
+        return n.x * other.x + n.y * other.y > 0 ? { x: -n.x, y: -n.y } : n;
+      };
+      const nA = outward(da, db);
+      const nB = outward(db, da);
+      corners.push({
+        x: nd.x + nA.x * (hwA - r) + nB.x * (hwB - r),
+        y: nd.y + nA.y * (hwA - r) + nB.y * (hwB - r),
+        width: 2 * r,
+      });
+    }
   }
 
   const trees: Tree[] = [];
