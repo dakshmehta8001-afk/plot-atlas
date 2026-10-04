@@ -376,8 +376,12 @@ export interface Pose {
   active: boolean;
 }
 
+export type VehicleKind = "car" | "bike";
+
 export interface Car extends Pose {
   id: number;
+  /** Motorbikes/scooters: ~40% of a car's length, 15% faster, same lane, lock and gap rules. */
+  kind: VehicleKind;
   edge: number;
   dir: 1 | -1;
   s: number;
@@ -429,7 +433,11 @@ export interface Sim {
 }
 
 const TURN_SPEED_FACTOR = 0.65;
-const MIN_GAP = 6;
+// Minimum gap behind the vehicle ahead, as a fraction of the follower's OWN length
+// (so a short bike keeps a proportionally shorter gap than a car).
+const MIN_GAP_FRACTION = 0.1;
+const BIKE_LENGTH_FACTOR = 0.4;
+const BIKE_SPEED_FACTOR = 1.15;
 const STOP_MARGIN = 16;
 const ACCEL = 90;
 const DECEL = 240;
@@ -567,11 +575,12 @@ export function createSim(net: Network, opts: SimOptions): Sim {
       if (!clear(x, y, CAR_BASE_LENGTH * m.carScale * 2.4)) continue;
       const car: Car = {
         id: sim.cars.length,
+        kind: sim.cars.length % 3 === 2 ? "bike" : "car",
         edge: e.id,
         dir,
         s,
         v: 0,
-        vDes: 50 + rng() * 20,
+        vDes: (50 + rng() * 20) * (sim.cars.length % 3 === 2 ? BIKE_SPEED_FACTOR : 1),
         curve: null,
         curveS: 0,
         plan: null,
@@ -687,8 +696,12 @@ function distToEnd(sim: Sim, c: { edge: number; s: number }): number {
   return sim.net.edges[c.edge].len - c.s;
 }
 
-function carLen(scale: number) {
-  return CAR_BASE_LENGTH * scale;
+function vehLen(v: { scale: number; kind: VehicleKind }): number {
+  return CAR_BASE_LENGTH * v.scale * (v.kind === "bike" ? BIKE_LENGTH_FACTOR : 1);
+}
+
+function minGapFor(v: { scale: number; kind: VehicleKind }): number {
+  return Math.max(2, MIN_GAP_FRACTION * vehLen(v));
 }
 
 // Does the exit edge have room for one more car right after the junction?
@@ -710,14 +723,14 @@ function planNext(sim: Sim, c: Car, nodeId: number): { outEdge: number; outDir: 
 // direction; a car in a turn looks at cars already on the road it is turning
 // into. Anything beyond the junction is handled by the junction lock.
 function aheadOf(sim: Sim, c: Car): { gap: number; v: number } | null {
-  const L = carLen(c.scale);
+  const L = vehLen(c);
   let best: { gap: number; v: number } | null = null;
   const consider = (gap: number, o: Car) => {
     if (!best || gap < best.gap) best = { gap, v: o.v };
   };
   for (const o of sim.cars) {
     if (o === c || !o.active) continue;
-    const Lo = carLen(o.scale);
+    const Lo = vehLen(o);
     if (c.curve) {
       if (!o.curve && o.edge === c.curve.outEdge && o.dir === c.curve.outDir) {
         consider(c.curve.total - c.curveS + (o.s - c.curve.exitS) - (L + Lo) / 2, o);
@@ -747,7 +760,7 @@ export function stepSim(sim: Sim, dtIn: number) {
     if (!c.active) continue;
     const e = net.edges[c.edge];
     const m = roadMetrics(e.width);
-    const L = carLen(c.scale);
+    const L = vehLen(c);
     let target = c.vDes;
 
     if (c.curve) {
@@ -775,7 +788,7 @@ export function stepSim(sim: Sim, dtIn: number) {
               lock.queue[0] === c.id &&
               lock.pedCrossing === 0 &&
               lock.pedWaiting === 0 &&
-              exitRoom(sim, c.plan.outEdge, c.plan.outDir, L + MIN_GAP + 10);
+              exitRoom(sim, c.plan.outEdge, c.plan.outDir, L + minGapFor(c) + 10);
             if (ready) {
               lock.holder = c.id;
               lock.queue = lock.queue.filter((id) => id !== c.id);
@@ -791,8 +804,8 @@ export function stepSim(sim: Sim, dtIn: number) {
 
     // keep a gap behind the car in front
     const ahead = aheadOf(sim, c);
-    if (ahead && ahead.gap < MIN_GAP + (c.v * c.v) / (2 * DECEL) + 14) {
-      const room = Math.max(0, ahead.gap - MIN_GAP);
+    if (ahead && ahead.gap < minGapFor(c) + (c.v * c.v) / (2 * DECEL) + 14) {
+      const room = Math.max(0, ahead.gap - minGapFor(c));
       target = Math.min(target, Math.sqrt(2 * DECEL * 0.8 * room), ahead.v + room * 1.5);
     }
 
@@ -808,7 +821,7 @@ export function stepSim(sim: Sim, dtIn: number) {
     const node = net.nodes[c.holding];
     const e = net.edges[c.edge];
     const headingInto = (c.dir === 1 ? e.b : e.a) === c.holding;
-    if (c.entered && !c.curve && (headingInto || Math.hypot(c.x - node.x, c.y - node.y) > node.radius + carLen(c.scale) / 2)) {
+    if (c.entered && !c.curve && (headingInto || Math.hypot(c.x - node.x, c.y - node.y) > node.radius + vehLen(c) / 2)) {
       const lk = sim.locks[c.holding];
       if (lk.holder === c.id) lk.holder = null;
       c.holding = null;

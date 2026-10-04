@@ -16,6 +16,7 @@ import { memo, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { activeCars, createSim, removeOneCar, removeOneWalker, stepSim, type Network, type Pose } from "@/lib/mapTraffic";
 
 const CAR_COLORS = ["#d7473f", "#f4f4f2", "#2f6fb5", "#b8bcc4", "#1f2933", "#e0a526"];
+const BIKE_COLORS = ["#e11d48", "#2563eb", "#16a34a", "#f59e0b", "#6b7280"];
 const WALKER_COLORS = ["#e2553f", "#3f7fd9", "#f2c14e", "#7a5bd6", "#3aa57a"];
 
 // Average frame time (seconds) above which one car is removed, and how long
@@ -159,7 +160,7 @@ export const MapTraffic = memo(function MapTraffic({ network, seedKey }: { netwo
           }}
           transform={transformOf(c)}
         >
-          <use href="#sp-car" color={CAR_COLORS[c.id % CAR_COLORS.length]} />
+          <use href={c.kind === "bike" ? "#sp-bike" : "#sp-car"} color={(c.kind === "bike" ? BIKE_COLORS : CAR_COLORS)[c.id % (c.kind === "bike" ? BIKE_COLORS : CAR_COLORS).length]} />
         </g>
       ))}
       {start.walkers.map((w) => (

@@ -8,7 +8,7 @@
 // Everything is in "scaled" map units: x = fraction * VB, y = fraction *
 // vbHeight (the same convention toScaledSvgPoints uses).
 import type { PolygonPoint } from "@/lib/types";
-import { connectRoads, edgeMidpoint, roadMetrics, type Network } from "@/lib/mapTraffic";
+import { connectRoads, edgeMidpoint, roadMetrics, type Edge, type Network } from "@/lib/mapTraffic";
 
 export interface Pt {
   x: number;
@@ -39,44 +39,6 @@ export function inPoly(x: number, y: number, poly: Poly): boolean {
     if (intersects) inside = !inside;
   }
   return inside;
-}
-
-// A plot's outline pulled inward by `d` map units on every side (mitred at
-// the corners). Used for the thin zone-colour inner border. Returns null
-// when the result isn't a clean, smaller copy still inside the plot (a very
-// thin or concave plot) — the caller then simply skips the inner border.
-export function insetPolygon(poly: Poly, d: number): Pt[] | null {
-  const p = poly.pts;
-  const n = p.length;
-  if (n < 3) return null;
-  let area = 0;
-  for (let i = 0; i < n; i++) area += p[i].x * p[(i + 1) % n].y - p[(i + 1) % n].x * p[i].y;
-  if (area === 0) return null;
-  const s = area > 0 ? 1 : -1;
-  const inward = (a: Pt, b: Pt): Pt => {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const len = Math.hypot(dx, dy) || 1;
-    return { x: (s * -dy) / len, y: (s * dx) / len };
-  };
-  const out: Pt[] = [];
-  for (let i = 0; i < n; i++) {
-    const prev = p[(i + n - 1) % n];
-    const cur = p[i];
-    const next = p[(i + 1) % n];
-    const n1 = inward(prev, cur);
-    const n2 = inward(cur, next);
-    const k = Math.max(0.3, 1 + n1.x * n2.x + n1.y * n2.y);
-    out.push({ x: cur.x + ((n1.x + n2.x) * d) / k, y: cur.y + ((n1.y + n2.y) * d) / k });
-  }
-  const full = { ...poly, pts: p };
-  if (!out.every((q) => inPoly(q.x, q.y, full))) return null;
-  // A plot thinner than 2*d turns inside-out: all corners still land inside
-  // the plot, but the outline's winding flips. Reject that.
-  let innerArea = 0;
-  for (let i = 0; i < n; i++) innerArea += out[i].x * out[(i + 1) % n].y - out[(i + 1) % n].x * out[i].y;
-  if (innerArea * area <= 0 || Math.abs(innerArea) >= Math.abs(area)) return null;
-  return out;
 }
 
 function distToSegment(x: number, y: number, a: Pt, b: Pt): number {
@@ -171,6 +133,8 @@ export interface Scene {
   ground: { x: number; y: number; w: number; h: number; wall: { x: number; y: number; w: number; h: number } } | null;
   trees: Tree[];
   roads: RoadGeom[];
+  /** Where two different roads meet in an L-corner: a filled circle here closes the outer-corner gap that flat road ends leave. */
+  corners: { x: number; y: number; width: number }[];
   /** Road graph used by the traffic simulation; also supplies the DRAWN (extended/trimmed) road paths. */
   network: Network;
 }
@@ -241,7 +205,7 @@ export function buildScene(
   });
 
   const all: Pt[] = [...blockers.flatMap((b) => b.pts), ...roadGeoms.flatMap((r) => r.path)];
-  if (all.length === 0) return { ground: null, trees: [], roads: [], network };
+  if (all.length === 0) return { ground: null, trees: [], roads: [], corners: [], network };
   const minX = Math.min(...all.map((p) => p.x));
   const maxX = Math.max(...all.map((p) => p.x));
   const minY = Math.min(...all.map((p) => p.y));
@@ -254,6 +218,27 @@ export function buildScene(
     h: maxY - minY + 2 * pad,
     wall: { x: minX - pad * 0.82, y: minY - pad * 0.82, w: maxX - minX + 2 * pad * 0.82, h: maxY - minY + 2 * pad * 0.82 },
   };
+
+  // L-corners: a junction of exactly two edges from DIFFERENT roads that turn
+  // by more than ~25 degrees. Flat road ends always leave a quarter-square
+  // notch on the outside of such a corner (the snap itself works).
+  const corners: { x: number; y: number; width: number }[] = [];
+  for (const nd of network.nodes) {
+    if (nd.edges.length !== 2) continue;
+    const ea = network.edges[nd.edges[0]];
+    const eb = network.edges[nd.edges[1]];
+    if (ea.roadId === eb.roadId) continue;
+    const away = (e: Edge): Pt => {
+      const first = e.a === nd.id;
+      const p0 = first ? e.pts[0] : e.pts[e.pts.length - 1];
+      const p1 = first ? e.pts[1] : e.pts[e.pts.length - 2];
+      const l = Math.hypot(p1.x - p0.x, p1.y - p0.y) || 1;
+      return { x: (p1.x - p0.x) / l, y: (p1.y - p0.y) / l };
+    };
+    const da = away(ea);
+    const db = away(eb);
+    if (da.x * db.x + da.y * db.y > -0.9) corners.push({ x: nd.x, y: nd.y, width: Math.max(ea.width, eb.width) });
+  }
 
   const trees: Tree[] = [];
   const nearRoad = (x: number, y: number, extra: number) => roadGeoms.some((r) => distToPath(x, y, r.path) < r.width / 2 + extra);
@@ -309,6 +294,7 @@ export function buildScene(
     ground,
     trees,
     roads: roadGeoms.map((r) => ({ id: r.id, points: r.points, width: r.width, label: r.label, labelPos: r.labelPos, length: r.length })),
+    corners,
     network,
   };
 }

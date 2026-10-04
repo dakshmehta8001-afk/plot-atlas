@@ -14,6 +14,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { BuildingDrilldown, type BuildingWithFloors } from "@/components/BuildingDrilldown";
 import { MediaPanel } from "@/components/MediaPanel";
 import { AboutPanel } from "@/components/AboutPanel";
+import { ZonesSheet } from "@/components/ZonesSheet";
 import { Compass } from "@/components/Compass";
 import { UnitInfoCard } from "@/components/UnitInfoCard";
 import { PENDING_ENQUIRY_KEY } from "@/lib/useEnquiryFlow";
@@ -71,6 +72,7 @@ export function ProjectMapClient({
   const [zoneColourMode, setZoneColourMode] = useState(false);
   const [selectedZone, setSelectedZone] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<UnitStatus | null>(null);
+  const [zonesOpen, setZonesOpen] = useState(false);
 
   useEffect(() => {
     const intent = searchParams.get("intent");
@@ -181,7 +183,8 @@ export function ProjectMapClient({
             {project.location && <p className="truncate text-[11px] text-white/50">{project.location}</p>}
           </div>
 
-          <div className="mt-2 flex flex-wrap gap-1.5">
+          {/* One scrollable row on a phone (never wraps); wraps normally from sm up. */}
+          <div className="mt-2 flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
             <Pill label="Total" value={counts.total} tone="neutral" />
             <StatusChip label="Available" value={counts.available} tone="green" active={statusFilter === "available"} onClick={() => toggleStatus("available")} />
             <StatusChip label="Hold" value={counts.hold} tone="yellow" active={statusFilter === "hold"} onClick={() => toggleStatus("hold")} />
@@ -190,7 +193,20 @@ export function ProjectMapClient({
           </div>
 
           {(zones.length > 0 || featureKindsPresent.length > 0) && (
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <>
+              {/* Phone: the whole zone area collapses into one button that opens a sheet. */}
+              <div className="mt-2 sm:hidden">
+                <button
+                  type="button"
+                  onClick={() => setZonesOpen(true)}
+                  className="flex items-center gap-1.5 rounded-full border border-white/20 bg-black/20 px-3 py-1.5 text-[12px] font-medium text-white/80"
+                >
+                  Zones
+                  {selectedZone ? <span className="rounded-full bg-blue-500/30 px-1.5 text-[10px] text-blue-200">1</span> : null}
+                  {zoneColourMode ? <span className="text-[10px] text-blue-300">colours on</span> : null}
+                </button>
+              </div>
+              <div className="mt-2 hidden flex-wrap items-center gap-1.5 sm:flex">
               {zones.length > 0 && (
                 <>
                   <label className="mr-0.5 flex items-center gap-1.5 rounded-full bg-black/20 px-2 py-1 text-[10px] text-white/70">
@@ -232,7 +248,8 @@ export function ProjectMapClient({
                   </span>
                 );
               })}
-            </div>
+              </div>
+            </>
           )}
         </div>
       )}
@@ -278,6 +295,7 @@ export function ProjectMapClient({
                 zones={zones}
                 highlightZone={selectedZone}
                 highlightStatus={statusFilter}
+                calibration={project.map_calibration ?? null}
                 onStageChange={setDrilldownStage}
               />
             )}
@@ -308,6 +326,17 @@ export function ProjectMapClient({
           />
         )}
       </div>
+
+      <ZonesSheet
+        open={zonesOpen}
+        onClose={() => setZonesOpen(false)}
+        zones={zones}
+        featureKinds={featureKindsPresent}
+        zoneColourMode={zoneColourMode}
+        onZoneColourMode={setZoneColourMode}
+        selectedZone={selectedZone}
+        onToggleZone={toggleZone}
+      />
     </div>
   );
 }

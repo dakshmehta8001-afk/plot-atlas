@@ -38,3 +38,18 @@ export async function deleteRoad(roadId: string, projectId: string): Promise<Act
   revalidatePath("/projects", "layout");
   return {};
 }
+
+// Sets a road's width label (e.g. "30 ft"). Used by the dashboard road list to
+// fix roads that have no width, so the public map can label them.
+export async function updateRoadWidth(roadId: string, projectId: string, widthLabel: string): Promise<ActionResult> {
+  const label = widthLabel.trim();
+  if (!/\d/.test(label) || label.length > 20) return { error: "Choose a width with a number, like 30 ft." };
+  const supabase = await createClient();
+
+  const { error } = await supabase.from("roads").update({ width_label: label }).eq("id", roadId).eq("project_id", projectId);
+  if (error) return { error: error.message };
+
+  revalidatePath(`/dashboard/projects/${projectId}`);
+  revalidatePath("/projects", "layout");
+  return {};
+}

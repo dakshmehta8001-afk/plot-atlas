@@ -12,6 +12,7 @@ import { ProjectTracerClient } from "@/components/ProjectTracerClient";
 import { PlanImageUpload } from "@/components/PlanImageUpload";
 import { MediaManager } from "@/components/MediaManager";
 import { PublishToggle } from "@/components/PublishToggle";
+import { RoadWidthList } from "@/components/RoadWidthList";
 import { ProjectDetailsForm } from "@/components/ProjectDetailsForm";
 import { StatusBadge, CategoryBadge } from "@/components/StatusBadge";
 import { sortByUnitNumber } from "@/lib/sortUnits";
@@ -76,6 +77,8 @@ export default async function ManageProjectPage(props: PageProps<"/dashboard/pro
       ) : (
         <PlanImageUpload projectId={id} />
       )}
+
+      <RoadWidthList projectId={id} roads={typedRoads} />
 
       {typedBuildings.length > 0 && (
         <div className="mt-8">

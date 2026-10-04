@@ -17,7 +17,7 @@
 // "Back" steps out one stage at a time; leaving floor-view or floor-select
 // resets SitePlanViewer's zoom back to the full site via `resetSignal`.
 import { useEffect, useState } from "react";
-import type { Building, Floor, Road, SiteFeature, Unit, UnitStatus } from "@/lib/types";
+import type { Building, Floor, MapCalibration, Road, SiteFeature, Unit, UnitStatus } from "@/lib/types";
 import { floorLabel, sortFloors } from "@/lib/types";
 import { SitePlanViewer } from "@/components/SitePlanViewer";
 import { FloorPlanViewer } from "@/components/FloorPlanViewer";
@@ -44,6 +44,7 @@ export function BuildingDrilldown({
   zones = [],
   highlightZone = null,
   highlightStatus = null,
+  calibration = null,
   onStageChange,
 }: {
   planImageUrl: string;
@@ -58,6 +59,8 @@ export function BuildingDrilldown({
   zones?: string[];
   highlightZone?: string | null;
   highlightStatus?: UnitStatus | null;
+  /** The project's map scale, used to work out a road's width when its label has no number. */
+  calibration?: MapCalibration | null;
   /** Lets the parent (ProjectMapClient) hide its own site-level header/stats/
    * legend overlay once we're inside a building — otherwise that chrome
    * visually collides with this component's own back-buttons/breadcrumb. */
@@ -118,6 +121,7 @@ export function BuildingDrilldown({
             zones={zones}
             highlightZone={highlightZone}
             highlightStatus={highlightStatus}
+            calibration={calibration}
             resetSignal={resetSignal}
           />
         </div>

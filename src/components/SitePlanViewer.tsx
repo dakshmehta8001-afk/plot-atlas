@@ -28,13 +28,14 @@
 // "status", the camera would still fly to the zone correctly, just without
 // the visual dim/highlight — worth re-checking this comment's assumption
 // then.
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   MAP_VIEWBOX_SIZE,
   SITE_FEATURE_STYLES,
   UNIT_STATUS_STYLES,
   zoneColorFor,
   type Building,
+  type MapCalibration,
   type Road,
   type SiteFeature,
   type Unit,
@@ -42,7 +43,9 @@ import {
 } from "@/lib/types";
 import { useImageAspectRatio } from "@/lib/useImageAspectRatio";
 import { toScaledSvgPoints, scaledBoundingBoxCenter } from "@/lib/svgPolygon";
-import { buildScene, insetPolygon, toPoly } from "@/lib/mapScenery";
+import { buildScene } from "@/lib/mapScenery";
+import { roadLabelText } from "@/lib/roadWidth";
+import { feetPerUnit } from "@/lib/calibration";
 import { EDGE_INSET, EDGE_LINE, roadMetrics } from "@/lib/mapTraffic";
 import { MapTraffic } from "@/components/MapTraffic";
 import { clientPointToLocalFraction } from "@/lib/svgCoords";
@@ -64,17 +67,6 @@ function revealDelay(index: number): number {
 // is a browsing aid over finished artwork, not a precision tracing tool.
 const MAX_FREE_ZOOM = 6;
 export const BUILDING_ZOOM_TRANSITION_MS = 650;
-// Level-of-detail threshold: plot number labels and zone-accent dots stay
-// hidden below this free-roam zoom scale (keeps the low-zoom overview
-// clean, per the "avoid clutter" goal), and always show once a plot/
-// building is actually selected (effective scale = ZOOM_SCALE, always
-// "zoomed in enough"). Deliberately a boolean crossing point, not a
-// continuous prop, passed down to MapShapes — React.memo only skips a
-// re-render when a prop's VALUE is unchanged, and a boolean only changes
-// when the threshold is actually crossed, not on every intermediate zoom
-// tick, so this doesn't reintroduce the per-frame re-render cost the
-// MapShapes extraction was built to avoid.
-const LOD_LABEL_SCALE_THRESHOLD = 2;
 
 // Zone fly-in: how much extra margin to leave around a zone's own bounding
 // box when fitting the camera to it, as a fraction of the box's own
@@ -158,6 +150,17 @@ function SceneryDefs() {
         <stop offset="0" stopColor="#8fcf8a" />
         <stop offset="1" stopColor="#6fb26f" />
       </linearGradient>
+      {/* Zone mode: sold / booked / hold plots get diagonal stripes in their
+          status colour over the zone fill, so sale status stays readable. */}
+      <pattern id="sp-stripe-sold" patternUnits="userSpaceOnUse" width="14" height="14" patternTransform="rotate(45)">
+        <rect width="6" height="14" fill="#ef4444" opacity="0.9" />
+      </pattern>
+      <pattern id="sp-stripe-booked" patternUnits="userSpaceOnUse" width="14" height="14" patternTransform="rotate(45)">
+        <rect width="6" height="14" fill="#3b82f6" opacity="0.9" />
+      </pattern>
+      <pattern id="sp-stripe-hold" patternUnits="userSpaceOnUse" width="14" height="14" patternTransform="rotate(45)">
+        <rect width="6" height="14" fill="#facc15" opacity="0.9" />
+      </pattern>
       <g id="sp-tree-a">
         <circle cx="1.5" cy="2.5" r="10" fill="#000" opacity="0.22" />
         <circle r="10" fill="#2f7a3f" />
@@ -199,6 +202,20 @@ function SceneryDefs() {
         <rect x="4.5" y="-10.4" width="3" height="2" rx="0.8" fill="#222" />
         <rect x="4.5" y="8.4" width="3" height="2" rx="0.8" fill="#222" />
       </g>
+      {/* Top-down scooter with a rider, nose pointing +x. 16 long = 40% of the
+          car sprite. Body colour comes from the <use>'s `color`. */}
+      <g id="sp-bike">
+        <ellipse cx="0.5" cy="1" rx="8.6" ry="4.4" fill="#000" opacity="0.28" />
+        <rect x="-8" y="-1" width="5" height="2" rx="1" fill="#111" />
+        <rect x="3.2" y="-1" width="5" height="2" rx="1" fill="#111" />
+        <rect x="-6.4" y="-2.3" width="11.4" height="4.6" rx="2.2" fill="currentColor" stroke="#000" strokeOpacity="0.4" strokeWidth="0.5" />
+        <path d="M3.6,-3.9 L3.6,3.9" stroke="#222" strokeWidth="1" strokeLinecap="round" />
+        <path d="M-0.4,-2.4 L3.6,-3.5 M-0.4,2.4 L3.6,3.5" stroke="#374151" strokeWidth="1.3" strokeLinecap="round" />
+        <ellipse cx="-1" cy="0" rx="2" ry="3.5" fill="#374151" stroke="#000" strokeOpacity="0.35" strokeWidth="0.4" />
+        <circle cx="0.4" cy="0" r="1.9" fill="#f8fafc" stroke="#000" strokeOpacity="0.4" strokeWidth="0.4" />
+        <rect x="7.4" y="-1.2" width="0.9" height="2.4" rx="0.4" fill="#fff6c8" />
+        <rect x="-8.3" y="-1" width="0.8" height="2" rx="0.4" fill="#ff3b30" />
+      </g>
       {/* Top-down walker facing +x: shoulders, arms, head, hair. */}
       <g id="sp-walker">
         <ellipse cx="0.5" cy="1.2" rx="5" ry="8.2" fill="#000" opacity="0.25" />
@@ -237,7 +254,7 @@ const MapShapes = memo(function MapShapes({
   highlightZone,
   highlightStatus,
   selectedId,
-  showLabels,
+  ftPerUnit,
   onPlotClick,
   onBuildingClick,
   onPlotHover,
@@ -255,8 +272,8 @@ const MapShapes = memo(function MapShapes({
   /** The currently zoomed-in plot/building id, if any — drives the
    * "selected plot glows, everything else dims" focus effect. */
   selectedId: string | null;
-  /** Level-of-detail gate for plot number labels and zone-accent dots. */
-  showLabels: boolean;
+  /** Feet per map unit from the project's scale, or null when it has none (used to work out a road's width label). */
+  ftPerUnit: number | null;
   onPlotClick: (unit: Unit) => void;
   onBuildingClick: (building: Building) => void;
   onPlotHover: (unit: Unit, e: React.MouseEvent) => void;
@@ -269,14 +286,15 @@ const MapShapes = memo(function MapShapes({
     [roads, plots, buildings, features, vbHeight],
   );
   const plotGeoms = useMemo(() => {
-    const map = new Map<string, { points: string; center: { x: number; y: number }; inner: string | null }>();
+    const map = new Map<string, { points: string; center: { x: number; y: number }; minDim: number }>();
     for (const unit of plots) {
       if (unit.polygon_points.length < 3) continue;
-      const inner = insetPolygon(toPoly(unit.polygon_points, VB, vbHeight), VB * 0.006);
+      const xs = unit.polygon_points.map((p) => p.x * VB);
+      const ys = unit.polygon_points.map((p) => p.y * vbHeight);
       map.set(unit.id, {
         points: toScaledSvgPoints(unit.polygon_points, VB, vbHeight),
         center: scaledBoundingBoxCenter(unit.polygon_points, VB, vbHeight),
-        inner: inner ? inner.map((q) => `${q.x},${q.y}`).join(" ") : null,
+        minDim: Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)),
       });
     }
     return map;
@@ -345,14 +363,26 @@ const MapShapes = memo(function MapShapes({
         {scene.roads.map((r) => (
           <polyline key={`rim-${r.id}`} points={r.points} fill="none" stroke={ROAD_COLOR} strokeWidth={r.width} strokeLinejoin="round" />
         ))}
+        {scene.corners.map((c, i) => (
+          <circle key={`rimc-${i}`} cx={c.x} cy={c.y} r={c.width / 2} fill={ROAD_COLOR} />
+        ))}
         {scene.roads.map((r) => (
           <polyline key={`edge-${r.id}`} points={r.points} fill="none" stroke="#f1f3f5" strokeWidth={Math.max(1, r.width - 2 * EDGE_INSET)} strokeLinejoin="round" />
+        ))}
+        {scene.corners.map((c, i) => (
+          <circle key={`edgec-${i}`} cx={c.x} cy={c.y} r={Math.max(0.5, (c.width - 2 * EDGE_INSET) / 2)} fill="#f1f3f5" />
         ))}
         {scene.roads.map((r) => (
           <polyline key={`pave-${r.id}`} points={r.points} fill="none" stroke={PAVEMENT_COLOR} strokeWidth={Math.max(1, r.width - 2 * (EDGE_INSET + EDGE_LINE))} strokeLinejoin="round" />
         ))}
+        {scene.corners.map((c, i) => (
+          <circle key={`pavec-${i}`} cx={c.x} cy={c.y} r={Math.max(0.5, (c.width - 2 * (EDGE_INSET + EDGE_LINE)) / 2)} fill={PAVEMENT_COLOR} />
+        ))}
         {scene.roads.map((r) => (
           <polyline key={`lane-${r.id}`} points={r.points} fill="none" stroke={ROAD_COLOR} strokeWidth={roadMetrics(r.width).carriageway} strokeLinejoin="round" />
+        ))}
+        {scene.corners.map((c, i) => (
+          <circle key={`lanec-${i}`} cx={c.x} cy={c.y} r={roadMetrics(c.width).carriageway / 2} fill={ROAD_COLOR} />
         ))}
         {scene.roads.map((r) => (
           <polyline
@@ -378,8 +408,6 @@ const MapShapes = memo(function MapShapes({
         const geom = plotGeoms.get(unit.id);
         if (!geom) return null;
         const style = plotStyle(unit);
-        const center = geom.center;
-        const zoneColor = unit.category ? zoneColorFor(unit.category, zones) : null;
         return (
           <g key={unit.id}>
             <polygon
@@ -439,37 +467,18 @@ const MapShapes = memo(function MapShapes({
               onMouseMove={(e) => onPlotHover(unit, e)}
               onMouseLeave={() => onPlotHoverEnd(unit.id)}
             />
-            {/* Zone/category accent: a thin border just inside the plot, in the
-                zone's colour, so Premium/Corner/Standard stays identifiable
-                while plots are coloured by sale status. (Replaces the old
-                corner dot.) Skipped in zone-colour mode, where the whole
-                fill already IS the zone colour. */}
-            {zoneColor && geom.inner && colorMode === "status" && (
+            {/* Zone mode only: sold / booked / hold plots get diagonal stripes
+                over the zone colour so sale status stays readable. In status
+                mode (Zone off) plots are plain status colours with no zone
+                borders. Plot numbers are drawn in the labels layer at the end. */}
+            {colorMode === "zone" && (unit.status === "sold" || unit.status === "booked" || unit.status === "hold") && (
               <polygon
-                points={geom.inner}
-                fill="none"
-                stroke={zoneColor}
-                strokeWidth={VB * 0.0028}
-                strokeLinejoin="round"
+                points={geom.points}
+                fill={`url(#sp-stripe-${unit.status})`}
                 className="pointer-events-none"
                 style={{ opacity: style.opacity }}
               />
             )}
-            <text
-              x={center.x}
-              y={center.y}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fontSize={VB * 0.013}
-              fill="#ffffff"
-              stroke="#0b1f2e"
-              strokeWidth={VB * 0.005}
-              paintOrder="stroke"
-              className="pointer-events-none select-none font-semibold"
-              style={{ opacity: showLabels ? style.opacity : 0, transition: "opacity 300ms ease" }}
-            >
-              {unit.unit_number}
-            </text>
           </g>
         );
       })}
@@ -559,18 +568,57 @@ const MapShapes = memo(function MapShapes({
         );
       })}
 
-      {/* Road width labels, drawn last so nothing covers them. Cars keep left
-          in BOTH directions, so both lanes carry traffic — the label sits on
-          the pavement strip at the road's edge, on the road's longest stretch
-          (away from junctions), rotated along the road. */}
+      {/* Labels, drawn last so nothing covers them (plots, cars, walkers). Both
+          kinds keep a CONSTANT on-screen size at every zoom: the SVG carries a
+          CSS variable --k (screen pixels per map unit, set from
+          SitePlanViewer on zoom and resize), and each label scales itself by
+          1/--k, so 11 in a label's own units is always 11 screen pixels. Pure
+          CSS, so zooming never re-renders these shapes. */}
+      <g className="pointer-events-none">
+        {plots.map((unit) => {
+          const geom = plotGeoms.get(unit.id);
+          if (!geom || !unit.unit_number) return null;
+          const style = plotStyle(unit);
+          // A plot number fades out only if its plot is smaller than ~14 px
+          // on screen, so tiny plots never pile numbers on top of each other.
+          const css = {
+            transform: `translate(${geom.center.x}px, ${geom.center.y}px) scale(calc(1 / var(--k, 0.4)))`,
+            opacity: `calc(${style.opacity} * clamp(0, calc((var(--k, 0.4) * ${geom.minDim.toFixed(1)} - 12) / 6), 1))`,
+            transition: "opacity 300ms ease",
+          } as React.CSSProperties;
+          return (
+            <g key={`num-${unit.id}`} style={css}>
+              <text
+                textAnchor="middle"
+                dominantBaseline="central"
+                fontSize={11}
+                fontWeight={800}
+                fill="#ffffff"
+                stroke="#0b1f2e"
+                strokeWidth={3}
+                paintOrder="stroke"
+                className="select-none"
+              >
+                {unit.unit_number}
+              </text>
+            </g>
+          );
+        })}
+      </g>
+
       <g className="pointer-events-none" style={{ opacity: selectedId !== null ? 0.4 : 1, transition: "opacity 300ms ease" }}>
         {scene.roads.map((r) => {
-          const w = r.label.length * 5.6 + 10;
+          const text = roadLabelText(r.label, r.width, ftPerUnit);
+          if (!text) return null;
+          const w = text.length * 6.6 + 12;
+          const css = {
+            transform: `translate(${r.labelPos.x}px, ${r.labelPos.y}px) rotate(${r.labelPos.angle}deg) scale(calc(1 / var(--k, 0.4)))`,
+          } as React.CSSProperties;
           return (
-            <g key={`label-${r.id}`} transform={`translate(${r.labelPos.x} ${r.labelPos.y}) rotate(${r.labelPos.angle})`}>
-              <rect x={-w / 2} y={-6} width={w} height={12} rx={3} fill="#1f2430" fillOpacity={0.88} stroke="#f1f3f5" strokeOpacity={0.55} strokeWidth={0.8} />
-              <text textAnchor="middle" dominantBaseline="central" fontSize={9.5} fill="#f1f5f9" className="select-none font-medium">
-                {r.label}
+            <g key={`label-${r.id}`} style={css}>
+              <rect x={-w / 2} y={-9} width={w} height={18} rx={5} fill="#111827" fillOpacity={0.92} stroke="#ffffff" strokeOpacity={0.6} strokeWidth={1} />
+              <text textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={800} fill="#ffffff" className="select-none">
+                {text}
               </text>
             </g>
           );
@@ -592,6 +640,7 @@ export function SitePlanViewer({
   zones = [],
   highlightZone = null,
   highlightStatus = null,
+  calibration = null,
   resetSignal,
 }: {
   planImageUrl: string;
@@ -608,6 +657,8 @@ export function SitePlanViewer({
    * colorMode, so the status filter works whether plots are colored by
    * status or by zone. */
   highlightStatus?: UnitStatus | null;
+  /** The project's map scale; lets road labels show a real width when a road has no number saved. */
+  calibration?: MapCalibration | null;
   /** Bump this (e.g. with Date.now()) to force the view back to the full site, e.g. when the parent returns from a floor view. */
   resetSignal?: number;
 }) {
@@ -883,6 +934,38 @@ export function SitePlanViewer({
     return "translate(0px, 0px) scale(1)";
   }, [zoomedShapePoints, vbHeight, zoneTransform]);
 
+  // Screen pixels per map unit, including free-roam zoom and the scripted
+  // zoom into a plot/zone. Written to the SVG as the CSS variable --k so the
+  // constant-size labels can scale themselves (see the labels layer in
+  // MapShapes). Only a style property changes — nothing re-renders.
+  const svgRef = useRef<SVGSVGElement>(null);
+  const pxPerUnit = useRef(0.4);
+  const scriptedScale = useMemo(() => Number(/scale\(([\d.]+)\)/.exec(transform)?.[1] ?? 1), [transform]);
+  const applyK = useCallback(() => {
+    svgRef.current?.style.setProperty("--k", String(pxPerUnit.current * view.scale * scriptedScale));
+  }, [view.scale, scriptedScale]);
+  useLayoutEffect(() => {
+    applyK();
+  }, [applyK]);
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const r = svg.getBoundingClientRect();
+      pxPerUnit.current = Math.min(r.width / VB, r.height / vbHeight) || 0.4;
+      applyK();
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(svg);
+    return () => ro.disconnect();
+  }, [applyK, vbHeight]);
+
+  const ftPerUnit = useMemo(
+    () => (calibration ? feetPerUnit(calibration.pointA, calibration.pointB, calibration.realDistanceFt, VB, vbHeight) : null),
+    [calibration, vbHeight],
+  );
+
   const handlePlotClick = useCallback(
     (unit: Unit) => {
       setZoomedId(unit.id);
@@ -924,6 +1007,7 @@ export function SitePlanViewer({
           preserveAspectRatio regardless of the box's own shape. */}
       <div className="h-full w-full overflow-hidden">
         <svg
+          ref={svgRef}
           viewBox={`0 0 ${VB} ${vbHeight}`}
           className="h-full w-full bg-[#0b1f2e]"
           style={{ cursor: zoomedId ? "default" : "grab", touchAction: zoomedId ? "auto" : "none" }}
@@ -971,15 +1055,7 @@ export function SitePlanViewer({
               highlightZone={highlightZone}
               highlightStatus={highlightStatus}
               selectedId={zoomedId}
-              // Also show labels once a zone fly-in has happened, even
-              // though `view` (the free-roam layer) itself resets to
-              // identity scale on every zone change (see the effect
-              // above) — without this, flying into a zone would still
-              // hide plot numbers until the viewer ALSO manually
-              // wheel/pinch-zoomed past the LOD threshold, defeating the
-              // point of "Zone context → click Building/Plot" needing to
-              // actually read the plot numbers to pick one.
-              showLabels={zoomedId !== null || zoneTransform !== null || view.scale >= LOD_LABEL_SCALE_THRESHOLD}
+ftPerUnit={ftPerUnit}
               onPlotClick={handlePlotClick}
               onBuildingClick={handleBuildingClick}
               onPlotHover={updateHoverPosition}
