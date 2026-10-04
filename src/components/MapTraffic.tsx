@@ -88,16 +88,7 @@ export const MapTraffic = memo(function MapTraffic({ network, seedKey }: { netwo
   useEffect(() => {
     const group = groupRef.current;
     if (!group) return;
-    if (reduced) {
-      // Frozen: cars and walkers stay parked at their starting spots. The
-      // walkers are still drawn at least MIN_WALKER_PX wide, once, using the
-      // current zoom (so they are not left tiny on a phone).
-      const id = requestAnimationFrame(() => {
-        const k = Number(group.ownerSVGElement?.style.getPropertyValue("--k")) || 0.4;
-        startWalkers.forEach((w, i) => walkerEls.current[i]?.setAttribute("transform", transformOf(w, MIN_WALKER_PX / (WALKER_BASE_WIDTH * k))));
-      });
-      return () => cancelAnimationFrame(id);
-    }
+
     const sim = createSim(network, { seed });
     let walkerCount = walkerCountFor(network);
     let walkers = makeWalkers(network, seed, walkerCount, sim);
@@ -109,7 +100,7 @@ export const MapTraffic = memo(function MapTraffic({ network, seedKey }: { netwo
     let last = 0;
     let running = false;
     let onScreen = true;
-    let tabVisible = !document.hidden;
+    let tabVisible = true;
     let avg = 1 / 60;
     let sinceCheck = 0;
 
@@ -175,27 +166,11 @@ export const MapTraffic = memo(function MapTraffic({ network, seedKey }: { netwo
       }
     };
 
-    const onVisibility = () => {
-      tabVisible = !document.hidden;
-      update();
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-
-    let observer: IntersectionObserver | null = null;
-    if (svg && typeof IntersectionObserver !== "undefined") {
-      observer = new IntersectionObserver((entries) => {
-        onScreen = entries.some((e) => e.isIntersecting);
-        update();
-      });
-      observer.observe(svg);
-    }
     update();
 
     return () => {
       running = false;
       cancelAnimationFrame(raf);
-      document.removeEventListener("visibilitychange", onVisibility);
-      observer?.disconnect();
     };
   }, [network, seed, reduced, startWalkers]);
 
