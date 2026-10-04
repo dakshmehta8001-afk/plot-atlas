@@ -8,11 +8,16 @@
 // its natural width/height, so the caller can size its container to match.
 import { useEffect, useState } from "react";
 
-export function useImageAspectRatio(src: string | null | undefined): number {
-  const [ratio, setRatio] = useState(16 / 9);
+// `known` is the image's stored pixel size (from the project row). With it the
+// very first render already has the right shape; without it (older rows, or an
+// unreadable file) the hook guesses 16:9 until the browser has loaded the image.
+export function useImageAspectRatio(src: string | null | undefined, known?: { width?: number | null; height?: number | null }): number {
+  const knownRatio = known?.width && known?.height ? known.width / known.height : null;
+  const [ratio, setRatio] = useState(knownRatio ?? 16 / 9);
 
   useEffect(() => {
-    if (!src) return;
+    // Stored size available: nothing to measure.
+    if (knownRatio || !src) return;
     const img = new Image();
     img.onload = () => {
       if (img.naturalWidth && img.naturalHeight) {
@@ -20,7 +25,7 @@ export function useImageAspectRatio(src: string | null | undefined): number {
       }
     };
     img.src = src;
-  }, [src]);
+  }, [src, knownRatio]);
 
-  return ratio;
+  return knownRatio ?? ratio;
 }

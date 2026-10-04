@@ -15,7 +15,6 @@ import { BuildingDrilldown, type BuildingWithFloors } from "@/components/Buildin
 import { MediaPanel } from "@/components/MediaPanel";
 import { AboutPanel } from "@/components/AboutPanel";
 import { ZonesSheet } from "@/components/ZonesSheet";
-import { Compass } from "@/components/Compass";
 import { UnitInfoCard } from "@/components/UnitInfoCard";
 import { PENDING_ENQUIRY_KEY } from "@/lib/useEnquiryFlow";
 import { createLead } from "@/lib/actions/leads";
@@ -264,8 +263,6 @@ export function ProjectMapClient({
           below the sm breakpoint. */}
       <div className="relative flex min-h-0 flex-1">
         <div className="relative min-w-0 flex-1">
-          {showMapChrome && <Compass angleDegrees={project.map_calibration?.northAngleDegrees} />}
-
           {autoSentNotice && (
             <p className="absolute bottom-16 left-1/2 z-[700] -translate-x-1/2 rounded-md bg-green-500/15 px-3 py-1.5 text-xs text-green-300">
               {autoSentNotice}
@@ -284,6 +281,7 @@ export function ProjectMapClient({
             ) : (
               <BuildingDrilldown
                 planImageUrl={project.plan_image_url}
+                planImageSize={{ width: project.plan_image_width, height: project.plan_image_height }}
                 plots={plots}
                 buildings={buildings}
                 roads={roads}

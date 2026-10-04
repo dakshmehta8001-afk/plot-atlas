@@ -327,6 +327,33 @@ export function connectRoads(roads: RoadIn[]): Network {
       return e.len >= Math.max(60, other.radius * 1.3);
     });
   }
+  // Also cut the stub off the DRAWN road. A road that runs on past a junction
+  // leaves a square-ended piece sticking out beyond the corner; trimming it to
+  // the junction lets the rounded corner fillet cover the outside of the bend
+  // instead. (The junction's own asphalt still covers the cut end.)
+  for (const e of edges) {
+    if (kept.includes(e)) continue;
+    const P = paths.get(e.roadId);
+    if (!P || P.length < 2) continue;
+    const used = (n: number) => kept.some((k) => k.a === n || k.b === n);
+    const ends: [number, number][] = [[e.a, e.b], [e.b, e.a]]; // [dead end, junction]
+    for (const [dead, junction] of ends) {
+      if (used(dead) || !used(junction)) continue;
+      const jn = nodes[junction];
+      const cumP = cumulative(P);
+      const sJ = nearestOnPath(P, jn).s;
+      const atEnd = Math.hypot(P[P.length - 1].x - nodes[dead].x, P[P.length - 1].y - nodes[dead].y) <= MERGE_TOL + 5;
+      const atStart = Math.hypot(P[0].x - nodes[dead].x, P[0].y - nodes[dead].y) <= MERGE_TOL + 5;
+      if (atEnd && sJ < cumP[cumP.length - 1] - 1) {
+        const keep = P.filter((_, i) => cumP[i] < sJ - 1);
+        paths.set(e.roadId, [...keep, { x: jn.x, y: jn.y }]);
+      } else if (atStart && sJ > 1) {
+        const keep = P.filter((_, i) => cumP[i] > sJ + 1);
+        paths.set(e.roadId, [{ x: jn.x, y: jn.y }, ...keep]);
+      }
+      break;
+    }
+  }
   kept.forEach((e, i) => {
     e.id = i;
   });

@@ -54,6 +54,9 @@ export interface Project {
   description: string | null;
   developer_name: string | null;
   plan_image_url: string | null;
+  /** Pixel size of the plan image, stored at upload so the map has the right shape from the first render. Null until known. */
+  plan_image_width: number | null;
+  plan_image_height: number | null;
   map_bounds: MapBounds | null;
   map_calibration: MapCalibration | null;
   status: ProjectStatus;

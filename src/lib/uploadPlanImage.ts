@@ -5,6 +5,7 @@
 // (not the generated Database type) since none of the three callers share
 // a more specific type either.
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { readImageSize } from "@/lib/imageSize";
 import { isPdf, renderPdfFirstPageToPng } from "@/lib/pdfToImage";
 
 export async function uploadPlanImageFile(
@@ -12,7 +13,7 @@ export async function uploadPlanImageFile(
   supabase: SupabaseClient<any>,
   userId: string,
   file: File,
-): Promise<{ url?: string; error?: string }> {
+): Promise<{ url?: string; width?: number; height?: number; error?: string }> {
   let bytes: Uint8Array = new Uint8Array(await file.arrayBuffer());
   let contentType = file.type;
   let filename = file.name;
@@ -35,5 +36,7 @@ export async function uploadPlanImageFile(
   if (uploadError) return { error: uploadError.message };
 
   const { data: publicUrl } = supabase.storage.from("plan-images").getPublicUrl(path);
-  return { url: publicUrl.publicUrl };
+  // The pixel size, read from the file itself, so callers can store it.
+  const size = readImageSize(bytes);
+  return { url: publicUrl.publicUrl, width: size?.width, height: size?.height };
 }

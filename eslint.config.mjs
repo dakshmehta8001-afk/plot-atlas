@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Not source code: static assets, test images, SQL and build info.
+    "public/**",
+    "test-fixtures/**",
+    "supabase/**",
+    "*.tsbuildinfo",
   ]),
 ]);
 

@@ -43,10 +43,14 @@ export async function createProject(formData: FormData): Promise<ActionResult> {
   const slug = `${slugify(name)}-${Math.random().toString(36).slice(2, 7)}`;
 
   let planImageUrl: string | null = null;
+  let planImageWidth: number | null = null;
+  let planImageHeight: number | null = null;
   if (planImage instanceof File && planImage.size > 0) {
     const result = await uploadPlanImageFile(supabase, user.id, planImage);
     if (result.error) return { error: `Plan image upload failed: ${result.error}` };
     planImageUrl = result.url!;
+    planImageWidth = result.width ?? null;
+    planImageHeight = result.height ?? null;
   }
 
   const { data: project, error } = await supabase
@@ -59,6 +63,8 @@ export async function createProject(formData: FormData): Promise<ActionResult> {
       location,
       developer_name: developerName,
       plan_image_url: planImageUrl,
+      plan_image_width: planImageWidth,
+      plan_image_height: planImageHeight,
     })
     .select("id")
     .single();
@@ -176,7 +182,9 @@ export async function uploadPlanImage(projectId: string, file: File): Promise<Ac
 
   const { error } = await supabase
     .from("projects")
-    .update({ plan_image_url: result.url })
+    // A replaced image gets its new size too (null if it could not be read:
+    // the map then falls back to measuring the image in the browser).
+    .update({ plan_image_url: result.url, plan_image_width: result.width ?? null, plan_image_height: result.height ?? null })
     .eq("id", projectId);
   if (error) return { error: error.message };
 

@@ -43,6 +43,7 @@ import {
 } from "@/lib/types";
 import { useImageAspectRatio } from "@/lib/useImageAspectRatio";
 import { toScaledSvgPoints, scaledBoundingBoxCenter } from "@/lib/svgPolygon";
+import { Compass } from "@/components/Compass";
 import { buildScene } from "@/lib/mapScenery";
 import { roadLabelText } from "@/lib/roadWidth";
 import { feetPerUnit } from "@/lib/calibration";
@@ -700,6 +701,7 @@ const MapShapes = memo(function MapShapes({
 
 export function SitePlanViewer({
   planImageUrl,
+  planImageSize,
   plots,
   buildings,
   roads = [],
@@ -714,6 +716,8 @@ export function SitePlanViewer({
   resetSignal,
 }: {
   planImageUrl: string;
+  /** Stored pixel size of the plan image, so the map has its real shape from the first render. */
+  planImageSize?: { width?: number | null; height?: number | null };
   plots: Unit[];
   buildings: Building[];
   roads?: Road[];
@@ -733,7 +737,7 @@ export function SitePlanViewer({
   resetSignal?: number;
 }) {
   const [zoomedId, setZoomedId] = useState<string | null>(null);
-  const aspectRatio = useImageAspectRatio(planImageUrl);
+  const aspectRatio = useImageAspectRatio(planImageUrl, planImageSize);
   // The viewBox's own height, derived from the plan image's real aspect
   // ratio — keeping width fixed at VB (1000) and deriving height this way,
   // combined with the SVG's default preserveAspectRatio ("xMidYMid meet"
@@ -771,8 +775,8 @@ export function SitePlanViewer({
     const cw = Math.max(...xs) + margin - cx0;
     const ch = Math.max(...ys) + margin - cy0;
     if (!mapSize || mapSize.w < 50 || mapSize.h < 50) return { x: cx0, y: cy0, w: cw, h: ch };
-    // The overlays sit in the bottom-right corner: three 44px buttons with 6px
-    // gaps, 12px from the edge (156px tall). On a phone the Media/About bar
+    // The overlays sit in the bottom-right corner: the compass and three 44px
+    // buttons with 6px gaps, 12px from the edge (206px tall). On a phone the Media/About bar
     // runs along the bottom, but it is shorter than that stack, so reserving
     // the stack's height at the bottom clears both. On wide screens the stack
     // is a small corner, so only a strip on the right is reserved.
@@ -780,7 +784,7 @@ export function SitePlanViewer({
     const padL = 8;
     const padT = 8;
     const padR = phone ? 8 : 8 + 52;
-    const padB = phone ? 8 + 156 : 8;
+    const padB = phone ? 8 + 206 : 8;
     const s = Math.min((mapSize.w - padL - padR) / cw, (mapSize.h - padT - padB) / ch);
     const freeCx = (padL + mapSize.w - padR) / 2;
     const freeCy = (padT + mapSize.h - padB) / 2;
@@ -1192,6 +1196,7 @@ ftPerUnit={ftPerUnit}
 
       {!zoomedId && (
         <div className="absolute bottom-3 right-3 z-10 flex flex-col gap-1.5">
+          <Compass inline angleDegrees={calibration?.northAngleDegrees} />
           <button
             type="button"
             onClick={() => zoomBy(1.3)}

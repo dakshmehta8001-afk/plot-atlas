@@ -33,6 +33,7 @@ type Stage =
 
 export function BuildingDrilldown({
   planImageUrl,
+  planImageSize,
   plots,
   buildings,
   roads = [],
@@ -48,6 +49,8 @@ export function BuildingDrilldown({
   onStageChange,
 }: {
   planImageUrl: string;
+  /** Stored pixel size of the plan image, if known. */
+  planImageSize?: { width?: number | null; height?: number | null };
   plots: Unit[];
   buildings: BuildingWithFloors[];
   roads?: Road[];
@@ -108,6 +111,7 @@ export function BuildingDrilldown({
         >
           <SitePlanViewer
             planImageUrl={planImageUrl}
+            planImageSize={planImageSize}
             plots={plots}
             buildings={buildings}
             roads={roads}
