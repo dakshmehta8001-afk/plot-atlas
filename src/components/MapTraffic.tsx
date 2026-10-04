@@ -86,9 +86,18 @@ export const MapTraffic = memo(function MapTraffic({ network, seedKey }: { netwo
   const walkerEls = useRef<(SVGGElement | null)[]>([]);
 
   useEffect(() => {
-    if (reduced) return; // frozen: cars and walkers stay parked at their starting spots
     const group = groupRef.current;
     if (!group) return;
+    if (reduced) {
+      // Frozen: cars and walkers stay parked at their starting spots. The
+      // walkers are still drawn at least MIN_WALKER_PX wide, once, using the
+      // current zoom (so they are not left tiny on a phone).
+      const id = requestAnimationFrame(() => {
+        const k = Number(group.ownerSVGElement?.style.getPropertyValue("--k")) || 0.4;
+        startWalkers.forEach((w, i) => walkerEls.current[i]?.setAttribute("transform", transformOf(w, MIN_WALKER_PX / (WALKER_BASE_WIDTH * k))));
+      });
+      return () => cancelAnimationFrame(id);
+    }
     const sim = createSim(network, { seed });
     let walkerCount = walkerCountFor(network);
     let walkers = makeWalkers(network, seed, walkerCount, sim);
@@ -187,7 +196,7 @@ export const MapTraffic = memo(function MapTraffic({ network, seedKey }: { netwo
       document.removeEventListener("visibilitychange", onVisibility);
       observer?.disconnect();
     };
-  }, [network, seed, reduced]);
+  }, [network, seed, reduced, startWalkers]);
 
   return (
     <g ref={groupRef} className="pointer-events-none">
