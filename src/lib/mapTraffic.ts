@@ -680,6 +680,12 @@ export function createSim(net: Network, opts: SimOptions): Sim {
     }
   }
 
+  // With a gate, start two vehicles short so the first arrival drives in
+  // within a few seconds instead of waiting for someone to leave first.
+  if (net.gate && sim.cars.length > 3) {
+    for (let i = 0; i < 2; i++) sim.cars[sim.cars.length - 1 - i].active = false;
+    sim.entryIn = 3 + rng() * 3;
+  }
   return sim;
 }
 
@@ -827,7 +833,7 @@ function stepGate(sim: Sim, dt: number) {
       slot.v = slot.vDes * 0.5;
       slot.active = true;
       poseCar(sim, slot);
-      sim.entryIn = 22 + sim.rng() * 20;
+      sim.entryIn = 14 + sim.rng() * 14;
     }
   }
 
@@ -837,7 +843,7 @@ function stepGate(sim: Sim, dt: number) {
     const ready = inside.filter((c) => !c.leaving && !c.curve && c.holding === null && c.edge !== gate.edge);
     if (inside.length >= 3 && ready.length > 0) {
       ready[Math.floor(sim.rng() * ready.length)].leaving = true;
-      sim.exitIn = 24 + sim.rng() * 20;
+      sim.exitIn = 16 + sim.rng() * 14;
     }
   }
 }

@@ -121,6 +121,7 @@ export const MapTraffic = memo(function MapTraffic({ network, seedKey }: { netwo
           if (el.style.display !== "none") el.style.display = "none";
           continue;
         }
+        if (el.style.display === "none") el.style.display = ""; // a vehicle that drove in through the gate
         el.setAttribute("transform", transformOf(c));
       }
       const minScale = minWalkerScale();
@@ -207,6 +208,8 @@ export const MapTraffic = memo(function MapTraffic({ network, seedKey }: { netwo
             carEls.current[c.id] = el;
           }}
           transform={transformOf(c)}
+          // Vehicles that start off the map (they drive in through the gate later) stay hidden until then.
+          style={c.active ? undefined : { display: "none" }}
         >
           <use href={c.kind === "bike" ? "#sp-bike" : "#sp-car"} color={(c.kind === "bike" ? BIKE_COLORS : CAR_COLORS)[c.id % (c.kind === "bike" ? BIKE_COLORS : CAR_COLORS).length]} />
         </g>
