@@ -321,6 +321,30 @@ const MapShapes = memo(function MapShapes({
   // Junctions where the dashed centre line must stop: any node where roads
   // cross or meet (3+ edges, or two different roads). The cut disc reaches the
   // far edge of the widest road there. Plain bends along one road stay dashed.
+  // The site boundary for the road layer: the outer edges of the perimeter
+  // roads. Corner fillets and road ends are cut flush to it, so asphalt never
+  // pokes out past the site. (Each segment only widens the box sideways.)
+  const roadClip = useMemo(() => {
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const e of scene.network.edges) {
+      for (let i = 1; i < e.pts.length; i++) {
+        const a = e.pts[i - 1];
+        const b = e.pts[i];
+        const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+        const padX = (e.width / 2) * (Math.abs(b.y - a.y) / len);
+        const padY = (e.width / 2) * (Math.abs(b.x - a.x) / len);
+        x0 = Math.min(x0, a.x - padX, b.x - padX);
+        x1 = Math.max(x1, a.x + padX, b.x + padX);
+        y0 = Math.min(y0, a.y - padY, b.y - padY);
+        y1 = Math.max(y1, a.y + padY, b.y + padY);
+      }
+    }
+    return Number.isFinite(x0) ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
+  }, [scene.network]);
+
   const junctions = useMemo(
     () =>
       scene.network.nodes
@@ -377,16 +401,16 @@ const MapShapes = memo(function MapShapes({
           blocks either side of it (measured in buildScene) and its ends are
           extended to meet the roads they join (display only). The whole layer
           is clipped to the site boundary (the wall), so no road pokes out. */}
-      {scene.ground && (
+      {roadClip && (
         <defs>
           <clipPath id="sp-site-clip">
-            <rect x={scene.ground.wall.x} y={scene.ground.wall.y} width={scene.ground.wall.w} height={scene.ground.wall.h} rx={6} />
+            <rect x={roadClip.x} y={roadClip.y} width={roadClip.w} height={roadClip.h} />
           </clipPath>
         </defs>
       )}
       <g
         className="pointer-events-none"
-        clipPath={scene.ground ? "url(#sp-site-clip)" : undefined}
+        clipPath={roadClip ? "url(#sp-site-clip)" : undefined}
         style={{ animation: "fadeIn 420ms ease-out backwards", opacity: selectedId !== null ? 0.4 : 1, transition: "opacity 300ms ease" }}
       >
         {scene.roads.map((r) => (
@@ -447,7 +471,7 @@ const MapShapes = memo(function MapShapes({
       </defs>
       <g
         className="pointer-events-none"
-        clipPath={scene.ground ? "url(#sp-site-clip)" : undefined}
+        clipPath={roadClip ? "url(#sp-site-clip)" : undefined}
         style={{ opacity: selectedId !== null ? 0.4 : 1, transition: "opacity 300ms ease" }}
       >
         {painted.map((l) => (
@@ -720,10 +744,14 @@ export function SitePlanViewer({
   // correct as a plain VB-based fraction, unchanged, on either axis.
   const vbHeight = VB / aspectRatio;
 
-  // The visible frame ("Fit"): the site's own bounding box (plots, buildings,
-  // features and roads) plus room for the grass and wall, instead of the whole
-  // photo rectangle, which has empty margins. Fit then fills the map area
-  // with the site, and every "centre of the view" below uses this frame.
+  // The visible frame ("Fit"): the whole site (plots, buildings, features,
+  // roads, plus the grass and wall around them) scaled to fit the map area
+  // with nothing cropped, and padded so the overlays stay clear of it: the zoom
+  // buttons on the right, and on a phone the Media/About bar along the bottom.
+  // The frame has the same shape as the map area, so the viewBox centre is the
+  // centre of the FREE area, not of the whole box. Until the size is known it
+  // is just the site's bounds.
+  const [mapSize, setMapSize] = useState<{ w: number; h: number } | null>(null);
   const box = useMemo(() => {
     const xs: number[] = [];
     const ys: number[] = [];
@@ -733,11 +761,23 @@ export function SitePlanViewer({
     for (const f of features) add(f.polygon_points);
     for (const r of roads) add(r.path_points);
     if (xs.length === 0) return { x: 0, y: 0, w: VB, h: vbHeight };
-    const margin = VB * 0.05 + 10;
-    const minX = Math.min(...xs) - margin;
-    const minY = Math.min(...ys) - margin;
-    return { x: minX, y: minY, w: Math.max(...xs) + margin - minX, h: Math.max(...ys) + margin - minY };
-  }, [plots, buildings, features, roads, vbHeight]);
+    // grass border (0.05 * VB) + trees and wall, with a little to spare
+    const margin = VB * 0.05 + 16;
+    const cx0 = Math.min(...xs) - margin;
+    const cy0 = Math.min(...ys) - margin;
+    const cw = Math.max(...xs) + margin - cx0;
+    const ch = Math.max(...ys) + margin - cy0;
+    if (!mapSize || mapSize.w < 50 || mapSize.h < 50) return { x: cx0, y: cy0, w: cw, h: ch };
+    const phone = mapSize.w < 640;
+    const padL = 8;
+    const padT = 8;
+    const padR = 8 + 52; // zoom buttons (44px + 12px gutter)
+    const padB = phone ? 8 + 72 : 8; // Media/About bar on a phone
+    const s = Math.min((mapSize.w - padL - padR) / cw, (mapSize.h - padT - padB) / ch);
+    const freeCx = (padL + mapSize.w - padR) / 2;
+    const freeCy = (padT + mapSize.h - padB) / 2;
+    return { x: cx0 + cw / 2 - freeCx / s, y: cy0 + ch / 2 - freeCy / s, w: mapSize.w / s, h: mapSize.h / s };
+  }, [plots, buildings, features, roads, vbHeight, mapSize]);
 
   // resetSignal only ever changes to a new value (never re-fires the same
   // one), so this only runs when the parent actually wants us reset — e.g.
@@ -1015,6 +1055,7 @@ export function SitePlanViewer({
     const measure = () => {
       const r = svg.getBoundingClientRect();
       pxPerUnit.current = Math.min(r.width / box.w, r.height / box.h) || 0.4;
+      setMapSize((prev) => (prev && Math.abs(prev.w - r.width) < 0.5 && Math.abs(prev.h - r.height) < 0.5 ? prev : { w: r.width, h: r.height }));
       applyK();
     };
     measure();

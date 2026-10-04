@@ -31,6 +31,8 @@ export interface WalkEdge {
   a: string; // node id
   b: string; // node id
   width: number; // full road width in map units
+  /** If set, only this footpath exists (+1 = left of a->b, -1 = right): used on perimeter roads, whose outer side is grass. */
+  onlySide?: 1 | -1;
 }
 
 export interface WalkerPose {
@@ -223,7 +225,7 @@ export class WalkerSim {
       const [lo, hi] = this.range(edge);
       const w: Walker = {
         edge,
-        side: this.rand() < 0.5 ? 1 : -1,
+        side: edge.onlySide ?? (this.rand() < 0.5 ? 1 : -1),
         dir: this.rand() < 0.5 ? 1 : -1,
         s: lo + this.rand() * (hi - lo),
         speed: this.opts.speed * (0.8 + this.rand() * 0.5),
@@ -360,6 +362,7 @@ export class WalkerSim {
       const [lo, hi] = this.range(f);
       const s = out === 1 ? lo : hi;
       const P2 = this.footPoint(f, s, newSide, w.lane);
+      if (f.onlySide !== undefined && f.onlySide !== newSide) continue; // that footpath is not there
       const pending: Pending = { edge: f, side: newSide, dir: out, s };
 
       if (straight > 0.7) {
@@ -381,9 +384,11 @@ export class WalkerSim {
 
     // Cross to the other footpath and walk back (also the dead-end move).
     const uturn = () => {
-      const side = -w.side as 1 | -1;
+      // With only one footpath, turn round on it (nothing to cross).
+      const single = e.onlySide !== undefined;
+      const side = single ? w.side : (-w.side as 1 | -1);
       const P2 = this.footPoint(e, w.s, side, w.lane);
-      this.start(w, [P0, P2], { edge: e, side, dir: -w.dir as 1 | -1, s: w.s }, nodeId, e);
+      this.start(w, [P0, P2], { edge: e, side, dir: -w.dir as 1 | -1, s: w.s }, single ? null : nodeId, e);
     };
     options.push({ weight: options.length === 0 ? 1 : 0.2, build: uturn });
 

@@ -881,10 +881,26 @@ export function activeCars(sim: Sim): number {
 export function buildWalkGraph(net: Network): { nodes: WalkNode[]; edges: WalkEdge[] } {
   const nodes: WalkNode[] = net.nodes.map((n) => ({ id: String(n.id), x: n.x, y: n.y }));
   const edges: WalkEdge[] = [];
+  // Perimeter roads: their outer side faces the grass, so only the inner
+  // footpath exists. A side is "outer" when a point one half-width out from
+  // the centre line falls outside the box spanned by all road centre lines.
+  const all = net.edges.flatMap((e) => e.pts);
+  const lo = { x: Math.min(...all.map((p) => p.x)), y: Math.min(...all.map((p) => p.y)) };
+  const hi = { x: Math.max(...all.map((p) => p.x)), y: Math.max(...all.map((p) => p.y)) };
+  const outside = (p: Pt) => p.x < lo.x - 1 || p.x > hi.x + 1 || p.y < lo.y - 1 || p.y > hi.y + 1;
   for (const e of net.edges) {
     const width = Math.max(1, e.width - 2 * (EDGE_INSET + EDGE_LINE));
     let prev = String(e.a);
     for (let i = 1; i < e.pts.length; i++) {
+      const a = e.pts[i - 1];
+      const b = e.pts[i];
+      const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      const left = { x: (b.y - a.y) / len, y: -(b.x - a.x) / len };
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const probe = (side: 1 | -1) => ({ x: mid.x + left.x * side * e.width * 0.5, y: mid.y + left.y * side * e.width * 0.5 });
+      const leftOut = outside(probe(1));
+      const rightOut = outside(probe(-1));
+      const onlySide: 1 | -1 | undefined = leftOut && !rightOut ? -1 : rightOut && !leftOut ? 1 : undefined;
       const last = i === e.pts.length - 1;
       let id: string;
       if (last) id = String(e.b);
@@ -892,7 +908,7 @@ export function buildWalkGraph(net: Network): { nodes: WalkNode[]; edges: WalkEd
         id = `e${e.id}p${i}`;
         nodes.push({ id, x: e.pts[i].x, y: e.pts[i].y });
       }
-      edges.push({ id: `e${e.id}s${i}`, a: prev, b: id, width });
+      edges.push({ id: `e${e.id}s${i}`, a: prev, b: id, width, onlySide });
       prev = id;
     }
   }
