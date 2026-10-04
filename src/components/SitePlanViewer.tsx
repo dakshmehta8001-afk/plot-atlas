@@ -300,6 +300,24 @@ const MapShapes = memo(function MapShapes({
     return map;
   }, [plots, vbHeight]);
 
+  // Road widths painted on the asphalt. Each one is ~11 screen pixels tall at
+  // every zoom (counter-scaled by --k, see the labels layer comment) but never
+  // taller than 70% of that road's on-screen width: the scale is the SMALLER of
+  // 1/--k (constant 11px) and 0.7*roadWidth/11 (shrinks on narrow roads or
+  // when zoomed far out), so a label can never spill onto a plot.
+  const painted = useMemo(
+    () =>
+      scene.roads.flatMap((r) => {
+        const text = roadLabelText(r.label, r.width, ftPerUnit);
+        if (!text) return [];
+        const css = {
+          transform: `translate(${r.labelPos.x}px, ${r.labelPos.y}px) rotate(${r.labelPos.angle}deg) scale(min(calc(1 / var(--k, 0.4)), ${((0.7 * r.width) / 11).toFixed(4)}))`,
+        } as React.CSSProperties;
+        return [{ id: r.id, text, w: text.length * 6.8 + 12, css }];
+      }),
+    [scene.roads, ftPerUnit],
+  );
+
   function plotStyle(unit: Unit): { fill: string; border: string; opacity: number; isSelected: boolean } {
     const isSelected = selectedId === unit.id;
     const dimmedBySelection = selectedId !== null && !isSelected;
@@ -384,6 +402,7 @@ const MapShapes = memo(function MapShapes({
         {scene.corners.map((c, i) => (
           <circle key={`lanec-${i}`} cx={c.x} cy={c.y} r={roadMetrics(c.width).carriageway / 2} fill={ROAD_COLOR} />
         ))}
+        <g mask="url(#sp-centre-mask)">
         {scene.roads.map((r) => (
           <polyline
             key={`centre-${r.id}`}
@@ -394,6 +413,35 @@ const MapShapes = memo(function MapShapes({
             strokeDasharray={`${r.width * 0.3} ${r.width * 0.22}`}
             strokeLinejoin="round"
           />
+        ))}
+        </g>
+      </g>
+
+      {/* Road widths PAINTED on the asphalt: white bold text on the centre line,
+          mid-block, rotated along the road, ~90% opaque so it reads as paint.
+          Drawn above the road surface but below cars, walkers and plots. The
+          dashed centre line is cut away under each label by the mask above. */}
+      <defs>
+        <mask id="sp-centre-mask" maskUnits="userSpaceOnUse" x={-100} y={-100} width={VB + 200} height={vbHeight + 200}>
+          <rect x={-100} y={-100} width={VB + 200} height={vbHeight + 200} fill="#fff" />
+          {painted.map((l) => (
+            <g key={`cut-${l.id}`} style={l.css}>
+              <rect x={-l.w / 2} y={-8} width={l.w} height={16} fill="#000" />
+            </g>
+          ))}
+        </mask>
+      </defs>
+      <g
+        className="pointer-events-none"
+        clipPath={scene.ground ? "url(#sp-site-clip)" : undefined}
+        style={{ opacity: selectedId !== null ? 0.4 : 1, transition: "opacity 300ms ease" }}
+      >
+        {painted.map((l) => (
+          <g key={`paint-${l.id}`} style={l.css}>
+            <text textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={800} fill="#ffffff" fillOpacity={0.9} className="select-none">
+              {l.text}
+            </text>
+          </g>
         ))}
       </g>
 
@@ -600,25 +648,6 @@ const MapShapes = memo(function MapShapes({
                 className="select-none"
               >
                 {unit.unit_number}
-              </text>
-            </g>
-          );
-        })}
-      </g>
-
-      <g className="pointer-events-none" style={{ opacity: selectedId !== null ? 0.4 : 1, transition: "opacity 300ms ease" }}>
-        {scene.roads.map((r) => {
-          const text = roadLabelText(r.label, r.width, ftPerUnit);
-          if (!text) return null;
-          const w = text.length * 6.6 + 12;
-          const css = {
-            transform: `translate(${r.labelPos.x}px, ${r.labelPos.y}px) rotate(${r.labelPos.angle}deg) scale(calc(1 / var(--k, 0.4)))`,
-          } as React.CSSProperties;
-          return (
-            <g key={`label-${r.id}`} style={css}>
-              <rect x={-w / 2} y={-9} width={w} height={18} rx={5} fill="#111827" fillOpacity={0.92} stroke="#ffffff" strokeOpacity={0.6} strokeWidth={1} />
-              <text textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={800} fill="#ffffff" className="select-none">
-                {text}
               </text>
             </g>
           );

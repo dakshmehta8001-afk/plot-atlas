@@ -8,7 +8,7 @@
 // Everything is in "scaled" map units: x = fraction * VB, y = fraction *
 // vbHeight (the same convention toScaledSvgPoints uses).
 import type { PolygonPoint } from "@/lib/types";
-import { connectRoads, edgeMidpoint, roadMetrics, type Edge, type Network } from "@/lib/mapTraffic";
+import { connectRoads, edgeMidpoint, type Edge, type Network } from "@/lib/mapTraffic";
 
 export interface Pt {
   x: number;
@@ -117,7 +117,7 @@ export interface RoadGeom {
   points: string;
   width: number;
   label: string;
-  /** Where the width label sits: on the pavement strip, rotated along the road (never upside down). */
+  /** Where the width is painted: the road's centre line, mid-block, rotated along the road (never upside down). */
   labelPos: { x: number; y: number; angle: number };
   length: number;
 }
@@ -189,7 +189,6 @@ export function buildScene(
     const m = longest ? edgeMidpoint(longest) : pathAt(path, 0.5);
     const mid = "p" in m ? m.p : { x: m.x, y: m.y };
     const tan = "p" in m ? m.t : { x: m.tx, y: m.ty };
-    const lateral = roadMetrics(r.width).walkerLateral;
     let angle = (Math.atan2(tan.y, tan.x) * 180) / Math.PI;
     if (angle > 90) angle -= 180;
     if (angle < -90) angle += 180;
@@ -199,7 +198,7 @@ export function buildScene(
       points: path.map((p) => `${p.x},${p.y}`).join(" "),
       width: r.width,
       label: r.label,
-      labelPos: { x: mid.x + tan.y * lateral, y: mid.y - tan.x * lateral, angle },
+      labelPos: { x: mid.x, y: mid.y, angle },
       length,
     };
   });
