@@ -170,20 +170,70 @@ export function ProjectMapClient({
     // stretching — and this element's own children are absolutely
     // positioned, contributing ~0 to that content-based width.
     <div
-      className="relative flex w-full flex-col overflow-hidden bg-[#0b1f2e]"
-      // A one-time "digital twin powering on" entrance for the whole panel
-      // when the project page first mounts — reuses the same settleIn
-      // keyframe BuildingDrilldown's floor-select/floor-view panels already
-      // use (a plain HTML element, so no SVG transform-box concerns), just
-      // a touch slower/grander given this is the top-level container, not
-      // a sub-panel. Plays once per mount; the reveal-in stagger on the
-      // shapes THEMSELVES (SitePlanViewer/FloorPlanViewer) runs on their
-      // own separate timeline right after, layering into one continuous
-      // "map powers on, then draws itself in" opening sequence.
+      className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-[var(--map-background)]"
       style={{ animation: "settleIn 550ms var(--ease-cinematic)" }}
     >
+      <div className="absolute inset-0 z-0">
+        <div className="relative min-w-0 flex-1 h-full">
+          {autoSentNotice && (
+            <p className="absolute bottom-16 left-1/2 z-[700] -translate-x-1/2 rounded-md bg-green-500/20 px-4 py-2 text-sm font-medium text-green-300 backdrop-blur-md border border-green-500/20">
+              {autoSentNotice}
+            </p>
+          )}
+
+          <div className="absolute inset-0">
+            {activeTab === "media" ? (
+              <MediaPanel media={media} />
+            ) : activeTab === "about" ? (
+              <AboutPanel project={project} />
+            ) : !project.plan_image_url ? (
+              <div className="flex h-full w-full items-center justify-center text-sm text-white/50">
+                This project has no plan image uploaded yet.
+              </div>
+            ) : (
+              <BuildingDrilldown
+                planImageUrl={project.plan_image_url}
+                planImageSize={{ width: project.plan_image_width, height: project.plan_image_height }}
+                projectName={project.name}
+                plots={plots}
+                buildings={buildings}
+                roads={roads}
+                features={features}
+                unitsByFloor={unitsByFloor}
+                onPlotClick={setSelectedUnit}
+                onFlatClick={setSelectedUnit}
+                colorMode={zoneColourMode ? "zone" : "status"}
+                zones={zones}
+                highlightZone={selectedZone}
+                highlightStatus={statusFilter}
+                calibration={project.map_calibration ?? null}
+                onStageChange={setDrilldownStage}
+              />
+            )}
+          </div>
+
+          <div className="absolute bottom-6 left-1/2 z-[600] flex -translate-x-1/2 gap-1 rounded-full border border-white/10 bg-[var(--map-panel)]/50 p-1.5 shadow-2xl backdrop-blur-xl">
+            <TabButton label="Map" active={activeTab === "map"} onClick={() => setActiveTab("map")} />
+            <TabButton label="Media" active={activeTab === "media"} onClick={() => toggleTab("media")} />
+            <TabButton label="About" active={activeTab === "about"} onClick={() => toggleTab("about")} />
+          </div>
+        </div>
+
+        {selectedUnit && (
+          <UnitInfoCard
+            key={selectedUnit.id}
+            unit={selectedUnit}
+            project={project}
+            isSignedIn={isSignedIn}
+            projectSlug={project.slug}
+            onClose={() => setSelectedUnit(null)}
+          />
+        )}
+      </div>
+
       {showMapChrome && (
-        <div className="flex-none border-b border-map-border bg-map-panel/60 px-3 py-2.5 sm:px-4">
+        <div className="pointer-events-none absolute left-0 right-0 top-0 z-[500] p-4 sm:p-6">
+          <div className="pointer-events-auto flex flex-col gap-4 rounded-3xl border border-white/10 bg-[var(--map-panel)] p-4 shadow-2xl backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div className="min-w-0">
             {ownerName && (
               <p className="truncate text-[10px] font-semibold uppercase tracking-widest text-blue-300/80">{ownerName}</p>
@@ -263,78 +313,9 @@ export function ProjectMapClient({
         </div>
       )}
 
-      {/* A flex row rather than everything absolutely stacked in one box:
-          UnitInfoCard becomes a real flex sibling of the map area on
-          desktop (via its own sm:static override), so selecting a plot
-          actually narrows the map canvas to make room for a docked side
-          rail — not just a floating card visually on top of it. On mobile
-          UnitInfoCard stays position:absolute (a bottom sheet, unaffected
-          by this row being flex), so nothing here changes its appearance
-          below the sm breakpoint. */}
-      <div className="relative flex min-h-0 flex-1">
-        <div className="relative min-w-0 flex-1">
-          {autoSentNotice && (
-            <p className="absolute bottom-16 left-1/2 z-[700] -translate-x-1/2 rounded-md bg-green-500/15 px-3 py-1.5 text-xs text-green-300">
-              {autoSentNotice}
-            </p>
-          )}
-
-          <div className="absolute inset-0">
-            {activeTab === "media" ? (
-              <MediaPanel media={media} />
-            ) : activeTab === "about" ? (
-              <AboutPanel project={project} />
-            ) : !project.plan_image_url ? (
-              <div className="flex h-full w-full items-center justify-center text-sm text-white/50">
-                This project has no plan image uploaded yet.
-              </div>
-            ) : (
-              <BuildingDrilldown
-                planImageUrl={project.plan_image_url}
-                planImageSize={{ width: project.plan_image_width, height: project.plan_image_height }}
-                projectName={project.name}
-                plots={plots}
-                buildings={buildings}
-                roads={roads}
-                features={features}
-                unitsByFloor={unitsByFloor}
-                onPlotClick={setSelectedUnit}
-                onFlatClick={setSelectedUnit}
-                colorMode={zoneColourMode ? "zone" : "status"}
-                zones={zones}
-                highlightZone={selectedZone}
-                highlightStatus={statusFilter}
-                calibration={project.map_calibration ?? null}
-                onStageChange={setDrilldownStage}
-              />
-            )}
-          </div>
-
-          <div className="absolute bottom-4 left-1/2 z-[600] flex -translate-x-1/2 gap-1 rounded-full bg-black/40 p-1 backdrop-blur">
-            <TabButton label="Media" active={activeTab === "media"} onClick={() => toggleTab("media")} />
-            <TabButton label="About" active={activeTab === "about"} onClick={() => toggleTab("about")} />
           </div>
         </div>
-
-        {selectedUnit && (
-          <UnitInfoCard
-            // Remounts (resetting useEnquiryFlow's message/submit state and
-            // replaying the docked panel's slide-in) whenever a DIFFERENT
-            // unit is selected — without this, clicking straight from one
-            // plot to another without closing the panel first would carry
-            // over the previous plot's typed enquiry message or "sent"
-            // state, a real latent bug that the docked rail (which
-            // specifically invites clicking through several plots in a row
-            // without closing) makes much more likely to actually surface.
-            key={selectedUnit.id}
-            unit={selectedUnit}
-            project={project}
-            isSignedIn={isSignedIn}
-            projectSlug={project.slug}
-            onClose={() => setSelectedUnit(null)}
-          />
-        )}
-      </div>
+      )}
 
       <ZonesSheet
         open={zonesOpen}
@@ -358,13 +339,10 @@ function Pill({ label, value, tone }: { label: string; value: number; tone: "neu
     yellow: "border-yellow-500/50 text-yellow-300",
     red: "border-red-500/50 text-red-300",
   };
-  // Counts up from 0 on first mount rather than appearing as a static
-  // number — useCountUp itself checks prefers-reduced-motion and jumps
-  // straight to the target for anyone who needs that.
   const displayValue = useCountUp(value);
   return (
-    <span className={`rounded-full border bg-black/30 px-2.5 py-0.5 text-[11px] font-medium ${toneClasses[tone]}`}>
-      {label} <span className="font-bold tabular-nums">{displayValue}</span>
+    <span className={`rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-medium shadow-inner ${toneClasses[tone]}`}>
+      {label} <span className="font-bold tabular-nums ml-1">{displayValue}</span>
     </span>
   );
 }
@@ -397,11 +375,11 @@ function StatusChip({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${toneClasses[tone]} ${
-        active ? "bg-white/20 ring-1 ring-white/50" : "bg-black/30 hover:bg-black/50"
+      className={`rounded-full border px-3 py-1 text-[11px] font-medium transition-all hover:scale-105 active:scale-95 ${toneClasses[tone]} ${
+        active ? "bg-white/20 ring-1 ring-white/50 shadow-[0_0_15px_rgba(255,255,255,0.2)]" : "border-white/10 bg-white/5 hover:bg-white/10 shadow-inner"
       }`}
     >
-      {label} <span className="font-bold tabular-nums">{displayValue}</span>
+      {label} <span className="font-bold tabular-nums ml-1">{displayValue}</span>
     </button>
   );
 }
@@ -410,8 +388,8 @@ function TabButton({ label, active, onClick }: { label: string; active: boolean;
   return (
     <button
       onClick={onClick}
-      className={`rounded-full px-4 py-1.5 text-xs font-medium transition-colors ${
-        active ? "bg-white text-[#0b1f2e]" : "text-white/70 hover:text-white"
+      className={`rounded-full px-5 py-2 text-[13px] font-medium transition-all hover:scale-105 active:scale-95 ${
+        active ? "bg-white text-[var(--map-background)] shadow-[0_0_15px_rgba(255,255,255,0.4)]" : "text-white/80 hover:bg-white/10 hover:text-white"
       }`}
     >
       {label}

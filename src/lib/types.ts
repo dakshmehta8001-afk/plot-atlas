@@ -195,10 +195,10 @@ export interface SiteVisit {
 // rendered (map overlays, info cards, dashboard tables) so they can never
 // drift out of sync with each other.
 export const UNIT_STATUS_STYLES: Record<UnitStatus, { label: string; fill: string; border: string }> = {
-  available: { label: "Available", fill: "rgba(34,197,94,0.35)", border: "#16a34a" },
-  hold: { label: "On hold", fill: "rgba(234,179,8,0.35)", border: "#ca8a04" },
-  booked: { label: "Booked", fill: "rgba(59,130,246,0.35)", border: "#2563eb" },
-  sold: { label: "Sold", fill: "rgba(239,68,68,0.35)", border: "#dc2626" },
+  available: { label: "Available", fill: "rgba(34, 197, 94, 0.15)", border: "#4ade80" },
+  hold: { label: "On hold", fill: "rgba(234, 179, 8, 0.15)", border: "#facc15" },
+  booked: { label: "Booked", fill: "rgba(59, 130, 246, 0.15)", border: "#60a5fa" },
+  sold: { label: "Sold", fill: "rgba(239, 68, 68, 0.15)", border: "#f87171" },
 };
 
 export const UNIT_STATUS_OPTIONS: UnitStatus[] = ["available", "hold", "booked", "sold"];

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 // Viewer-facing (read-only) map of a project's master site plan: renders
 // every standalone plot AND every building's footprint as SVG polygons over
@@ -592,54 +592,17 @@ const MapShapes = memo(function MapShapes({
             <polygon
               points={geom.points}
               fill={style.fill}
-              // A real bug found via live testing, not a style nicety: once
-              // fills went fully opaque (see opaqueRgba above), a plot's
-              // own status-color border (a few shades darker than its own
-              // fill — fine against the OLD translucent blend, where the
-              // border was the only genuinely saturated part) stopped
-              // reading at all between two ADJACENT plots sharing the SAME
-              // status — the overwhelmingly common case (e.g. a freshly
-              // digitized project where every plot starts "Available").
-              // Two near-identical greens separated by a thin same-hue
-              // line is visually indistinguishable from one solid green
-              // blob — exactly what made a real 112-plot project's entire
-              // grid vanish into a single shape with no internal
-              // boundaries visible at all. A fixed, neutral, dark
-              // separator (independent of status/zone color) is what
-              // every plot boundary actually needs; the status/zone color
-              // still does its job entirely through the fill itself. The
-              // selected plot keeps its colored ring (a deliberate, single
-              // highlight a reviewer is meant to notice, not a boundary
-              // meant to generically separate neighbors).
-              stroke={style.isSelected ? style.border : "#0f2436"}
+              stroke={style.border}
               strokeWidth={style.isSelected ? VB * 0.005 : VB * 0.0022}
-              strokeOpacity={style.isSelected ? 1 : 0.55}
+              strokeOpacity={style.isSelected ? 1 : 0.6}
               opacity={style.opacity}
-              // Hover glow/brighten is deliberately pure CSS (:hover, no
-              // React state) — the selected-shape glow below is driven by
-              // `selectedId`, which only changes on an actual click (rare),
-              // but hover fires on every mousemove; doing it in CSS means
-              // it costs nothing in React re-renders at all, keeping the
-              // MapShapes-memoization perf fix from the last audit intact.
-              // A scale-on-hover transform was deliberately left out: SVG
-              // elements need transform-box:fill-box for a scale to
-              // originate from the shape's own center rather than the
-              // whole viewBox's corner, and getting that subtly wrong reads
-              // as the shape jumping sideways, not growing in place — the
-              // brighten+glow already reads as a clear hover response
-              // without that risk.
-              className="cursor-pointer transition-[opacity,filter] duration-200 hover:brightness-125 hover:[filter:drop-shadow(0_0_5px_rgba(255,255,255,0.55))]"
+              className="cursor-pointer transition-[opacity,filter] duration-200 hover:brightness-125 hover:[filter:drop-shadow(0_0_8px_rgba(255,255,255,0.7))]"
               style={{
                 animation: "fadeIn 420ms ease-out backwards",
                 animationDelay: `${revealDelay(index)}ms`,
-                // Selected plot: a steady bright glow, distinct from the
-                // momentary hover one — undefined (no inline filter at all)
-                // when not selected, so the CSS hover rule above can still
-                // apply freely (an inline style always wins over an
-                // external stylesheet rule, selected or not, so leaving
-                // this property OUT entirely when unselected is what lets
-                // hover still work on every other plot).
-                filter: style.isSelected ? "drop-shadow(0 0 10px rgba(255,255,255,0.85)) drop-shadow(0 0 20px rgba(96,165,250,0.6))" : undefined,
+                filter: style.isSelected 
+                  ? "drop-shadow(0 0 10px rgba(255,255,255,0.85)) drop-shadow(0 0 20px rgba(96,165,250,0.6))" 
+                  : `drop-shadow(0 0 4px ${style.border}80)`,
               }}
               onClick={() => onPlotClick(unit)}
               onMouseEnter={(e) => onPlotHover(unit, e)}

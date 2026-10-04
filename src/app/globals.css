@@ -11,24 +11,24 @@
      values so new UI (filter pills, legend, panels) can reference the same
      palette via Tailwind's arbitrary-value syntax (e.g. bg-(--available))
      instead of a third copy of the same hex codes. */
-  --available: #16a34a;
-  --available-fill: rgba(34, 197, 94, 0.35);
-  --hold: #ca8a04;
-  --hold-fill: rgba(234, 179, 8, 0.35);
-  --booked: #2563eb;
-  --booked-fill: rgba(59, 130, 246, 0.35);
-  --sold: #dc2626;
-  --sold-fill: rgba(239, 68, 68, 0.35);
+  --available: #4ade80;
+  --available-fill: rgba(34, 197, 94, 0.15);
+  --hold: #facc15;
+  --hold-fill: rgba(234, 179, 8, 0.15);
+  --booked: #60a5fa;
+  --booked-fill: rgba(59, 130, 246, 0.15);
+  --sold: #f87171;
+  --sold-fill: rgba(239, 68, 68, 0.15);
 
   /* The dark map surface every viewer/editor canvas already uses as a
      literal hex value (SitePlanViewer, ProjectMapClient, ReviewCanvas,
      UnitInfoCard) — tokenized here so future map UI can reference one
      definition instead of copying #0b1f2e / #0f2436 by hand again. */
-  --map-background: #0b1f2e;
-  --map-panel: #0f2436;
-  --map-border: rgba(255, 255, 255, 0.1);
+  --map-background: #030712;
+  --map-panel: rgba(17, 24, 39, 0.6);
+  --map-border: rgba(255, 255, 255, 0.08);
   --map-text: #ffffff;
-  --map-muted: rgba(255, 255, 255, 0.5);
+  --map-muted: rgba(255, 255, 255, 0.6);
 
   /* A decelerating "ease-out-expo"-style curve for the map's scripted
      camera moves (zoom-to-a-shape, drilldown transitions) — settles into
