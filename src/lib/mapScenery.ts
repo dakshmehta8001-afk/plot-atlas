@@ -236,7 +236,8 @@ export function buildScene(
     };
     const da = away(ea);
     const db = away(eb);
-    if (da.x * db.x + da.y * db.y > -0.9) corners.push({ x: nd.x, y: nd.y, width: Math.max(ea.width, eb.width) });
+    if (da.x * db.x + da.y * db.y > -0.9) // The NARROWER road's width, so the fillet never bulges past the outer edge of either road.
+    corners.push({ x: nd.x, y: nd.y, width: Math.min(ea.width, eb.width) });
   }
 
   const trees: Tree[] = [];
