@@ -9,13 +9,16 @@
 //     the saved road data is never touched. A road end is only snapped when
 //     the gap is within one road width, so a road meant to end stays a dead
 //     end.
-//  2. createSim()/stepSim(): cars and walkers moving on that graph. Cars
+//  2. createSim()/stepSim(): cars moving on that graph. Cars
 //     keep LEFT, turn along smooth curves at junctions, U-turn at dead
 //     ends, keep a gap behind the car in front, and take a per-junction
-//     lock so only one car is inside a junction at a time. Walkers use the
-//     pavement strip along the road edge and cross only at junctions,
-//     waiting while a car holds the lock.
+//     lock so only one car is inside a junction at a time. A car also waits
+//     while a walker is crossing (Sim.pedCrossing).
+//  3. buildWalkGraph(): the same network cut into straight pieces for the
+//     walker sim in mapWalkers.ts (footpaths, crossing only at junctions).
 //
+import type { WalkEdge, WalkNode } from "./mapWalkers";
+
 // All units are map units (the viewBox is ~1000 wide).
 
 export interface Pt {
@@ -407,25 +410,9 @@ export interface Car extends Pose {
   stuckFor: number;
 }
 
-export interface Walker extends Pose {
-  id: number;
-  edge: number;
-  dir: 1 | -1;
-  s: number;
-  side: 1 | -1;
-  v: number;
-  curve: Curve | null;
-  curveS: number;
-  waitingAt: number | null;
-  waitedFor: number;
-  crossing: number | null;
-}
-
 interface Lock {
   holder: number | null;
   queue: number[];
-  pedCrossing: number;
-  pedWaiting: number;
 }
 
 export interface Sim {
@@ -433,8 +420,13 @@ export interface Sim {
   rng: () => number;
   time: number;
   cars: Car[];
-  walkers: Walker[];
   locks: Lock[];
+  /**
+   * Asks the walker sim whether a pedestrian is crossing at this junction
+   * (node id). Cars wait at the stop line while it answers true. Set by the
+   * component that owns both sims; defaults to "nobody crossing".
+   */
+  pedCrossing: (nodeId: number) => boolean;
   maxCars: number;
   /** Seconds since any car last moved (gridlock detector). */
   stillFor: number;
@@ -556,8 +548,8 @@ export function createSim(net: Network, opts: SimOptions): Sim {
     rng,
     time: 0,
     cars: [],
-    walkers: [],
-    locks: net.nodes.map(() => ({ holder: null, queue: [], pedCrossing: 0, pedWaiting: 0 })),
+    locks: net.nodes.map(() => ({ holder: null, queue: [] })),
+    pedCrossing: () => false,
     maxCars,
     stillFor: 0,
     resets: 0,
@@ -567,7 +559,7 @@ export function createSim(net: Network, opts: SimOptions): Sim {
 
   const pick = () => usable[Math.floor(rng() * usable.length)];
   const clear = (x: number, y: number, minD: number) =>
-    sim.cars.every((c) => Math.hypot(c.x - x, c.y - y) >= minD) && sim.walkers.every((w) => Math.hypot(w.x - x, w.y - y) >= minD * 0.5);
+    sim.cars.every((c) => Math.hypot(c.x - x, c.y - y) >= minD);
 
   for (let n = 0; n < maxCars; n++) {
     for (let attempt = 0; attempt < 40; attempt++) {
@@ -610,46 +602,11 @@ export function createSim(net: Network, opts: SimOptions): Sim {
     }
   }
 
-  const walkerCount = Math.floor(roadCount / 2);
-  for (let n = 0; n < walkerCount; n++) {
-    for (let attempt = 0; attempt < 40; attempt++) {
-      const e = pick();
-      const dir: 1 | -1 = rng() < 0.5 ? 1 : -1;
-      const side: 1 | -1 = rng() < 0.5 ? 1 : -1;
-      const m = roadMetrics(e.width);
-      const margin = net.nodes[e.a].radius + 8;
-      const marginB = net.nodes[e.b].radius + 8;
-      if (e.len < margin + marginB) continue;
-      const s = margin + rng() * (e.len - margin - marginB);
-      const w: Walker = {
-        id: n,
-        edge: e.id,
-        dir,
-        s,
-        side,
-        v: 13 + rng() * 5,
-        curve: null,
-        curveS: 0,
-        waitingAt: null,
-        waitedFor: 0,
-        crossing: null,
-        x: 0,
-        y: 0,
-        angle: 0,
-        scale: m.walkerScale,
-        active: true,
-      };
-      poseWalker(sim, w);
-      if (!clear(w.x, w.y, 20)) continue;
-      sim.walkers.push(w);
-      break;
-    }
-  }
   return sim;
 }
 
 
-// Put every existing car and walker back at a free spot (used only by the
+// Put every existing car back at a free spot (used only by the
 // gridlock fallback). Mirrors the placement in createSim.
 function respawn(sim: Sim) {
   const net = sim.net;
@@ -688,18 +645,6 @@ function poseCar(sim: Sim, c: Car) {
   const m = roadMetrics(e.width);
   const r = lanePoint(e, c.s, c.dir, m.laneCenter);
   setPose(c, r.p, r.t, m.carScale);
-}
-
-function poseWalker(sim: Sim, w: Walker) {
-  if (w.curve) {
-    const r = curvePose(w.curve, w.curveS);
-    setPose(w, r.p, r.t, w.curve.scaleFrom + (w.curve.scaleTo - w.curve.scaleFrom) * smooth(r.u));
-    return;
-  }
-  const e = sim.net.edges[w.edge];
-  const m = roadMetrics(e.width);
-  const r = lanePoint(e, w.s, w.dir, w.side * m.walkerLateral);
-  setPose(w, r.p, r.t, m.walkerScale);
 }
 
 function distToEnd(sim: Sim, c: { edge: number; s: number }): number {
@@ -759,12 +704,6 @@ export function stepSim(sim: Sim, dtIn: number) {
   sim.time += dt;
   const net = sim.net;
 
-  // ---- walkers first (they wait on locks; cars wait on walkers) ----
-  for (const w of sim.walkers) {
-    if (!w.active) continue;
-    stepWalker(sim, w, dt);
-  }
-
   // ---- cars ----
   for (const c of sim.cars) {
     if (!c.active) continue;
@@ -796,8 +735,7 @@ export function stepSim(sim: Sim, dtIn: number) {
             const ready =
               lock.holder === null &&
               lock.queue[0] === c.id &&
-              lock.pedCrossing === 0 &&
-              lock.pedWaiting === 0 &&
+              !sim.pedCrossing(endNode.id) &&
               exitRoom(sim, c.plan.outEdge, c.plan.outDir, L + minGapFor(c) + 10);
             if (ready) {
               lock.holder = c.id;
@@ -855,13 +793,6 @@ export function stepSim(sim: Sim, dtIn: number) {
     for (const lk of sim.locks) {
       lk.holder = null;
       lk.queue = [];
-      lk.pedCrossing = 0;
-      lk.pedWaiting = 0;
-    }
-    for (const w of sim.walkers) {
-      w.curve = null;
-      w.crossing = null;
-      w.waitingAt = null;
     }
     for (const c of sim.cars) {
       c.holding = null;
@@ -920,77 +851,6 @@ function advanceCar(sim: Sim, c: Car, dist: number, m: ReturnType<typeof roadMet
   poseCar(sim, c);
 }
 
-function stepWalker(sim: Sim, w: Walker, dt: number) {
-  const net = sim.net;
-  const e = net.edges[w.edge];
-  const m = roadMetrics(e.width);
-  if (w.curve) {
-    w.curveS += w.v * dt;
-    if (w.curveS >= w.curve.total) {
-      const cv = w.curve;
-      const lk = sim.locks[cv.node];
-      if (w.crossing === cv.node) {
-        lk.pedCrossing = Math.max(0, lk.pedCrossing - 1);
-        w.crossing = null;
-      }
-      w.edge = cv.outEdge;
-      w.dir = cv.outDir;
-      w.s = cv.exitS + (w.curveS - cv.total);
-      w.curve = null;
-      w.curveS = 0;
-    }
-    poseWalker(sim, w);
-    return;
-  }
-
-  const endNode = net.nodes[w.dir === 1 ? e.b : e.a];
-  const dEnd = e.len - w.s;
-  const tin = Math.min(endNode.radius + 2, e.len * 0.45);
-  const uFw = Math.min(1.6 * m.walkerLateral + 8, e.len * 0.45);
-
-  if (endNode.dead ? dEnd <= uFw : dEnd <= tin + 0.5) {
-    const lk = sim.locks[endNode.id];
-    if (endNode.dead) {
-      w.curve = buildUTurn(net, w.edge, w.dir, m.walkerLateral, m.walkerScale, endNode);
-      w.curveS = Math.max(0, w.s - (e.len - uFw));
-      w.s = 0;
-      poseWalker(sim, w);
-      return;
-    }
-    // wait at the kerb while any car holds the junction
-    if (lk.holder !== null) {
-      if (w.waitingAt !== endNode.id) {
-        w.waitingAt = endNode.id;
-        w.waitedFor = 0;
-      }
-      w.waitedFor += dt;
-      if (w.waitedFor > 3 && w.waitedFor - dt <= 3) lk.pedWaiting++;
-      poseWalker(sim, w);
-      return;
-    }
-    if (w.waitingAt === endNode.id && w.waitedFor > 3) lk.pedWaiting = Math.max(0, lk.pedWaiting - 1);
-    w.waitingAt = null;
-    w.waitedFor = 0;
-    const options = endNode.edges.filter((id) => id !== w.edge);
-    const outEdge = options[Math.floor(sim.rng() * options.length)];
-    const outDir = incidentDir(net, outEdge, endNode.id);
-    const eo = net.edges[outEdge];
-    const mo = roadMetrics(eo.width);
-    const nextSide: 1 | -1 = sim.rng() < 0.22 ? (w.side === 1 ? -1 : 1) : w.side;
-    const cv = buildCurve(net, w.edge, w.dir, outEdge, outDir, endNode, w.side * m.walkerLateral, nextSide * mo.walkerLateral, m.walkerScale, mo.walkerScale);
-    lk.pedCrossing++;
-    w.crossing = endNode.id;
-    w.side = nextSide;
-    w.curve = cv;
-    w.curveS = w.s - (e.len - tin);
-    w.s = 0;
-    poseWalker(sim, w);
-    return;
-  }
-  w.s = Math.min(e.len, w.s + w.v * dt);
-  poseWalker(sim, w);
-}
-
 // Deactivate the most recently added active car (used when frames run slow).
 export function removeOneCar(sim: Sim): boolean {
   for (let i = sim.cars.length - 1; i >= 0; i--) {
@@ -1007,17 +867,36 @@ export function activeCars(sim: Sim): number {
   return sim.cars.filter((c) => c.active).length;
 }
 
-// Deactivate one walker (used after the cars, if frames are still slow).
-export function removeOneWalker(sim: Sim): boolean {
-  for (let i = sim.walkers.length - 1; i >= 0; i--) {
-    const w = sim.walkers[i];
-    if (!w.active) continue;
-    w.active = false;
-    if (w.crossing !== null) sim.locks[w.crossing].pedCrossing = Math.max(0, sim.locks[w.crossing].pedCrossing - 1);
-    w.crossing = null;
-    return true;
+/**
+ * The road network as the walker sim wants it: every edge a STRAIGHT piece
+ * between two nodes. Curved roads are split at their bend points, which
+ * become extra degree-2 nodes (ids "e<edge>p<index>") that walkers simply
+ * walk through. Node ids for real junctions are the traffic node ids as text,
+ * so the car sim and the walker sim can talk about the same junction.
+ *
+ * Edge width is the road width minus the two white edge lines, so the footpath
+ * the walker sim derives (10% of that width, hugging the edge) lands on the
+ * pavement strip drawn by the road layer.
+ */
+export function buildWalkGraph(net: Network): { nodes: WalkNode[]; edges: WalkEdge[] } {
+  const nodes: WalkNode[] = net.nodes.map((n) => ({ id: String(n.id), x: n.x, y: n.y }));
+  const edges: WalkEdge[] = [];
+  for (const e of net.edges) {
+    const width = Math.max(1, e.width - 2 * (EDGE_INSET + EDGE_LINE));
+    let prev = String(e.a);
+    for (let i = 1; i < e.pts.length; i++) {
+      const last = i === e.pts.length - 1;
+      let id: string;
+      if (last) id = String(e.b);
+      else {
+        id = `e${e.id}p${i}`;
+        nodes.push({ id, x: e.pts[i].x, y: e.pts[i].y });
+      }
+      edges.push({ id: `e${e.id}s${i}`, a: prev, b: id, width });
+      prev = id;
+    }
   }
-  return false;
+  return { nodes, edges };
 }
 
 // Midpoint and direction of an edge (used to place a road's width label on

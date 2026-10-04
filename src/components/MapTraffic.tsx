@@ -13,7 +13,8 @@
 // It never skips frames. If frames run slow it removes a car (then a walker)
 // instead, so a weak phone still gets a smooth map with less traffic.
 import { memo, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
-import { activeCars, createSim, removeOneCar, removeOneWalker, stepSim, type Network, type Pose } from "@/lib/mapTraffic";
+import { activeCars, buildWalkGraph, createSim, removeOneCar, stepSim, WALKER_BASE_WIDTH, type Network, type Pose } from "@/lib/mapTraffic";
+import { WalkerSim, type WalkerPose } from "@/lib/mapWalkers";
 
 const CAR_COLORS = ["#d7473f", "#f4f4f2", "#2f6fb5", "#b8bcc4", "#1f2933", "#e0a526"];
 const BIKE_COLORS = ["#e11d48", "#2563eb", "#16a34a", "#f59e0b", "#6b7280"];
@@ -24,9 +25,35 @@ const WALKER_COLORS = ["#e2553f", "#3f7fd9", "#f2c14e", "#7a5bd6", "#3aa57a"];
 const SLOW_FRAME_SECONDS = 0.028;
 const SLOW_CHECK_SECONDS = 2;
 const MIN_CARS = 3;
+// A walker is never drawn smaller than this on screen (its shoulder span, in
+// pixels), so people stay visible when the whole site is fitted on a phone.
+const MIN_WALKER_PX = 12;
+const MIN_WALKERS = 1;
 
-function transformOf(p: Pose): string {
-  return `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)}) rotate(${p.angle.toFixed(1)}) scale(${p.scale.toFixed(3)})`;
+// One walker for every two roads, as before.
+function walkerCountFor(net: Network): number {
+  return Math.floor(new Set(net.edges.map((e) => e.roadId)).size / 2);
+}
+
+// Builds a walker sim wired to the car sim: walkers wait while a car holds
+// the junction they want to cross, and cars wait while a walker is crossing.
+function makeWalkers(net: Network, seed: number, count: number, cars: ReturnType<typeof createSim> | null): WalkerSim {
+  const g = buildWalkGraph(net);
+  const walkers = new WalkerSim(g.nodes, g.edges, {
+    count,
+    seed,
+    spriteWidth: WALKER_BASE_WIDTH,
+    pavementRatio: 0.1,
+    // Junction node ids are the traffic node ids as text (see buildWalkGraph);
+    // bend points along a curved road are not in the lock table, so they are never "busy".
+    isJunctionBusy: (id) => (cars ? cars.locks[Number(id)]?.holder != null : false),
+  });
+  if (cars) cars.pedCrossing = (nodeId) => walkers.isCrossing(String(nodeId));
+  return walkers;
+}
+
+function transformOf(p: Pose | WalkerPose, minScale = 0): string {
+  return `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)}) rotate(${p.angle.toFixed(1)}) scale(${Math.max(p.scale, minScale).toFixed(3)})`;
 }
 
 const REDUCED_QUERY = "(prefers-reduced-motion: reduce)";
@@ -52,6 +79,7 @@ export const MapTraffic = memo(function MapTraffic({ network, seedKey }: { netwo
   // Starting positions, drawn on first render (and on the server) so the map
   // is never empty. The loop below runs its own copy of the same simulation.
   const start = useMemo(() => createSim(network, { seed }), [network, seed]);
+  const startWalkers = useMemo(() => makeWalkers(network, seed, walkerCountFor(network), null).poses, [network, seed]);
   const reduced = useSyncExternalStore(subscribeReduced, reducedNow, reducedOnServer);
   const groupRef = useRef<SVGGElement>(null);
   const carEls = useRef<(SVGGElement | null)[]>([]);
@@ -62,7 +90,11 @@ export const MapTraffic = memo(function MapTraffic({ network, seedKey }: { netwo
     const group = groupRef.current;
     if (!group) return;
     const sim = createSim(network, { seed });
+    let walkerCount = walkerCountFor(network);
+    let walkers = makeWalkers(network, seed, walkerCount, sim);
     const svg = group.ownerSVGElement;
+    // Screen pixels per map unit (the viewer keeps this up to date as --k).
+    const minWalkerScale = () => MIN_WALKER_PX / (WALKER_BASE_WIDTH * (Number(svg?.style.getPropertyValue("--k")) || 0.4));
 
     let raf = 0;
     let last = 0;
@@ -82,14 +114,16 @@ export const MapTraffic = memo(function MapTraffic({ network, seedKey }: { netwo
         }
         el.setAttribute("transform", transformOf(c));
       }
-      for (const w of sim.walkers) {
-        const el = walkerEls.current[w.id];
-        if (!el) continue;
-        if (!w.active) {
-          if (el.style.display !== "none") el.style.display = "none";
-          continue;
-        }
-        el.setAttribute("transform", transformOf(w));
+      const minScale = minWalkerScale();
+      const poses = walkers.poses;
+      for (let i = 0; i < poses.length; i++) {
+        const el = walkerEls.current[i];
+        if (el) el.setAttribute("transform", transformOf(poses[i], minScale));
+      }
+      // Hide the elements of walkers removed for speed.
+      for (let i = poses.length; i < walkerEls.current.length; i++) {
+        const el = walkerEls.current[i];
+        if (el && el.style.display !== "none") el.style.display = "none";
       }
     };
 
@@ -99,6 +133,7 @@ export const MapTraffic = memo(function MapTraffic({ network, seedKey }: { netwo
       last = now;
       // The simulation clamps big gaps itself (so a returning tab can't make
       // things jump); the slow-frame check uses the real frame time.
+      walkers.step(Math.min(0.05, raw));
       stepSim(sim, raw);
       apply();
 
@@ -108,7 +143,11 @@ export const MapTraffic = memo(function MapTraffic({ network, seedKey }: { netwo
         sinceCheck = 0;
         if (avg > SLOW_FRAME_SECONDS) {
           if (activeCars(sim) > MIN_CARS) removeOneCar(sim);
-          else removeOneWalker(sim);
+          else if (walkerCount > MIN_WALKERS) {
+            // The walker sim cannot drop one in place, so start it again with one fewer.
+            walkerCount--;
+            walkers = makeWalkers(network, seed, walkerCount, sim);
+          }
         }
       }
       raf = requestAnimationFrame(frame);
@@ -163,15 +202,15 @@ export const MapTraffic = memo(function MapTraffic({ network, seedKey }: { netwo
           <use href={c.kind === "bike" ? "#sp-bike" : "#sp-car"} color={(c.kind === "bike" ? BIKE_COLORS : CAR_COLORS)[c.id % (c.kind === "bike" ? BIKE_COLORS : CAR_COLORS).length]} />
         </g>
       ))}
-      {start.walkers.map((w) => (
+      {startWalkers.map((w, i) => (
         <g
-          key={`walker-${w.id}`}
+          key={`walker-${i}`}
           ref={(el) => {
-            walkerEls.current[w.id] = el;
+            walkerEls.current[i] = el;
           }}
-          transform={transformOf(w)}
+          transform={transformOf(w, 0.35)}
         >
-          <use href="#sp-walker" color={WALKER_COLORS[w.id % WALKER_COLORS.length]} />
+          <use href="#sp-walker" color={WALKER_COLORS[i % WALKER_COLORS.length]} />
         </g>
       ))}
     </g>
