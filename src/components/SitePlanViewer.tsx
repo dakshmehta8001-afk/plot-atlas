@@ -342,8 +342,11 @@ const MapShapes = memo(function MapShapes({
         y1 = Math.max(y1, a.y + padY, b.y + padY);
       }
     }
-    return Number.isFinite(x0) ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
-  }, [scene.network]);
+    // Round the outer corners with the same radius as the corner fillets, so
+    // the straight road edges and the fillets meet with nothing sticking out.
+    const rx = scene.corners.length ? Math.min(...scene.corners.map((c) => c.width)) / 2 : 0;
+    return Number.isFinite(x0) ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0, rx } : null;
+  }, [scene.network, scene.corners]);
 
   const junctions = useMemo(
     () =>
@@ -404,7 +407,7 @@ const MapShapes = memo(function MapShapes({
       {roadClip && (
         <defs>
           <clipPath id="sp-site-clip">
-            <rect x={roadClip.x} y={roadClip.y} width={roadClip.w} height={roadClip.h} />
+            <rect x={roadClip.x} y={roadClip.y} width={roadClip.w} height={roadClip.h} rx={roadClip.rx} />
           </clipPath>
         </defs>
       )}
