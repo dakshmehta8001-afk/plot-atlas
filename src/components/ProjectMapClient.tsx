@@ -124,6 +124,16 @@ export function ProjectMapClient({
   // buttons and a "Tower A · 3rd Floor" breadcrumb in roughly the same
   // corner as this header/stats/legend overlay — showing both collides, so
   // this chrome steps aside until the viewer backs out to the full site.
+  // Esc closes the plot details panel (same as its close button).
+  useEffect(() => {
+    if (!selectedUnit) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelectedUnit(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedUnit]);
+
   const showMapChrome = activeTab === "map" && drilldownStage === "site";
 
   return (

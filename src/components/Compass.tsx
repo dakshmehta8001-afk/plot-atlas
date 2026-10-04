@@ -18,7 +18,7 @@
 export function Compass({ angleDegrees, inline = false }: { angleDegrees?: number | null; inline?: boolean }) {
   return (
     <div className={inline ? "pointer-events-none select-none" : "pointer-events-none absolute left-3 top-3 z-[500] select-none"}>
-      <div className="relative flex h-11 w-11 items-center justify-center rounded-full border border-map-border bg-map-panel/80 shadow-lg backdrop-blur">
+      <div className="relative flex h-11 w-11 items-center justify-center rounded-full border border-map-border bg-map-panel/80 shadow-lg backdrop-blur sm:h-9 sm:w-9">
         <span className="absolute top-1 text-[9px] font-semibold text-map-text/90">N</span>
         <span className="absolute bottom-1 text-[9px] font-semibold text-map-muted">S</span>
         <span className="absolute left-1.5 text-[9px] font-semibold text-map-muted">W</span>

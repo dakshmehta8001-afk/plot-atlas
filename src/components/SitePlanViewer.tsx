@@ -780,11 +780,13 @@ export function SitePlanViewer({
     // (about 72px tall). Reserving a strip down the right and a band along the
     // bottom of a phone keeps the site clear of both, and costs less map than
     // reserving the column's full height would.
-    const phone = mapSize.w < 640;
     const padL = 8;
     const padT = 8;
-    const padR = 8 + 52;
-    const padB = phone ? 8 + 80 : 8;
+    // On a wide window the site is height-limited and never reaches the side
+    // strip, so reserve it only on narrower screens (this keeps the site centred).
+    const padR = mapSize.w >= 900 ? 8 : 8 + 52;
+    // Media/About bar: taller reserve on a phone (unchanged), a smaller one on desktop.
+    const padB = mapSize.w < 640 ? 8 + 80 : 8 + 64;
     const s = Math.min((mapSize.w - padL - padR) / cw, (mapSize.h - padT - padB) / ch);
     const freeCx = (padL + mapSize.w - padR) / 2;
     const freeCy = (padT + mapSize.h - padB) / 2;
@@ -852,30 +854,69 @@ export function SitePlanViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately keyed only on zoomedId/resetSignal/highlightZone, not view's own identity
   }, [zoomedId, resetSignal, highlightZone]);
 
-  function handleWheel(e: React.WheelEvent<SVGSVGElement>) {
-    if (zoomedId) return;
-    e.preventDefault();
-    const group = panGroupRef.current;
-    if (!group) return;
-    // A viewBoxSize of 1 makes clientPointToLocalFraction hand back raw
-    // local SVG units (no division) rather than a 0..1 fraction — needed
-    // here since x and y no longer share one uniform unit scale (VB vs
-    // vbHeight), and this helper only ever divides by a single size.
-    const rawLocal = clientPointToLocalFraction(group, e.clientX, e.clientY, 1);
-    if (!rawLocal) return;
-    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-    setView((prev) => {
-      const nextScale = Math.min(MAX_FREE_ZOOM, Math.max(1, prev.scale * factor));
-      // Keep the point under the cursor fixed on screen while zooming — same
-      // algebra as the digitize editor's wheel-zoom, just anchored to
-      // whatever the pointer/touch position is instead of a clicked shape.
-      const px = rawLocal.x;
-      const py = rawLocal.y;
-      const tx = px - ((px - prev.tx) / prev.scale) * nextScale;
-      const ty = py - ((py - prev.ty) / prev.scale) * nextScale;
-      return { tx, ty, scale: nextScale };
-    });
-  }
+  // Mouse wheel and trackpad pinch zoom toward the cursor. A native listener
+  // (not React's onWheel) because React registers wheel handlers as passive,
+  // and a passive handler cannot stop the browser from zooming or scrolling
+  // the whole page. A trackpad pinch arrives as a wheel event with ctrlKey set
+  // and small deltas, so the zoom is proportional to the delta instead of one
+  // fixed step per event: a mouse notch (about 100) gives roughly 1.17x, a
+  // pinch zooms smoothly.
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg || zoomedId) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const group = panGroupRef.current;
+      if (!group) return;
+      // A viewBoxSize of 1 makes clientPointToLocalFraction hand back raw
+      // local SVG units (no division) rather than a 0..1 fraction: x and y no
+      // longer share one unit scale (VB vs vbHeight).
+      const rawLocal = clientPointToLocalFraction(group, e.clientX, e.clientY, 1);
+      if (!rawLocal) return;
+      const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+      const factor = Math.min(1.35, Math.max(1 / 1.35, Math.exp(-dy * (e.ctrlKey ? 0.012 : 0.0016))));
+      setView((prev) => {
+        const nextScale = Math.min(MAX_FREE_ZOOM, Math.max(1, prev.scale * factor));
+        // Keep the point under the cursor fixed on screen while zooming.
+        const px = rawLocal.x;
+        const py = rawLocal.y;
+        const tx = px - ((px - prev.tx) / prev.scale) * nextScale;
+        const ty = py - ((py - prev.ty) / prev.scale) * nextScale;
+        return { tx, ty, scale: nextScale };
+      });
+    };
+    svg.addEventListener("wheel", onWheel, { passive: false });
+    return () => svg.removeEventListener("wheel", onWheel);
+  }, [zoomedId]);
+
+  // Keyboard: + / = zoom in, - zoom out, 0 fit the whole site, Esc leaves a
+  // zoomed-in plot. Ignored while typing in a field or with a modifier held
+  // (so browser shortcuts like Ctrl+0 keep working).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+      if (zoomedId) {
+        if (e.key === "Escape") setZoomedId(null);
+        return;
+      }
+      const zoom = (factor: number) =>
+        setView((prev) => {
+          const nextScale = Math.min(MAX_FREE_ZOOM, Math.max(1, prev.scale * factor));
+          const cx = box.x + box.w / 2;
+          const cy = box.y + box.h / 2;
+          return { tx: cx - ((cx - prev.tx) / prev.scale) * nextScale, ty: cy - ((cy - prev.ty) / prev.scale) * nextScale, scale: nextScale };
+        });
+      if (e.key === "+" || e.key === "=") zoom(1.3);
+      else if (e.key === "-" || e.key === "_") zoom(1 / 1.3);
+      else if (e.key === "0") setView({ tx: 0, ty: 0, scale: 1 });
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zoomedId, box]);
 
   function handleBackgroundPointerDown(e: React.PointerEvent<SVGSVGElement>) {
     if (zoomedId) return;
@@ -1126,7 +1167,6 @@ export function SitePlanViewer({
           viewBox={`${box.x} ${box.y} ${box.w} ${box.h}`}
           className="h-full w-full bg-[#0b1f2e]"
           style={{ cursor: zoomedId ? "default" : "grab", touchAction: zoomedId ? "auto" : "none" }}
-          onWheel={handleWheel}
           onPointerDown={handleBackgroundPointerDown}
           onPointerMove={handleBackgroundPointerMove}
           onPointerUp={handleBackgroundPointerUp}
@@ -1190,6 +1230,11 @@ ftPerUnit={ftPerUnit}
             {hoveredUnit.unit.wing ? `${hoveredUnit.unit.wing}-` : ""}
             {hoveredUnit.unit.unit_number}
           </span>
+          {(hoveredUnit.unit.dimensions || hoveredUnit.unit.area_sqft) && (
+            <span className="ml-1.5 text-white/80">
+              {hoveredUnit.unit.dimensions ?? `${Math.round(hoveredUnit.unit.area_sqft ?? 0).toLocaleString("en-IN")} sqft`}
+            </span>
+          )}
           <span className="ml-1.5 text-white/60">{UNIT_STATUS_STYLES[hoveredUnit.unit.status].label}</span>
         </div>
       )}
@@ -1201,7 +1246,7 @@ ftPerUnit={ftPerUnit}
             type="button"
             onClick={() => zoomBy(1.3)}
             aria-label="Zoom in"
-            className="flex h-11 w-11 items-center justify-center rounded-md bg-white/90 text-lg font-semibold text-[#0f2436] shadow hover:bg-white"
+            className="flex h-11 w-11 items-center justify-center rounded-md bg-white/90 text-lg font-semibold text-[#0f2436] shadow hover:bg-white sm:h-8 sm:w-8 sm:text-base"
           >
             +
           </button>
@@ -1209,7 +1254,7 @@ ftPerUnit={ftPerUnit}
             type="button"
             onClick={() => zoomBy(1 / 1.3)}
             aria-label="Zoom out"
-            className="flex h-11 w-11 items-center justify-center rounded-md bg-white/90 text-lg font-semibold text-[#0f2436] shadow hover:bg-white"
+            className="flex h-11 w-11 items-center justify-center rounded-md bg-white/90 text-lg font-semibold text-[#0f2436] shadow hover:bg-white sm:h-8 sm:w-8 sm:text-base"
           >
             −
           </button>
@@ -1217,7 +1262,7 @@ ftPerUnit={ftPerUnit}
             type="button"
             onClick={resetView}
             aria-label="Fit to view"
-            className="flex h-11 items-center justify-center rounded-md bg-white/90 px-2 text-xs font-medium text-[#0f2436] shadow hover:bg-white"
+            className="flex h-11 items-center justify-center rounded-md bg-white/90 px-2 text-xs font-medium text-[#0f2436] shadow hover:bg-white sm:h-8 sm:w-8 sm:px-0 sm:text-[11px]"
           >
             Fit
           </button>
