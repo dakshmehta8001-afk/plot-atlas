@@ -165,7 +165,7 @@ function hash01(i: number): number {
 
 /** Where the entry gate is drawn: on a perimeter road, with a road leading out of the site. */
 export interface GateGeom {
-  /** Centre of the gate on the perimeter road's centre line. */
+  /** Centre of the arch: just outside the perimeter road, across the approach road. */
   x: number;
   y: number;
   /** Unit vector pointing out of the site, across the road. */
@@ -176,7 +176,7 @@ export interface GateGeom {
   /** Far end of the approach road, outside the wall. */
   endX: number;
   endY: number;
-  /** Angle (degrees) of the across-road axis, normalised so text on the arch reads upright. */
+  /** Angle (degrees) of the beam (across the approach road), normalised so the name reads upright. */
   angle: number;
 }
 
@@ -405,14 +405,16 @@ export function buildScene(
     gate:
       gateSpot && network.gate
         ? {
-            x: gateSpot.P.x,
-            y: gateSpot.P.y,
+            // The arch stands just outside the perimeter road's outer edge, across the approach road.
+            x: gateSpot.P.x + gateSpot.n.x * (gateSpot.w / 2 + 10),
+            y: gateSpot.P.y + gateSpot.n.y * (gateSpot.w / 2 + 10),
             nx: gateSpot.n.x,
             ny: gateSpot.n.y,
             width: gateSpot.w,
             endX: gateSpot.end.x,
             endY: gateSpot.end.y,
-            angle: ((a) => (a > 90 ? a - 180 : a < -90 ? a + 180 : a))((Math.atan2(gateSpot.n.y, gateSpot.n.x) * 180) / Math.PI),
+            // The beam runs along the perimeter road's direction (across the approach road).
+            angle: ((a) => (a > 90 ? a - 180 : a < -90 ? a + 180 : a))((Math.atan2(gateSpot.n.x, -gateSpot.n.y) * 180) / Math.PI),
           }
         : null,
     lights: buildStreetlights(network, 3 * medianPlotWidth(plotPolys.map((q) => q.pts))),
