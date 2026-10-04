@@ -44,10 +44,10 @@ import {
 import { useImageAspectRatio } from "@/lib/useImageAspectRatio";
 import { toScaledSvgPoints, scaledBoundingBoxCenter } from "@/lib/svgPolygon";
 import { Compass } from "@/components/Compass";
-import { buildScene } from "@/lib/mapScenery";
+import { buildScene, type Scene } from "@/lib/mapScenery";
 import { roadLabelText } from "@/lib/roadWidth";
 import { feetPerUnit } from "@/lib/calibration";
-import { EDGE_INSET, EDGE_LINE, cornerAsphaltRadius, roadMetrics } from "@/lib/mapTraffic";
+import { EDGE_INSET, EDGE_LINE, GATE_ROAD_ID, cornerAsphaltRadius, roadMetrics } from "@/lib/mapTraffic";
 import { MapTraffic } from "@/components/MapTraffic";
 import { clientPointToLocalFraction } from "@/lib/svgCoords";
 
@@ -138,7 +138,8 @@ function opaqueRgba(rgba: string): string {
 // the road surface they drive on. Road cross-section constants (edge line,
 // pavement strip, lanes) live in lib/mapTraffic.ts so drawing and traffic
 // always agree.
-const ROAD_COLOR = "#2a2f38";
+// Medium-grey asphalt (not black), so cars, walkers and the white road markings all read on it.
+const ROAD_COLOR = "#6b7078";
 const PAVEMENT_COLOR = "#c8ccd2";
 
 // Shared drawings, defined once and drawn many times with <use>: that keeps
@@ -147,6 +148,10 @@ const PAVEMENT_COLOR = "#c8ccd2";
 function SceneryDefs() {
   return (
     <defs>
+      {/* Blur for the soft shadows under streetlights and the gate arch. */}
+      <filter id="sp-soft-shadow" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="1.4" />
+      </filter>
       <linearGradient id="sp-grass" x1="0" y1="0" x2="1" y2="1">
         <stop offset="0" stopColor="#8fcf8a" />
         <stop offset="1" stopColor="#6fb26f" />
@@ -244,8 +249,52 @@ function SceneryDefs() {
 // useCallback-wrapped handlers in SitePlanViewer below; plots/roads/etc.
 // are already stable since they come from a Server Component fetch that
 // doesn't re-run on client-side pan/zoom/hover.
+// The entry gate: two stone pillars at the kerbs and a beam across the road
+// carrying the project name, seen from above, with a soft shadow. Drawn in a
+// frame whose x axis runs ACROSS the road, so the same shapes fit any road
+// direction (the angle keeps the name upright).
+function GateArch({ gate, name }: { gate: NonNullable<Scene["gate"]>; name: string }) {
+  const half = gate.width / 2;
+  const text = (name.trim() || "Entrance").slice(0, 34) + (name.trim().length > 34 ? "…" : "");
+  const avail = gate.width - 38;
+  const natural = text.length * 5.6; // about 9px type
+  return (
+    <g transform={`translate(${gate.x} ${gate.y}) rotate(${gate.angle})`}>
+      <g filter="url(#sp-soft-shadow)" fill="#000" fillOpacity={0.3}>
+        <rect x={-half + 3} y={-8} width={gate.width - 4} height={20} rx={3} />
+        <rect x={-half + 1} y={-11} width={15} height={26} rx={2} />
+        <rect x={half - 14} y={-11} width={15} height={26} rx={2} />
+      </g>
+      {/* beam over the road */}
+      <rect x={-half + 8} y={-9} width={gate.width - 16} height={18} rx={3} fill="#e4d6b8" stroke="#7a6548" strokeWidth={0.8} />
+      <rect x={-half + 8} y={-9} width={gate.width - 16} height={4} rx={2} fill="#ffffff" fillOpacity={0.35} />
+      {/* pillars */}
+      <rect x={-half - 1} y={-12} width={15} height={24} rx={2} fill="#a8946f" stroke="#5e4c33" strokeWidth={0.9} />
+      <rect x={half - 14} y={-12} width={15} height={24} rx={2} fill="#a8946f" stroke="#5e4c33" strokeWidth={0.9} />
+      <rect x={-half + 2} y={-9} width={9} height={18} rx={1.5} fill="#c4b08a" />
+      <rect x={half - 11} y={-9} width={9} height={18} rx={1.5} fill="#c4b08a" />
+      <text
+        x={0}
+        y={0.5}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize={9}
+        fontWeight={700}
+        fill="#2b2118"
+        textLength={natural > avail ? avail : undefined}
+        lengthAdjust="spacingAndGlyphs"
+        className="select-none"
+      >
+        {text}
+      </text>
+    </g>
+  );
+}
+
 const MapShapes = memo(function MapShapes({
   roads,
+  scene,
+  projectName,
   plots,
   buildings,
   features,
@@ -262,6 +311,10 @@ const MapShapes = memo(function MapShapes({
   onPlotHoverEnd,
 }: {
   roads: Road[];
+  /** Roads, junctions, gate and streetlights, built once by SitePlanViewer. */
+  scene: Scene;
+  /** Shown on the entry gate's arch. */
+  projectName: string;
   plots: Unit[];
   buildings: Building[];
   features: SiteFeature[];
@@ -280,12 +333,6 @@ const MapShapes = memo(function MapShapes({
   onPlotHover: (unit: Unit, e: React.MouseEvent) => void;
   onPlotHoverEnd: (unitId: string) => void;
 }) {
-  // Computed once per data change, never per pan/zoom frame (this component
-  // is memoised and none of these inputs change while panning).
-  const scene = useMemo(
-    () => buildScene(roads, plots, [...buildings, ...features], VB, vbHeight, roadStrokeWidth),
-    [roads, plots, buildings, features, vbHeight],
-  );
   const plotGeoms = useMemo(() => {
     const map = new Map<string, { points: string; center: { x: number; y: number }; minDim: number }>();
     for (const unit of plots) {
@@ -309,6 +356,7 @@ const MapShapes = memo(function MapShapes({
   const painted = useMemo(
     () =>
       scene.roads.flatMap((r) => {
+        if (r.id === GATE_ROAD_ID) return [];
         const text = roadLabelText(r.label, r.width, ftPerUnit);
         if (!text) return [];
         const css = {
@@ -326,27 +374,35 @@ const MapShapes = memo(function MapShapes({
   // roads. Corner fillets and road ends are cut flush to it, so asphalt never
   // pokes out past the site. (Each segment only widens the box sideways.)
   const roadClip = useMemo(() => {
-    let x0 = Infinity;
-    let y0 = Infinity;
-    let x1 = -Infinity;
-    let y1 = -Infinity;
+    const env = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    const gate = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
     for (const e of scene.network.edges) {
+      const box = e.roadId === GATE_ROAD_ID ? gate : env;
       for (let i = 1; i < e.pts.length; i++) {
         const a = e.pts[i - 1];
         const b = e.pts[i];
         const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
         const padX = (e.width / 2) * (Math.abs(b.y - a.y) / len);
         const padY = (e.width / 2) * (Math.abs(b.x - a.x) / len);
-        x0 = Math.min(x0, a.x - padX, b.x - padX);
-        x1 = Math.max(x1, a.x + padX, b.x + padX);
-        y0 = Math.min(y0, a.y - padY, b.y - padY);
-        y1 = Math.max(y1, a.y + padY, b.y + padY);
+        box.x0 = Math.min(box.x0, a.x - padX, b.x - padX);
+        box.x1 = Math.max(box.x1, a.x + padX, b.x + padX);
+        box.y0 = Math.min(box.y0, a.y - padY, b.y - padY);
+        box.y1 = Math.max(box.y1, a.y + padY, b.y + padY);
       }
     }
+    if (!Number.isFinite(env.x0)) return null;
     // Round the outer corners with the same radius as the corner fillets, so
     // the straight road edges and the fillets meet with nothing sticking out.
     const rx = scene.corners.length ? Math.min(...scene.corners.map((c) => c.width)) / 2 : 0;
-    return Number.isFinite(x0) ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0, rx } : null;
+    return {
+      x: env.x0,
+      y: env.y0,
+      w: env.x1 - env.x0,
+      h: env.y1 - env.y0,
+      rx,
+      // The gate's approach road leads OUT of the site, so it is allowed past the envelope.
+      approach: Number.isFinite(gate.x0) ? { x: gate.x0, y: gate.y0, w: gate.x1 - gate.x0, h: gate.y1 - gate.y0 } : null,
+    };
   }, [scene.network, scene.corners]);
 
   const junctions = useMemo(
@@ -409,6 +465,7 @@ const MapShapes = memo(function MapShapes({
         <defs>
           <clipPath id="sp-site-clip">
             <rect x={roadClip.x} y={roadClip.y} width={roadClip.w} height={roadClip.h} rx={roadClip.rx} />
+            {roadClip.approach && <rect x={roadClip.approach.x} y={roadClip.approach.y} width={roadClip.approach.w} height={roadClip.approach.h} />}
           </clipPath>
         </defs>
       )}
@@ -435,6 +492,13 @@ const MapShapes = memo(function MapShapes({
         {scene.corners.map((c, i) => (
           <circle key={`pavec-${i}`} cx={c.x} cy={c.y} r={Math.max(0.5, (c.width - 2 * (EDGE_INSET + EDGE_LINE)) / 2)} fill={PAVEMENT_COLOR} />
         ))}
+        {/* Thin white edge lines on both sides of the driving surface. */}
+        {scene.roads.map((r) => (
+          <polyline key={`cline-${r.id}`} points={r.points} fill="none" stroke="#ffffff" strokeOpacity={0.92} strokeWidth={roadMetrics(r.width).carriageway + 2.6} strokeLinejoin="round" />
+        ))}
+        {scene.corners.map((c, i) => (
+          <circle key={`clinec-${i}`} cx={c.x} cy={c.y} r={cornerAsphaltRadius(c.width) + 1.3} fill="#ffffff" fillOpacity={0.92} />
+        ))}
         {scene.roads.map((r) => (
           <polyline key={`lane-${r.id}`} points={r.points} fill="none" stroke={ROAD_COLOR} strokeWidth={roadMetrics(r.width).carriageway} strokeLinejoin="round" />
         ))}
@@ -447,9 +511,10 @@ const MapShapes = memo(function MapShapes({
             key={`centre-${r.id}`}
             points={r.points}
             fill="none"
-            stroke="#f5c518"
-            strokeWidth={Math.max(1.6, r.width * 0.035)}
-            strokeDasharray={`${r.width * 0.3} ${r.width * 0.22}`}
+            stroke="#ffffff"
+            strokeOpacity={0.92}
+            strokeWidth={Math.max(1.3, r.width * 0.026)}
+            strokeDasharray={`${Math.max(5, r.width * 0.09)} ${Math.max(8, r.width * 0.13)}`}
             strokeLinejoin="round"
           />
         ))}
@@ -491,6 +556,30 @@ const MapShapes = memo(function MapShapes({
           animateMotion, so they follow the road network and turn. */}
       <g style={{ opacity: selectedId !== null ? 0.4 : 1, transition: "opacity 300ms ease" }}>
         <MapTraffic network={scene.network} seedKey={roads.map((r) => r.id).join("|")} />
+      </g>
+
+      {/* Overhead things, drawn above the traffic: streetlights along the
+          inner road edges (pole on the kerb, a short arm reaching over the
+          road, a soft shadow) and the entry gate's arch with the project name. */}
+      <g className="pointer-events-none" style={{ opacity: selectedId !== null ? 0.4 : 1, transition: "opacity 300ms ease" }}>
+        {scene.lights.length > 0 && (
+          <g filter="url(#sp-soft-shadow)">
+            {scene.lights.map((l, i) => (
+              <g key={`lts-${i}`} fill="#000" fillOpacity={0.3} stroke="#000" strokeOpacity={0.3}>
+                <line x1={l.x + 1.8} y1={l.y + 2.8} x2={l.ax + 1.8} y2={l.ay + 2.8} strokeWidth={2.2} strokeLinecap="round" />
+                <circle cx={l.ax + 1.8} cy={l.ay + 2.8} r={3.6} stroke="none" fillOpacity={0.22} />
+              </g>
+            ))}
+          </g>
+        )}
+        {scene.lights.map((l, i) => (
+          <g key={`lt-${i}`}>
+            <line x1={l.x} y1={l.y} x2={l.ax} y2={l.ay} stroke="#2f343d" strokeWidth={1.1} strokeLinecap="round" />
+            <circle cx={l.x} cy={l.y} r={1.7} fill="#2f343d" stroke="#ffffff" strokeOpacity={0.55} strokeWidth={0.4} />
+            <circle cx={l.ax} cy={l.ay} r={2.3} fill="#ffe9a6" stroke="#2f343d" strokeWidth={0.5} />
+          </g>
+        ))}
+        {scene.gate && <GateArch gate={scene.gate} name={projectName} />}
       </g>
 
       {plots.map((unit, index) => {
@@ -623,6 +712,8 @@ const MapShapes = memo(function MapShapes({
           plots, since a feature isn't itself a sellable unit). */}
       {features.map((feature, index) => {
         if (feature.polygon_points.length < 3) return null;
+        // The gate is drawn as an arch over the road (above), not as a flat polygon.
+        if (feature.kind === "gate" && scene.gate) return null;
         const style = SITE_FEATURE_STYLES[feature.kind];
         const center = scaledBoundingBoxCenter(feature.polygon_points, VB, vbHeight);
         return (
@@ -702,6 +793,7 @@ const MapShapes = memo(function MapShapes({
 export function SitePlanViewer({
   planImageUrl,
   planImageSize,
+  projectName = "",
   plots,
   buildings,
   roads = [],
@@ -718,6 +810,8 @@ export function SitePlanViewer({
   planImageUrl: string;
   /** Stored pixel size of the plan image, so the map has its real shape from the first render. */
   planImageSize?: { width?: number | null; height?: number | null };
+  /** Shown on the entry gate's arch, if the project has a gate. */
+  projectName?: string;
   plots: Unit[];
   buildings: Building[];
   roads?: Road[];
@@ -751,6 +845,16 @@ export function SitePlanViewer({
   // correct as a plain VB-based fraction, unchanged, on either axis.
   const vbHeight = VB / aspectRatio;
 
+  // The entry gate is a site feature of kind "gate" that the sub-admin draws on
+  // a perimeter road. With none (or none on a perimeter road) nothing is drawn
+  // and there is no entry traffic. The scene is built here, once per data
+  // change, so the fit frame below can include the gate's approach road.
+  const gatePoints = useMemo(() => features.find((f) => f.kind === "gate" && f.polygon_points.length >= 3)?.polygon_points ?? null, [features]);
+  const scene = useMemo(
+    () => buildScene(roads, plots, [...buildings, ...features.filter((f) => f.kind !== "gate")], VB, vbHeight, roadStrokeWidth, gatePoints),
+    [roads, plots, buildings, features, vbHeight, gatePoints],
+  );
+
   // The visible frame ("Fit"): the whole site (plots, buildings, features,
   // roads, plus the grass and wall around them) scaled to fit the map area
   // with nothing cropped, and padded so the overlays stay clear of it: the zoom
@@ -770,10 +874,22 @@ export function SitePlanViewer({
     if (xs.length === 0) return { x: 0, y: 0, w: VB, h: vbHeight };
     // grass border (0.05 * VB) + trees and wall, with a little to spare
     const margin = VB * 0.05 + 16;
-    const cx0 = Math.min(...xs) - margin;
-    const cy0 = Math.min(...ys) - margin;
-    const cw = Math.max(...xs) + margin - cx0;
-    const ch = Math.max(...ys) + margin - cy0;
+    let x0 = Math.min(...xs) - margin;
+    let y0 = Math.min(...ys) - margin;
+    let x1 = Math.max(...xs) + margin;
+    let y1 = Math.max(...ys) + margin;
+    // The gate's approach road reaches out past the wall: keep it in frame.
+    if (scene.gate) {
+      const g = scene.gate;
+      x0 = Math.min(x0, g.endX - g.width / 2 - 10);
+      x1 = Math.max(x1, g.endX + g.width / 2 + 10);
+      y0 = Math.min(y0, g.endY - g.width / 2 - 10);
+      y1 = Math.max(y1, g.endY + g.width / 2 + 10);
+    }
+    const cx0 = x0;
+    const cy0 = y0;
+    const cw = x1 - x0;
+    const ch = y1 - y0;
     if (!mapSize || mapSize.w < 50 || mapSize.h < 50) return { x: cx0, y: cy0, w: cw, h: ch };
     // The overlays: a column of compass and zoom buttons (44px wide, 12px from
     // the right edge) and, on a phone, the Media/About bar along the bottom
@@ -791,7 +907,7 @@ export function SitePlanViewer({
     const freeCx = (padL + mapSize.w - padR) / 2;
     const freeCy = (padT + mapSize.h - padB) / 2;
     return { x: cx0 + cw / 2 - freeCx / s, y: cy0 + ch / 2 - freeCy / s, w: mapSize.w / s, h: mapSize.h / s };
-  }, [plots, buildings, features, roads, vbHeight, mapSize]);
+  }, [plots, buildings, features, roads, vbHeight, mapSize, scene.gate]);
 
   // resetSignal only ever changes to a new value (never re-fires the same
   // one), so this only runs when the parent actually wants us reset — e.g.
@@ -1201,6 +1317,8 @@ export function SitePlanViewer({
 
             <MapShapes
               roads={roads}
+              scene={scene}
+              projectName={projectName}
               plots={plots}
               buildings={buildings}
               features={features}

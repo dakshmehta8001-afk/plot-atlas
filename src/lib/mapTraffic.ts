@@ -52,9 +52,18 @@ export interface Node {
   dead: boolean;
 }
 
+/** Id of the synthetic road that is the gate's approach road (outside the wall). */
+export const GATE_ROAD_ID = "__gate__";
+
 export interface Network {
   nodes: Node[];
   edges: Edge[];
+  /**
+   * The entry gate, if the project has one: the approach edge, the junction
+   * where it meets the perimeter road, and its far (outside) end. Vehicles
+   * enter and leave the site through it. Null when there is no gate.
+   */
+  gate: { edge: number; junction: number; outer: number } | null;
   /** Road id -> the centre line as it should be DRAWN (ends extended/trimmed). */
   paths: Map<string, Pt[]>;
 }
@@ -365,7 +374,15 @@ export function connectRoads(roads: RoadIn[]): Network {
     nodes[e.b].edges.push(e.id);
   }
   for (const nd of nodes) nd.dead = nd.edges.length === 1;
-  return { nodes, edges: kept, paths };
+  // The gate's approach edge: a dead end outside, joined to the site's road.
+  let gate: Network["gate"] = null;
+  const ge = kept.find((e) => e.roadId === GATE_ROAD_ID);
+  if (ge) {
+    const aDead = nodes[ge.a].edges.length === 1;
+    const bDead = nodes[ge.b].edges.length === 1;
+    if (aDead !== bDead) gate = { edge: ge.id, junction: aDead ? ge.b : ge.a, outer: aDead ? ge.a : ge.b };
+  }
+  return { nodes, edges: kept, paths, gate };
 }
 
 function nearestNode(nodes: Node[], p: Pt): number {
@@ -422,6 +439,8 @@ export interface Car extends Pose {
   id: number;
   /** Motorbikes/scooters: ~40% of a car's length, 15% faster, same lane, lock and gap rules. */
   kind: VehicleKind;
+  /** True once picked to drive out through the gate; it is removed at the end of the approach road. */
+  leaving: boolean;
   edge: number;
   dir: 1 | -1;
   s: number;
@@ -444,10 +463,16 @@ interface Lock {
 
 export interface Sim {
   net: Network;
+  gate: Network["gate"];
   rng: () => number;
   time: number;
   cars: Car[];
   locks: Lock[];
+  /** Road distance from every node to the gate's outer end (Infinity if unreachable); empty with no gate. */
+  distToOuter: number[];
+  /** Seconds until the next vehicle drives in / is sent out through the gate. */
+  entryIn: number;
+  exitIn: number;
   /**
    * Asks the walker sim whether a pedestrian is crossing at this junction
    * (node id). Cars wait at the stop line while it answers true. Set by the
@@ -561,6 +586,27 @@ function setPose(o: Pose, p: Pt, t: Pt, scale: number) {
   o.scale = scale;
 }
 
+// Road distance from the gate's outer end to every node (Dijkstra over the
+// edges), so a car sent out through the gate always knows which way to turn.
+function gateDistances(net: Network): number[] {
+  if (!net.gate) return [];
+  const dist = net.nodes.map(() => Infinity);
+  dist[net.gate.outer] = 0;
+  const done = net.nodes.map(() => false);
+  for (let k = 0; k < net.nodes.length; k++) {
+    let u = -1;
+    for (let i = 0; i < dist.length; i++) if (!done[i] && (u < 0 || dist[i] < dist[u])) u = i;
+    if (u < 0 || dist[u] === Infinity) break;
+    done[u] = true;
+    for (const id of net.nodes[u].edges) {
+      const e = net.edges[id];
+      const v = e.a === u ? e.b : e.a;
+      if (dist[u] + e.len < dist[v]) dist[v] = dist[u] + e.len;
+    }
+  }
+  return dist;
+}
+
 export interface SimOptions {
   seed: number;
   maxCars?: number;
@@ -568,20 +614,24 @@ export interface SimOptions {
 
 export function createSim(net: Network, opts: SimOptions): Sim {
   const rng = mulberry32(opts.seed);
-  const roadCount = new Set(net.edges.map((e) => e.roadId)).size;
+  const roadCount = new Set(net.edges.filter((e) => e.roadId !== GATE_ROAD_ID).map((e) => e.roadId)).size;
   const maxCars = Math.min(opts.maxCars ?? 10, roadCount);
   const sim: Sim = {
     net,
+    gate: net.gate,
     rng,
     time: 0,
     cars: [],
     locks: net.nodes.map(() => ({ holder: null, queue: [] })),
+    distToOuter: gateDistances(net),
+    entryIn: 12 + rng() * 14,
+    exitIn: 20 + rng() * 14,
     pedCrossing: () => false,
     maxCars,
     stillFor: 0,
     resets: 0,
   };
-  const usable = net.edges.filter((e) => e.len > 90);
+  const usable = net.edges.filter((e) => e.len > 90 && e.roadId !== GATE_ROAD_ID);
   if (usable.length === 0) return sim;
 
   const pick = () => usable[Math.floor(rng() * usable.length)];
@@ -605,6 +655,7 @@ export function createSim(net: Network, opts: SimOptions): Sim {
       const car: Car = {
         id: sim.cars.length,
         kind: sim.cars.length % 3 === 2 ? "bike" : "car",
+        leaving: false,
         edge: e.id,
         dir,
         s,
@@ -637,7 +688,7 @@ export function createSim(net: Network, opts: SimOptions): Sim {
 // gridlock fallback). Mirrors the placement in createSim.
 function respawn(sim: Sim) {
   const net = sim.net;
-  const usable = net.edges.filter((e) => e.len > 90);
+  const usable = net.edges.filter((e) => e.len > 90 && e.roadId !== GATE_ROAD_ID);
   if (usable.length === 0) return;
   const placed: { x: number; y: number }[] = [];
   const clear = (x: number, y: number, minD: number) => placed.every((q) => Math.hypot(q.x - x, q.y - y) >= minD);
@@ -693,9 +744,24 @@ function exitRoom(sim: Sim, outEdge: number, outDir: 1 | -1, need: number): bool
 
 function planNext(sim: Sim, c: Car, nodeId: number): { outEdge: number; outDir: 1 | -1 } | null {
   const node = sim.net.nodes[nodeId];
-  const options = node.edges.filter((id) => id !== c.edge);
+  let options = node.edges.filter((id) => id !== c.edge);
   if (options.length === 0) return null;
-  const outEdge = options[Math.floor(sim.rng() * options.length)];
+  let outEdge: number;
+  if (c.leaving && sim.gate) {
+    // Heading out: always take the road that is closest to the gate.
+    const far = (id: number) => {
+      const e = sim.net.edges[id];
+      return sim.distToOuter[e.a === nodeId ? e.b : e.a];
+    };
+    outEdge = options.reduce((best, id) => (far(id) < far(best) ? id : best), options[0]);
+  } else {
+    // Cars already inside never wander out onto the approach road.
+    if (sim.gate) {
+      const inside = options.filter((id) => id !== sim.gate!.edge);
+      if (inside.length > 0) options = inside;
+    }
+    outEdge = options[Math.floor(sim.rng() * options.length)];
+  }
   return { outEdge, outDir: incidentDir(sim.net, outEdge, nodeId) };
 }
 
@@ -725,11 +791,63 @@ function aheadOf(sim: Sim, c: Car): { gap: number; v: number } | null {
   return best;
 }
 
+// Entry and exit traffic. Now and then a vehicle drives in from the approach
+// road (only while fewer than the cap are on the map, so the total never goes
+// over it) and, separately, one of the vehicles inside is sent out through the
+// gate. Both only happen with a gate.
+function stepGate(sim: Sim, dt: number) {
+  const gate = sim.gate!;
+  sim.entryIn -= dt;
+  sim.exitIn -= dt;
+
+  if (sim.entryIn <= 0) {
+    sim.entryIn = 0.5; // try again soon if there is no room yet
+    const active = sim.cars.filter((c) => c.active).length;
+    const slot = sim.cars.find((c) => !c.active);
+    const e = sim.net.edges[gate.edge];
+    const dir = incidentDir(sim.net, gate.edge, gate.outer); // leaving the outer end = driving in
+    const s0 = 8;
+    // Physical position along the edge, whichever way a car is facing.
+    const arc = (c: Car) => (c.dir === 1 ? c.s : e.len - c.s);
+    const entryArc = dir === 1 ? s0 : e.len - s0;
+    const clear = sim.cars.every((c) => !c.active || c.edge !== gate.edge || Math.abs(arc(c) - entryArc) > 90);
+    if (slot && active < sim.maxCars && clear) {
+      const m = roadMetrics(e.width);
+      slot.edge = gate.edge;
+      slot.dir = dir;
+      slot.s = s0;
+      slot.curve = null;
+      slot.curveS = 0;
+      slot.plan = null;
+      slot.holding = null;
+      slot.entered = false;
+      slot.stuckFor = 0;
+      slot.leaving = false;
+      slot.scale = m.carScale;
+      slot.v = slot.vDes * 0.5;
+      slot.active = true;
+      poseCar(sim, slot);
+      sim.entryIn = 22 + sim.rng() * 20;
+    }
+  }
+
+  if (sim.exitIn <= 0) {
+    sim.exitIn = 0.5;
+    const inside = sim.cars.filter((c) => c.active);
+    const ready = inside.filter((c) => !c.leaving && !c.curve && c.holding === null && c.edge !== gate.edge);
+    if (inside.length >= 3 && ready.length > 0) {
+      ready[Math.floor(sim.rng() * ready.length)].leaving = true;
+      sim.exitIn = 24 + sim.rng() * 20;
+    }
+  }
+}
+
 export function stepSim(sim: Sim, dtIn: number) {
   const dt = Math.min(0.05, Math.max(0, dtIn));
   if (dt === 0) return;
   sim.time += dt;
   const net = sim.net;
+  if (sim.gate) stepGate(sim, dt);
 
   // ---- cars ----
   for (const c of sim.cars) {
@@ -748,7 +866,7 @@ export function stepSim(sim: Sim, dtIn: number) {
         const lock = sim.locks[endNode.id];
         // Stop line: outside the junction, plus a margin so a waiting car's
         // nose never touches a car swinging through the turn.
-        const stopDist = endNode.radius + L / 2 + STOP_MARGIN;
+        const stopDist = endNode.radius + L / 2 + Math.max(STOP_MARGIN, 0.3 * L); // big cars on wide roads swing wider
         const brake = (c.v * c.v) / (2 * DECEL) + 12;
         if (c.holding !== endNode.id && dEnd <= stopDist + brake + 4) {
           if (!c.plan || c.plan.node !== endNode.id) {
@@ -788,6 +906,14 @@ export function stepSim(sim: Sim, dtIn: number) {
     else c.v = Math.max(target, c.v - DECEL * dt);
     c.stuckFor = c.v < 1 ? c.stuckFor + dt : 0;
     advanceCar(sim, c, c.v * dt, m);
+
+    // A car sent out through the gate is removed at the far end of the approach road.
+    if (c.leaving && sim.gate && !c.curve && c.edge === sim.gate.edge && c.dir === incidentDir(net, c.edge, sim.gate.junction) && c.s >= e.len - 45) {
+      c.active = false;
+      c.leaving = false;
+      c.plan = null;
+      c.holding = null;
+    }
   }
 
   // release the lock of a car that has driven through and cleared its junction
@@ -884,6 +1010,7 @@ export function removeOneCar(sim: Sim): boolean {
     const c = sim.cars[i];
     if (!c.active) continue;
     c.active = false;
+    sim.maxCars = Math.max(0, sim.maxCars - 1); // the gate must not refill the slot
     if (c.holding !== null && sim.locks[c.holding].holder === c.id) sim.locks[c.holding].holder = null;
     return true;
   }
@@ -892,6 +1019,50 @@ export function removeOneCar(sim: Sim): boolean {
 
 export function activeCars(sim: Sim): number {
   return sim.cars.filter((c) => c.active).length;
+}
+
+export interface Streetlight {
+  /** Pole position (on the kerb, just inside the white edge line). */
+  x: number;
+  y: number;
+  /** Where the lamp hangs: the end of the short arm reaching over the road. */
+  ax: number;
+  ay: number;
+}
+
+/**
+ * Streetlight poles along the INNER edge of every road (the side facing the
+ * plots; on a road with plots on both sides, one fixed side), about one every
+ * `spacing` map units, spread evenly between the junctions. Poles are skipped
+ * inside junctions, and none are placed on the gate's approach road.
+ */
+export function buildStreetlights(net: Network, spacing: number): Streetlight[] {
+  const real = net.edges.filter((e) => e.roadId !== GATE_ROAD_ID);
+  if (real.length === 0 || !(spacing > 0)) return [];
+  const all = real.flatMap((e) => e.pts);
+  const lo = { x: Math.min(...all.map((p) => p.x)), y: Math.min(...all.map((p) => p.y)) };
+  const hi = { x: Math.max(...all.map((p) => p.x)), y: Math.max(...all.map((p) => p.y)) };
+  const outside = (p: Pt) => p.x < lo.x - 1 || p.x > hi.x + 1 || p.y < lo.y - 1 || p.y > hi.y + 1;
+  const lights: Streetlight[] = [];
+  for (const e of real) {
+    const from = net.nodes[e.a].radius + 8;
+    const to = e.len - net.nodes[e.b].radius - 8;
+    if (to - from < 24) continue;
+    const count = Math.max(1, Math.round((to - from) / spacing));
+    for (let i = 0; i < count; i++) {
+      const s = from + ((i + 0.5) * (to - from)) / count;
+      const { p, t } = pointAtArc(e.pts, e.cum, s);
+      const left = { x: t.y, y: -t.x };
+      const probe = (side: number) => ({ x: p.x + left.x * side * (e.width / 2 + 2), y: p.y + left.y * side * (e.width / 2 + 2) });
+      // The inner side is the one that is NOT outside the site's road box.
+      const side = outside(probe(1)) && !outside(probe(-1)) ? -1 : 1;
+      const kerb = e.width / 2 - (EDGE_INSET + EDGE_LINE) - 1.5;
+      const arm = Math.min(e.width * 0.22, 26);
+      const pole = { x: p.x + left.x * side * kerb, y: p.y + left.y * side * kerb };
+      lights.push({ x: pole.x, y: pole.y, ax: pole.x - left.x * side * arm, ay: pole.y - left.y * side * arm });
+    }
+  }
+  return lights;
 }
 
 /**
@@ -911,11 +1082,12 @@ export function buildWalkGraph(net: Network): { nodes: WalkNode[]; edges: WalkEd
   // Perimeter roads: their outer side faces the grass, so only the inner
   // footpath exists. A side is "outer" when a point one half-width out from
   // the centre line falls outside the box spanned by all road centre lines.
-  const all = net.edges.flatMap((e) => e.pts);
+  const real = net.edges.filter((e) => e.roadId !== GATE_ROAD_ID);
+  const all = real.flatMap((e) => e.pts);
   const lo = { x: Math.min(...all.map((p) => p.x)), y: Math.min(...all.map((p) => p.y)) };
   const hi = { x: Math.max(...all.map((p) => p.x)), y: Math.max(...all.map((p) => p.y)) };
   const outside = (p: Pt) => p.x < lo.x - 1 || p.x > hi.x + 1 || p.y < lo.y - 1 || p.y > hi.y + 1;
-  for (const e of net.edges) {
+  for (const e of real) {
     const width = Math.max(1, e.width - 2 * (EDGE_INSET + EDGE_LINE));
     let prev = String(e.a);
     for (let i = 1; i < e.pts.length; i++) {

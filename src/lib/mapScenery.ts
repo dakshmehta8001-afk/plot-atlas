@@ -8,7 +8,7 @@
 // Everything is in "scaled" map units: x = fraction * VB, y = fraction *
 // vbHeight (the same convention toScaledSvgPoints uses).
 import type { PolygonPoint } from "@/lib/types";
-import { connectRoads, edgeMidpoint, type Edge, type Network } from "@/lib/mapTraffic";
+import { GATE_ROAD_ID, buildStreetlights, connectRoads, edgeMidpoint, type Edge, type Network, type Streetlight } from "@/lib/mapTraffic";
 
 export interface Pt {
   x: number;
@@ -135,6 +135,10 @@ export interface Scene {
   roads: RoadGeom[];
   /** Where two different roads meet in an L-corner: a filled circle here closes the outer-corner gap that flat road ends leave. */
   corners: { x: number; y: number; width: number }[];
+  /** The entry gate on a perimeter road, or null when the project has none. */
+  gate: GateGeom | null;
+  /** Streetlight poles along the roads' inner edges. */
+  lights: Streetlight[];
   /** Road graph used by the traffic simulation; also supplies the DRAWN (extended/trimmed) road paths. */
   network: Network;
 }
@@ -159,6 +163,82 @@ function hash01(i: number): number {
   return s - Math.floor(s);
 }
 
+/** Where the entry gate is drawn: on a perimeter road, with a road leading out of the site. */
+export interface GateGeom {
+  /** Centre of the gate on the perimeter road's centre line. */
+  x: number;
+  y: number;
+  /** Unit vector pointing out of the site, across the road. */
+  nx: number;
+  ny: number;
+  /** Road width at the gate. */
+  width: number;
+  /** Far end of the approach road, outside the wall. */
+  endX: number;
+  endY: number;
+  /** Angle (degrees) of the across-road axis, normalised so text on the arch reads upright. */
+  angle: number;
+}
+
+// Finds where a gate polygon sits on the site's perimeter road. The gate is
+// placed at the polygon's centre, snapped to the nearest road, and only
+// counts if that road is on the perimeter (its outer side faces away from the
+// site). Returns null otherwise: then nothing is drawn and there is no entry
+// traffic.
+function locateGate(roads: { path: Pt[]; width: number }[], poly: Pt[], vb: number) {
+  if (roads.length === 0 || poly.length < 3) return null;
+  const c = { x: poly.reduce((a, p) => a + p.x, 0) / poly.length, y: poly.reduce((a, p) => a + p.y, 0) / poly.length };
+  const all = roads.flatMap((r) => r.path);
+  const lo = { x: Math.min(...all.map((p) => p.x)), y: Math.min(...all.map((p) => p.y)) };
+  const hi = { x: Math.max(...all.map((p) => p.x)), y: Math.max(...all.map((p) => p.y)) };
+  const outside = (p: Pt) => p.x < lo.x - 1 || p.x > hi.x + 1 || p.y < lo.y - 1 || p.y > hi.y + 1;
+  let best: { d: number; a: Pt; b: Pt; w: number; u: number; len: number } | null = null;
+  for (const r of roads) {
+    for (let i = 1; i < r.path.length; i++) {
+      const a = r.path[i - 1];
+      const b = r.path[i];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const len = Math.hypot(dx, dy);
+      if (len < 1) continue;
+      const u = Math.max(0, Math.min(1, ((c.x - a.x) * dx + (c.y - a.y) * dy) / (len * len)));
+      const d = Math.hypot(c.x - (a.x + dx * u), c.y - (a.y + dy * u));
+      if (!best || d < best.d) best = { d, a, b, w: r.width, u, len };
+    }
+  }
+  if (!best || best.d > best.w * 1.5 + 60) return null;
+  // Keep the gate a road-width clear of the segment's ends (the corners).
+  const margin = best.w;
+  if (best.len < 2 * margin + 10) return null;
+  const pos = Math.max(margin, Math.min(best.len - margin, best.u * best.len));
+  const tx = (best.b.x - best.a.x) / best.len;
+  const ty = (best.b.y - best.a.y) / best.len;
+  const P = { x: best.a.x + tx * pos, y: best.a.y + ty * pos };
+  const left = { x: ty, y: -tx };
+  const probe = (s: number) => ({ x: P.x + left.x * s * (best!.w / 2 + 3), y: P.y + left.y * s * (best!.w / 2 + 3) });
+  const outL = outside(probe(1));
+  const outR = outside(probe(-1));
+  if (outL === outR) return null; // an inner road: both sides face plots
+  const s = outL ? 1 : -1;
+  const n = { x: left.x * s, y: left.y * s };
+  // Past the outer edge, the grass border and the wall.
+  const reach = best.w / 2 + vb * 0.05 + 80;
+  return { P, n, w: best.w, end: { x: P.x + n.x * reach, y: P.y + n.y * reach } };
+}
+
+// Typical plot width: the median of each plot's shorter bounding-box side.
+function medianPlotWidth(polys: Pt[][]): number {
+  const w = polys
+    .map((poly) => {
+      const xs = poly.map((p) => p.x);
+      const ys = poly.map((p) => p.y);
+      return Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+    })
+    .filter((v) => v > 0)
+    .sort((a, b) => a - b);
+  return w.length ? w[Math.floor(w.length / 2)] : 0;
+}
+
 export function buildScene(
   roads: RoadInput[],
   plots: { polygon_points: PolygonPoint[] }[],
@@ -166,6 +246,7 @@ export function buildScene(
   vb: number,
   vbHeight: number,
   fallbackWidth: (label: string) => number,
+  gatePoints: PolygonPoint[] | null = null,
 ): Scene {
   const plotPolys = plots.filter((p) => p.polygon_points.length >= 3).map((p) => toPoly(p.polygon_points, vb, vbHeight));
   const otherPolys = others.filter((p) => p.polygon_points.length >= 3).map((p) => toPoly(p.polygon_points, vb, vbHeight));
@@ -179,6 +260,12 @@ export function buildScene(
     const width = Math.min(vb * MAX_ROAD_WIDTH_FRACTION, Math.max(MIN_ROAD_WIDTH, measured ?? fallbackWidth(r.width_label)));
     raw.push({ id: r.id, label: r.width_label, path, width });
   }
+
+  // The entry gate: a short approach road leading out of the site from a
+  // perimeter road. It joins the network like any other road (so cars can drive
+  // along it) but is excluded from the site's own outline below.
+  const gateSpot = gatePoints && gatePoints.length >= 3 ? locateGate(raw, toPoly(gatePoints, vb, vbHeight).pts, vb) : null;
+  if (gateSpot) raw.push({ id: GATE_ROAD_ID, label: "", path: [gateSpot.end, gateSpot.P], width: gateSpot.w });
 
   // Join roads that nearly meet (display only — saved data is untouched).
   const network = connectRoads(raw.map((r) => ({ id: r.id, path: r.path, width: r.width })));
@@ -203,8 +290,8 @@ export function buildScene(
     };
   });
 
-  const all: Pt[] = [...blockers.flatMap((b) => b.pts), ...roadGeoms.flatMap((r) => r.path)];
-  if (all.length === 0) return { ground: null, trees: [], roads: [], corners: [], network };
+  const all: Pt[] = [...blockers.flatMap((b) => b.pts), ...roadGeoms.filter((r) => r.id !== GATE_ROAD_ID).flatMap((r) => r.path)];
+  if (all.length === 0) return { ground: null, trees: [], roads: [], corners: [], gate: null, lights: [], network };
   const minX = Math.min(...all.map((p) => p.x));
   const maxX = Math.max(...all.map((p) => p.x));
   const minY = Math.min(...all.map((p) => p.y));
@@ -315,6 +402,20 @@ export function buildScene(
     trees,
     roads: roadGeoms.map((r) => ({ id: r.id, points: r.points, width: r.width, label: r.label, labelPos: r.labelPos, length: r.length })),
     corners,
+    gate:
+      gateSpot && network.gate
+        ? {
+            x: gateSpot.P.x,
+            y: gateSpot.P.y,
+            nx: gateSpot.n.x,
+            ny: gateSpot.n.y,
+            width: gateSpot.w,
+            endX: gateSpot.end.x,
+            endY: gateSpot.end.y,
+            angle: ((a) => (a > 90 ? a - 180 : a < -90 ? a + 180 : a))((Math.atan2(gateSpot.n.y, gateSpot.n.x) * 180) / Math.PI),
+          }
+        : null,
+    lights: buildStreetlights(network, 3 * medianPlotWidth(plotPolys.map((q) => q.pts))),
     network,
   };
 }
