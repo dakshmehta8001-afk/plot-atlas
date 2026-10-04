@@ -149,6 +149,16 @@ export function roadMetrics(width: number): Metrics {
   };
 }
 
+/**
+ * Radius of the asphalt fillet drawn at an L-corner. It runs out to the white
+ * edge line (carriageway + the pavement strip), so a car turning through the
+ * corner, including its body overhang, always stays on dark asphalt.
+ */
+export function cornerAsphaltRadius(width: number): number {
+  const m = roadMetrics(width);
+  return m.carriageway / 2 + m.strip;
+}
+
 // ------------------------------------------------------- junction building
 
 const MERGE_TOL = 10;

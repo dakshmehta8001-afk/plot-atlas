@@ -46,7 +46,7 @@ import { toScaledSvgPoints, scaledBoundingBoxCenter } from "@/lib/svgPolygon";
 import { buildScene } from "@/lib/mapScenery";
 import { roadLabelText } from "@/lib/roadWidth";
 import { feetPerUnit } from "@/lib/calibration";
-import { EDGE_INSET, EDGE_LINE, roadMetrics } from "@/lib/mapTraffic";
+import { EDGE_INSET, EDGE_LINE, cornerAsphaltRadius, roadMetrics } from "@/lib/mapTraffic";
 import { MapTraffic } from "@/components/MapTraffic";
 import { clientPointToLocalFraction } from "@/lib/svgCoords";
 
@@ -318,6 +318,17 @@ const MapShapes = memo(function MapShapes({
     [scene.roads, ftPerUnit],
   );
 
+  // Junctions where the dashed centre line must stop: any node where roads
+  // cross or meet (3+ edges, or two different roads). The cut disc reaches the
+  // far edge of the widest road there. Plain bends along one road stay dashed.
+  const junctions = useMemo(
+    () =>
+      scene.network.nodes
+        .filter((n) => n.edges.length >= 3 || (n.edges.length === 2 && scene.network.edges[n.edges[0]].roadId !== scene.network.edges[n.edges[1]].roadId))
+        .map((n) => ({ id: n.id, x: n.x, y: n.y, r: Math.max(...n.edges.map((e) => scene.network.edges[e].width)) / 2 })),
+    [scene.network],
+  );
+
   function plotStyle(unit: Unit): { fill: string; border: string; opacity: number; isSelected: boolean } {
     const isSelected = selectedId === unit.id;
     const dimmedBySelection = selectedId !== null && !isSelected;
@@ -400,7 +411,7 @@ const MapShapes = memo(function MapShapes({
           <polyline key={`lane-${r.id}`} points={r.points} fill="none" stroke={ROAD_COLOR} strokeWidth={roadMetrics(r.width).carriageway} strokeLinejoin="round" />
         ))}
         {scene.corners.map((c, i) => (
-          <circle key={`lanec-${i}`} cx={c.x} cy={c.y} r={roadMetrics(c.width).carriageway / 2} fill={ROAD_COLOR} />
+          <circle key={`lanec-${i}`} cx={c.x} cy={c.y} r={cornerAsphaltRadius(c.width)} fill={ROAD_COLOR} />
         ))}
         <g mask="url(#sp-centre-mask)">
         {scene.roads.map((r) => (
@@ -424,6 +435,9 @@ const MapShapes = memo(function MapShapes({
       <defs>
         <mask id="sp-centre-mask" maskUnits="userSpaceOnUse" x={-100} y={-100} width={VB + 200} height={vbHeight + 200}>
           <rect x={-100} y={-100} width={VB + 200} height={vbHeight + 200} fill="#fff" />
+          {junctions.map((j) => (
+            <circle key={`jcut-${j.id}`} cx={j.x} cy={j.y} r={j.r} fill="#000" />
+          ))}
           {painted.map((l) => (
             <g key={`cut-${l.id}`} style={l.css}>
               <rect x={-l.w / 2} y={-8} width={l.w} height={16} fill="#000" />
@@ -706,6 +720,25 @@ export function SitePlanViewer({
   // correct as a plain VB-based fraction, unchanged, on either axis.
   const vbHeight = VB / aspectRatio;
 
+  // The visible frame ("Fit"): the site's own bounding box (plots, buildings,
+  // features and roads) plus room for the grass and wall, instead of the whole
+  // photo rectangle, which has empty margins. Fit then fills the map area
+  // with the site, and every "centre of the view" below uses this frame.
+  const box = useMemo(() => {
+    const xs: number[] = [];
+    const ys: number[] = [];
+    const add = (pts: { x: number; y: number }[]) => pts.forEach((p) => { xs.push(p.x * VB); ys.push(p.y * vbHeight); });
+    for (const u of plots) add(u.polygon_points);
+    for (const b of buildings) add(b.polygon_points);
+    for (const f of features) add(f.polygon_points);
+    for (const r of roads) add(r.path_points);
+    if (xs.length === 0) return { x: 0, y: 0, w: VB, h: vbHeight };
+    const margin = VB * 0.05 + 10;
+    const minX = Math.min(...xs) - margin;
+    const minY = Math.min(...ys) - margin;
+    return { x: minX, y: minY, w: Math.max(...xs) + margin - minX, h: Math.max(...ys) + margin - minY };
+  }, [plots, buildings, features, roads, vbHeight]);
+
   // resetSignal only ever changes to a new value (never re-fires the same
   // one), so this only runs when the parent actually wants us reset — e.g.
   // BuildingDrilldown backing out of a floor view. Without this, zoomedId
@@ -873,8 +906,8 @@ export function SitePlanViewer({
   function zoomBy(factor: number) {
     setView((prev) => {
       const nextScale = Math.min(MAX_FREE_ZOOM, Math.max(1, prev.scale * factor));
-      const centerX = VB / 2;
-      const centerY = vbHeight / 2;
+      const centerX = box.x + box.w / 2;
+      const centerY = box.y + box.h / 2;
       const tx = centerX - ((centerX - prev.tx) / prev.scale) * nextScale;
       const ty = centerY - ((centerY - prev.ty) / prev.scale) * nextScale;
       return { tx, ty, scale: nextScale };
@@ -933,14 +966,14 @@ export function SitePlanViewer({
     // whichever axis is relatively narrower to fill the frame completely,
     // cutting off real content on that axis; fit guarantees the WHOLE
     // padded box (and therefore every member plot) stays on screen.
-    const fitScale = Math.min(VB / paddedWidth, vbHeight / paddedHeight);
+    const fitScale = Math.min(box.w / paddedWidth, box.h / paddedHeight);
     const scale = Math.min(MAX_FREE_ZOOM, Math.max(ZONE_MIN_ZOOM, fitScale));
-    const targetX = VB / 2;
-    const targetY = vbHeight / 2;
+    const targetX = box.x + box.w / 2;
+    const targetY = box.y + box.h / 2;
     const tx = targetX - scale * centerX;
     const ty = targetY - scale * centerY;
     return `translate(${tx}px, ${ty}px) scale(${scale})`;
-  }, [highlightZoneBounds, vbHeight]);
+  }, [highlightZoneBounds, box]);
 
   const transform = useMemo(() => {
     // A zoomed-in plot/building always wins over a zone fly-in — this is
@@ -950,8 +983,8 @@ export function SitePlanViewer({
     // stays untouched.
     if (zoomedShapePoints && zoomedShapePoints.length >= 3) {
       const center = scaledBoundingBoxCenter(zoomedShapePoints, VB, vbHeight);
-      const targetX = VB / 2;
-      const targetY = vbHeight / 2;
+      const targetX = box.x + box.w / 2;
+      const targetY = box.y + box.h / 2;
       // Combined translate+scale so the zoomed shape's center lands in the
       // middle of the viewBox: translate(A - s*C) scale(s) applied to a
       // point p gives s*p + (A - s*C) = s*(p - C) + A, i.e. C maps to A.
@@ -961,7 +994,7 @@ export function SitePlanViewer({
     }
     if (zoneTransform) return zoneTransform;
     return "translate(0px, 0px) scale(1)";
-  }, [zoomedShapePoints, vbHeight, zoneTransform]);
+  }, [zoomedShapePoints, vbHeight, zoneTransform, box]);
 
   // Screen pixels per map unit, including free-roam zoom and the scripted
   // zoom into a plot/zone. Written to the SVG as the CSS variable --k so the
@@ -981,14 +1014,14 @@ export function SitePlanViewer({
     if (!svg || typeof ResizeObserver === "undefined") return;
     const measure = () => {
       const r = svg.getBoundingClientRect();
-      pxPerUnit.current = Math.min(r.width / VB, r.height / vbHeight) || 0.4;
+      pxPerUnit.current = Math.min(r.width / box.w, r.height / box.h) || 0.4;
       applyK();
     };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(svg);
     return () => ro.disconnect();
-  }, [applyK, vbHeight]);
+  }, [applyK, box]);
 
   const ftPerUnit = useMemo(
     () => (calibration ? feetPerUnit(calibration.pointA, calibration.pointB, calibration.realDistanceFt, VB, vbHeight) : null),
@@ -1037,7 +1070,7 @@ export function SitePlanViewer({
       <div className="h-full w-full overflow-hidden">
         <svg
           ref={svgRef}
-          viewBox={`0 0 ${VB} ${vbHeight}`}
+          viewBox={`${box.x} ${box.y} ${box.w} ${box.h}`}
           className="h-full w-full bg-[#0b1f2e]"
           style={{ cursor: zoomedId ? "default" : "grab", touchAction: zoomedId ? "auto" : "none" }}
           onWheel={handleWheel}
