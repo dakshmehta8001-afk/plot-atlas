@@ -775,16 +775,16 @@ export function SitePlanViewer({
     const cw = Math.max(...xs) + margin - cx0;
     const ch = Math.max(...ys) + margin - cy0;
     if (!mapSize || mapSize.w < 50 || mapSize.h < 50) return { x: cx0, y: cy0, w: cw, h: ch };
-    // The overlays sit in the bottom-right corner: the compass and three 44px
-    // buttons with 6px gaps, 12px from the edge (206px tall). On a phone the Media/About bar
-    // runs along the bottom, but it is shorter than that stack, so reserving
-    // the stack's height at the bottom clears both. On wide screens the stack
-    // is a small corner, so only a strip on the right is reserved.
+    // The overlays: a column of compass and zoom buttons (44px wide, 12px from
+    // the right edge) and, on a phone, the Media/About bar along the bottom
+    // (about 72px tall). Reserving a strip down the right and a band along the
+    // bottom of a phone keeps the site clear of both, and costs less map than
+    // reserving the column's full height would.
     const phone = mapSize.w < 640;
     const padL = 8;
     const padT = 8;
-    const padR = phone ? 8 : 8 + 52;
-    const padB = phone ? 8 + 206 : 8;
+    const padR = 8 + 52;
+    const padB = phone ? 8 + 80 : 8;
     const s = Math.min((mapSize.w - padL - padR) / cw, (mapSize.h - padT - padB) / ch);
     const freeCx = (padL + mapSize.w - padR) / 2;
     const freeCy = (padT + mapSize.h - padB) / 2;
