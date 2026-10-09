@@ -36,7 +36,7 @@ export function GoogleSignInButton({
       type="button"
       onClick={handleClick}
       disabled={loading}
-      className={`inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 shadow-sm hover:bg-gray-50 disabled:opacity-60 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 ${className}`}
+      className={`inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-white shadow-inner transition-all hover:bg-white/10 hover:scale-105 active:scale-95 disabled:opacity-60 ${className}`}
     >
       {loading ? "Redirecting…" : label}
     </button>
@@ -48,7 +48,7 @@ export function SignOutButton({ className = "" }: { className?: string }) {
     <form action={signOut}>
       <button
         type="submit"
-        className={`text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white ${className}`}
+        className={`text-sm font-medium ${className}`}
       >
         Sign out
       </button>

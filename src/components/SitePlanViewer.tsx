@@ -48,7 +48,7 @@ import { buildScene, type Scene } from "@/lib/mapScenery";
 import { roadLabelText } from "@/lib/roadWidth";
 import { feetPerUnit } from "@/lib/calibration";
 import { EDGE_INSET, EDGE_LINE, GATE_ROAD_ID, cornerAsphaltRadius, roadMetrics } from "@/lib/mapTraffic";
-import { MapTraffic } from "@/components/MapTraffic";
+import { MapTraffic, usePrefersReducedMotion } from "@/components/MapTraffic";
 import { clientPointToLocalFraction } from "@/lib/svgCoords";
 
 const VB = MAP_VIEWBOX_SIZE;
@@ -309,6 +309,7 @@ const MapShapes = memo(function MapShapes({
   onBuildingClick,
   onPlotHover,
   onPlotHoverEnd,
+  playTraffic,
 }: {
   roads: Road[];
   /** Roads, junctions, gate and streetlights, built once by SitePlanViewer. */
@@ -332,6 +333,7 @@ const MapShapes = memo(function MapShapes({
   onBuildingClick: (building: Building) => void;
   onPlotHover: (unit: Unit, e: React.MouseEvent) => void;
   onPlotHoverEnd: (unitId: string) => void;
+  playTraffic?: boolean;
 }) {
   const plotGeoms = useMemo(() => {
     const map = new Map<string, { points: string; center: { x: number; y: number }; minDim: number }>();
@@ -555,30 +557,12 @@ const MapShapes = memo(function MapShapes({
       {/* Cars and walkers: one animation loop (see MapTraffic), not SVG
           animateMotion, so they follow the road network and turn. */}
       <g style={{ opacity: selectedId !== null ? 0.4 : 1, transition: "opacity 300ms ease" }}>
-        <MapTraffic network={scene.network} seedKey={roads.map((r) => r.id).join("|")} />
+        <MapTraffic network={scene.network} seedKey={roads.map((r) => r.id).join("|")} play={playTraffic} />
       </g>
 
-      {/* Overhead things, drawn above the traffic: streetlights along the
-          inner road edges (pole on the kerb, a short arm reaching over the
-          road, a soft shadow) and the entry gate's arch with the project name. */}
+      {/* Overhead things, drawn above the traffic: the entry gate's arch with the project name. */}
       <g className="pointer-events-none" style={{ opacity: selectedId !== null ? 0.4 : 1, transition: "opacity 300ms ease" }}>
-        {scene.lights.length > 0 && (
-          <g filter="url(#sp-soft-shadow)">
-            {scene.lights.map((l, i) => (
-              <g key={`lts-${i}`} fill="#000" fillOpacity={0.3} stroke="#000" strokeOpacity={0.3}>
-                <line x1={l.x + 1.8} y1={l.y + 2.8} x2={l.ax + 1.8} y2={l.ay + 2.8} strokeWidth={2.2} strokeLinecap="round" />
-                <circle cx={l.ax + 1.8} cy={l.ay + 2.8} r={3.6} stroke="none" fillOpacity={0.22} />
-              </g>
-            ))}
-          </g>
-        )}
-        {scene.lights.map((l, i) => (
-          <g key={`lt-${i}`}>
-            <line x1={l.x} y1={l.y} x2={l.ax} y2={l.ay} stroke="#2f343d" strokeWidth={1.1} strokeLinecap="round" />
-            <circle cx={l.x} cy={l.y} r={1.7} fill="#2f343d" stroke="#ffffff" strokeOpacity={0.55} strokeWidth={0.4} />
-            <circle cx={l.ax} cy={l.ay} r={2.3} fill="#ffe9a6" stroke="#2f343d" strokeWidth={0.5} />
-          </g>
-        ))}
+
         {scene.gate && <GateArch gate={scene.gate} name={projectName} />}
       </g>
 
@@ -794,6 +778,8 @@ export function SitePlanViewer({
   resetSignal?: number;
 }) {
   const [zoomedId, setZoomedId] = useState<string | null>(null);
+  const [playTraffic, setPlayTraffic] = useState(false);
+  const prefersReducedMotion = usePrefersReducedMotion();
   const aspectRatio = useImageAspectRatio(planImageUrl, planImageSize);
   // The viewBox's own height, derived from the plan image's real aspect
   // ratio — keeping width fixed at VB (1000) and deriving height this way,
@@ -1296,6 +1282,7 @@ ftPerUnit={ftPerUnit}
               onBuildingClick={handleBuildingClick}
               onPlotHover={updateHoverPosition}
               onPlotHoverEnd={handlePlotHoverEnd}
+              playTraffic={playTraffic}
             />
           </g>
           </g>
@@ -1346,6 +1333,16 @@ ftPerUnit={ftPerUnit}
             className="flex h-11 items-center justify-center rounded-md bg-white/90 px-2 text-xs font-medium text-[#0f2436] shadow hover:bg-white sm:h-8 sm:w-8 sm:px-0 sm:text-[11px]"
           >
             Fit
+          </button>
+          <button
+            type="button"
+            onClick={() => setPlayTraffic(true)}
+            disabled={!prefersReducedMotion || playTraffic}
+            aria-label="Play traffic"
+            className="flex h-11 w-11 items-center justify-center rounded-md bg-white/90 text-[10px] font-bold text-[#0f2436] shadow hover:bg-white disabled:pointer-events-none disabled:opacity-50 sm:h-8 sm:w-8"
+            title="Play traffic"
+          >
+            ▶
           </button>
         </div>
       )}

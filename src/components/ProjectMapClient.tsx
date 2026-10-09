@@ -310,9 +310,6 @@ export function ProjectMapClient({
               </div>
             </>
           )}
-        </div>
-      )}
-
           </div>
         </div>
       )}

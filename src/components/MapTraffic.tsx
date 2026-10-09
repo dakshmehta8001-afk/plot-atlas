@@ -65,6 +65,12 @@ function subscribeReduced(onChange: () => void) {
 const reducedNow = () => window.matchMedia(REDUCED_QUERY).matches;
 const reducedOnServer = () => false;
 
+// True when the visitor's system asks for less motion (e.g. Windows "Animation effects" off).
+// Traffic is frozen then, unless the visitor presses the Play traffic button.
+export function usePrefersReducedMotion(): boolean {
+  return useSyncExternalStore(subscribeReduced, reducedNow, reducedOnServer);
+}
+
 function hashString(str: string): number {
   let h = 2166136261;
   for (let i = 0; i < str.length; i++) {
@@ -74,13 +80,14 @@ function hashString(str: string): number {
   return h >>> 0;
 }
 
-export const MapTraffic = memo(function MapTraffic({ network, seedKey }: { network: Network; seedKey: string }) {
+export const MapTraffic = memo(function MapTraffic({ network, seedKey, play = false }: { network: Network; seedKey: string; /** Run the traffic even when the system asks for reduced motion (the visitor chose to). */ play?: boolean }) {
   const seed = useMemo(() => hashString(seedKey), [seedKey]);
   // Starting positions, drawn on first render (and on the server) so the map
   // is never empty. The loop below runs its own copy of the same simulation.
   const start = useMemo(() => createSim(network, { seed }), [network, seed]);
   const startWalkers = useMemo(() => makeWalkers(network, seed, walkerCountFor(network), null).poses, [network, seed]);
-  const reduced = useSyncExternalStore(subscribeReduced, reducedNow, reducedOnServer);
+  const reducedSystem = usePrefersReducedMotion();
+  const reduced = reducedSystem && !play;
   const groupRef = useRef<SVGGElement>(null);
   const carEls = useRef<(SVGGElement | null)[]>([]);
   const walkerEls = useRef<(SVGGElement | null)[]>([]);

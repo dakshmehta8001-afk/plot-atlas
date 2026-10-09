@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #030712;
+  --foreground: #ffffff;
 
   /* Plot status colors — the single source of truth is still
      UNIT_STATUS_STYLES in src/lib/types.ts (used for inline SVG fill/
@@ -52,13 +52,6 @@
   --color-map-border: var(--map-border);
   --color-map-text: var(--map-text);
   --color-map-muted: var(--map-muted);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
