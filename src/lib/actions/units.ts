@@ -24,6 +24,7 @@ export interface UnitInput {
   carpet_area_sqft?: number | null;
   rate_per_sqft?: number | null;
   total_price?: number | null;
+  description?: string | null;
   polygon_points: PolygonPoint[];
 }
 
@@ -45,6 +46,7 @@ export async function createUnit(projectId: string, input: UnitInput): Promise<A
     carpet_area_sqft: input.carpet_area_sqft ?? null,
     rate_per_sqft: input.rate_per_sqft ?? null,
     total_price: input.total_price ?? null,
+    description: input.description ?? null,
     polygon_points: input.polygon_points,
   });
 
@@ -67,6 +69,7 @@ export interface UnitUpdateInput {
   carpet_area_sqft?: number | null;
   rate_per_sqft?: number | null;
   total_price?: number | null;
+  description?: string | null;
   polygon_points?: PolygonPoint[];
 }
 

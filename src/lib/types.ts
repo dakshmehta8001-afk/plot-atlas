@@ -143,6 +143,8 @@ export interface Unit {
   carpet_area_sqft: number | null;
   rate_per_sqft: number | null;
   total_price: number | null;
+  /** Free-text, written by the sub-admin - "whatever else" about this specific plot that doesn't fit the structured fields above. */
+  description: string | null;
   // True when this plot's dimensions couldn't be geometrically computed
   // (no project-level calibration yet, or a shape that isn't a clean
   // quadrilateral) — the explicit "ask, don't guess" flag the draft ->

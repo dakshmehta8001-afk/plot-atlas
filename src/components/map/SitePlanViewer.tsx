@@ -1460,6 +1460,12 @@ ftPerUnit={ftPerUnit}
                 <p className="font-semibold text-amber-300">₹{rate.toLocaleString()}/sq ft</p>
               </div>
             )}
+
+            {u.description && (
+              <div className="mt-2 border-t border-white/10 pt-2">
+                <p className="whitespace-pre-wrap break-words text-white/70">{u.description}</p>
+              </div>
+            )}
           </div>
         );
       })()}

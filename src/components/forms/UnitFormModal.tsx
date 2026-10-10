@@ -48,6 +48,7 @@ export function UnitFormModal(props: CreateProps | EditProps) {
   const [carpetAreaSqft, setCarpetAreaSqft] = useState(existing?.carpet_area_sqft?.toString() ?? "");
   const [ratePerSqft, setRatePerSqft] = useState(existing?.rate_per_sqft?.toString() ?? "");
   const [totalPrice, setTotalPrice] = useState(existing?.total_price?.toString() ?? "");
+  const [description, setDescription] = useState(existing?.description ?? "");
   const [status, setStatus] = useState(existing?.status ?? "available");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +69,7 @@ export function UnitFormModal(props: CreateProps | EditProps) {
       carpet_area_sqft: unitType === "flat" && carpetAreaSqft ? Number(carpetAreaSqft) : null,
       rate_per_sqft: ratePerSqft ? Number(ratePerSqft) : null,
       total_price: totalPrice ? Number(totalPrice) : null,
+      description: description || null,
     };
 
     const result =
@@ -251,6 +253,17 @@ export function UnitFormModal(props: CreateProps | EditProps) {
             onChange={(e) => setFacing(e.target.value)}
             placeholder="e.g. West"
             className="mt-1 w-full rounded-md border border-gray-300 p-2 dark:border-gray-700 dark:bg-gray-800"
+          />
+        </label>
+
+        <label className="block text-sm">
+          Description
+          <textarea
+            value={description ?? ""}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={3}
+            placeholder="Anything else worth noting about this plot/flat - shown to viewers on hover and in its full details."
+            className="mt-1 w-full resize-none rounded-md border border-gray-300 p-2 dark:border-gray-700 dark:bg-gray-800"
           />
         </label>
 

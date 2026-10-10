@@ -178,6 +178,10 @@ export function UnitInfoCard({
         </div>
       )}
 
+      {unit.description && (
+        <p className="mb-4 whitespace-pre-wrap break-words text-xs text-white/70">{unit.description}</p>
+      )}
+
       {state === "sent" ? (
         <p className="rounded-md bg-green-500/15 p-2 text-xs text-green-300">
           Thanks — your enquiry has been sent.
