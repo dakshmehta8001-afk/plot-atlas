@@ -865,10 +865,18 @@ export function SitePlanViewer({
   // back to showing this component in full, but it would still render
   // zoomed into wherever that stale id pointed, with a stray "Back to full
   // view" button, since nothing here was actually watching resetSignal.
-  useEffect(() => {
+  //
+  // Done as a render-time state adjustment (React's own recommended
+  // pattern for "reset state when a prop changes"), not an effect - an
+  // effect version would render once with the stale zoomedId, THEN fire
+  // and re-render with it cleared; comparing against the previous
+  // resetSignal right here lets React fold the reset into the same
+  // render instead of visibly flashing the stale state first.
+  const [prevResetSignalForZoom, setPrevResetSignalForZoom] = useState(resetSignal);
+  if (resetSignal !== prevResetSignalForZoom) {
+    setPrevResetSignalForZoom(resetSignal);
     if (resetSignal !== undefined) setZoomedId(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately keyed only on the signal, not on its own identity
-  }, [resetSignal]);
+  }
 
   // Free-roam pan/zoom over the full-site view — separate state from the
   // scripted zoomedShapePoints/transform below, which stays untouched. Only
@@ -909,15 +917,30 @@ export function SitePlanViewer({
     setHoveredUnit((prev) => (prev?.unit.id === unitId ? null : prev));
   }, []);
 
-  useEffect(() => {
+  // Also reset on highlightZone changing (entering a zone, leaving one, or
+  // switching straight from one zone to another) — otherwise a viewer's
+  // leftover manual pan/zoom from browsing the last zone would compose
+  // with the NEXT zone's fresh fit-to-box transform below, landing
+  // somewhere neither transform intended.
+  //
+  // Same render-time-adjustment pattern as the zoomedId reset above, this
+  // time tracking three previous values since the original effect reset on
+  // any of three dependencies changing - each needs its own tracked
+  // previous value (not a single combined one) so a change in any ONE of
+  // them is still detected correctly.
+  const [prevZoomedIdForView, setPrevZoomedIdForView] = useState(zoomedId);
+  const [prevResetSignalForView, setPrevResetSignalForView] = useState(resetSignal);
+  const [prevHighlightZoneForView, setPrevHighlightZoneForView] = useState(highlightZone);
+  if (
+    zoomedId !== prevZoomedIdForView ||
+    resetSignal !== prevResetSignalForView ||
+    highlightZone !== prevHighlightZoneForView
+  ) {
+    setPrevZoomedIdForView(zoomedId);
+    setPrevResetSignalForView(resetSignal);
+    setPrevHighlightZoneForView(highlightZone);
     setView({ tx: 0, ty: 0, scale: 1 });
-    // Also reset on highlightZone changing (entering a zone, leaving one, or
-    // switching straight from one zone to another) — otherwise a viewer's
-    // leftover manual pan/zoom from browsing the last zone would compose
-    // with the NEXT zone's fresh fit-to-box transform below, landing
-    // somewhere neither transform intended.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately keyed only on zoomedId/resetSignal/highlightZone, not view's own identity
-  }, [zoomedId, resetSignal, highlightZone]);
+  }
 
   // Mouse wheel and trackpad pinch zoom toward the cursor. A native listener
   // (not React's onWheel) because React registers wheel handlers as passive,

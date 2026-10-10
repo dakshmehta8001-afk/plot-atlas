@@ -24,40 +24,33 @@ clicking a building triggers a 2D zoom + floor-selector animation
 (`BuildingDrilldown.tsx`) rather than a 3D flythrough or real Street View;
 see the scope discussion in project memory for why.
 
-## Manual steps still needed before this is usable
+## Setup status
 
-1. **Supabase project not yet created.** The account's Supabase free tier is
-   capped at 2 active projects account-wide (not per-org), and 2+ are
-   already active (`property-hub`, `society-portal`, `scanner`). A brand
-   new org (`PlotAtlas`, id `dmlqmlppsxhvxqqvkhsz`) was created for this
-   project but that didn't bypass the cap — it's account-wide. The Supabase
-   CLI has no `pause` command (dashboard-only), so this needs one manual
-   step: **pause an existing project you're not using right now** at
-   supabase.com/dashboard (Project Settings → General → Pause project), or
-   upgrade one org to Pro. Once a slot is free, run:
-   ```
-   supabase projects create plot-atlas --org-id dmlqmlppsxhvxqqvkhsz --region ap-northeast-1 --db-password <see plot-atlas-db-password.txt one level up>
-   ```
-   then apply `supabase/migrations/20260918100000_init_schema.sql` and fill
-   in `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` in
-   `.env.local` (and as Vercel project env vars) from the new project's API
-   settings.
-2. **Google OAuth provider** not yet configured in Supabase Dashboard
-   (Authentication → Sign In / Up) — needs a Client ID/secret from a Google
-   Cloud OAuth consent screen. Until set, viewer Google sign-in will fail.
-3. **Supabase Auth URL Configuration** (Site URL + Redirect URLs) needs to
-   point at the live Vercel URL once deployed, for the OAuth/email-
-   confirmation redirect to `/auth/callback` to be accepted.
-4. **No admin account exists yet.** Sign up via `/signup` (creates a pending
-   sub_admin), then in the Supabase SQL editor run:
-   `update public.users set role='admin', status='active' where email='...'`.
+Current as of 2026-10-10, after 94 commits of feature work since the lines
+below were first written as forward-looking setup steps — they described
+work that hadn't happened yet, not the state of the running app, and were
+stale enough to mislead anyone (human or AI) reading this file fresh.
+
+- **Supabase project: created and in use.** `NEXT_PUBLIC_SUPABASE_URL` and
+  `NEXT_PUBLIC_SUPABASE_ANON_KEY` are set in `.env.local`; all 12 migrations
+  under `supabase/migrations/` are presumably applied, given the scale of
+  working, deployed functionality built against this schema since.
+- **Google OAuth / admin account / Auth URL config** — not independently
+  verified in this pass (no service-role key was available to query
+  `public.users` directly), but near-certainly resolved: the viewer sign-in
+  flow, sub-admin approval, and admin screens are all live, committed
+  features at this point, not things that could still be blocked on setup
+  steps from three weeks ago. If you hit an actual auth error, that's a bug
+  report, not a missing setup step - mention it specifically rather than
+  assuming this section is wrong again.
 
 ## Not yet built (deferred, see project memory for the scope discussion)
 
 - Satellite-map alignment (the Leaflet + free Esri imagery editor that
   `society-portal` has) — plots/buildings are only traced on the flat
-  uploaded plan image for now. `leaflet`/`react-leaflet` are installed but
-  unused pending this.
+  uploaded plan image for now. `leaflet`/`react-leaflet` were installed but
+  confirmed unused (2026-10-10) and removed from `package.json`; re-add them
+  when this is actually picked up.
 - Real Google Maps / Street View integration — deliberately skipped (needs
   a billed API key, and has no coverage for private developments anyway).
 - Automated plan-image parsing (auto-detecting plot/flat boundaries) — flats

@@ -106,8 +106,8 @@ export const MapTraffic = memo(function MapTraffic({ network, seedKey, play = fa
     let raf = 0;
     let last = 0;
     let running = false;
-    let onScreen = true;
-    let tabVisible = true;
+    const onScreen = true;
+    const tabVisible = true;
     let avg = 1 / 60;
     let sinceCheck = 0;
 

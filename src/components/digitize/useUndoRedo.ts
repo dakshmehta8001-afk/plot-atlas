@@ -10,13 +10,24 @@ export function useUndoRedo<T>(initial: T) {
   const [present, setPresent] = useState(initial);
   const past = useRef<T[]>([]);
   const future = useRef<T[]>([]);
-  const [, forceRender] = useState(0);
+  // past/future themselves stay as plain refs (mutated directly via
+  // push/pop, never read during render) - only their LENGTH needs to be
+  // real state, since canUndo/canRedo below are read during render and
+  // must trigger a re-render when they change. Previously canUndo/canRedo
+  // read past.current.length/future.current.length directly, which only
+  // ever appeared to work because every call site also called setPresent
+  // (or the old forceRender hack) right after mutating the refs - correct
+  // by coincidence, not by the actual tracked dataflow. Explicit length
+  // state removes that fragility and the forceRender workaround both.
+  const [pastLength, setPastLength] = useState(0);
+  const [futureLength, setFutureLength] = useState(0);
 
   const set = useCallback((next: T) => {
     past.current.push(present);
     future.current = [];
+    setPastLength(past.current.length);
+    setFutureLength(0);
     setPresent(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `present` is read via the ref-like closure captured at call time, which is what we want (the value right before this change)
   }, [present]);
 
   const undo = useCallback(() => {
@@ -24,8 +35,8 @@ export function useUndoRedo<T>(initial: T) {
     if (previous === undefined) return;
     future.current.push(present);
     setPresent(previous);
-    forceRender((n) => n + 1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setPastLength(past.current.length);
+    setFutureLength(future.current.length);
   }, [present]);
 
   const redo = useCallback(() => {
@@ -33,8 +44,8 @@ export function useUndoRedo<T>(initial: T) {
     if (next === undefined) return;
     past.current.push(present);
     setPresent(next);
-    forceRender((n) => n + 1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setPastLength(past.current.length);
+    setFutureLength(future.current.length);
   }, [present]);
 
   return {
@@ -42,7 +53,7 @@ export function useUndoRedo<T>(initial: T) {
     set,
     undo,
     redo,
-    canUndo: past.current.length > 0,
-    canRedo: future.current.length > 0,
+    canUndo: pastLength > 0,
+    canRedo: futureLength > 0,
   };
 }

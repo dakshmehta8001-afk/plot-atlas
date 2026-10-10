@@ -38,7 +38,7 @@ export function useDetectionPipeline() {
     setError(null);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const owned: any[] = [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const track = <T,>(m: T): T => {
       owned.push(m);
       return m;

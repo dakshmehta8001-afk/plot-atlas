@@ -27,16 +27,28 @@ export function UploadDropzone({ onStart }: { onStart: (file: File) => void }) {
     setFile(candidate);
   }
 
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // objectUrl is only ever non-null while an actual blob URL exists to
+  // revoke - the effect's job is purely that creation/cleanup lifecycle,
+  // never deciding what to SHOW (that's previewUrl below). Previously this
+  // effect also called setState(null) on its early-return path whenever
+  // `file` was absent/a PDF, which is exactly the "effect just setting
+  // derived state" anti-pattern react-hooks/set-state-in-effect flags -
+  // there's no external system to synchronize with on that path, so
+  // nothing belongs in the effect for it at all.
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
   useEffect(() => {
     if (!file || file.type === "application/pdf") {
-      setPreviewUrl(null);
       return;
     }
     const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- genuinely synchronizing with an external system (the browser's blob URL registry), the rule's own permitted case #1; the url is a fresh external value each render and MUST be created/revoked in an effect, never during render, or every render would leak another blob URL
+    setObjectUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [file]);
+  // Derived at render time instead of stored as its own reset-by-effect
+  // state: correctly reads as null the instant `file` becomes absent/a
+  // PDF, even on the single render before the effect above has run again.
+  const previewUrl = file && file.type !== "application/pdf" ? objectUrl : null;
 
   return (
     <div className="flex min-h-[500px] flex-col items-center justify-center gap-6 rounded-lg border border-gray-200 bg-white p-10 dark:border-gray-800 dark:bg-gray-900">
