@@ -576,9 +576,20 @@ const MapShapes = memo(function MapShapes({
             <polygon
               points={geom.points}
               fill={style.fill}
-              stroke={style.border}
-              strokeWidth={style.isSelected ? VB * 0.005 : VB * 0.0022}
-              strokeOpacity={style.isSelected ? 1 : 0.6}
+              // Separator line between plots, by explicit request
+              // (2026-10-11): previously this was style.border - the SAME
+              // color as the fill, at 60% opacity - so two adjacent plots
+              // sharing the same status/category (a common case: most
+              // plots in a layout are "available" at once) had a
+              // same-color-on-same-color edge that nearly vanished,
+              // making the boundary between them hard to read. A plot's
+              // category color still shows via fill AND via this border
+              // once it's actually selected (the glow effect below already
+              // carries that colored accent); every other plot gets a
+              // crisp, neutral, always-visible dark line instead.
+              stroke={style.isSelected ? style.border : "#0a0e16"}
+              strokeWidth={style.isSelected ? VB * 0.005 : VB * 0.003}
+              strokeOpacity={style.isSelected ? 1 : 0.85}
               opacity={style.opacity}
               className="cursor-pointer transition-[opacity,filter] duration-200 hover:brightness-125 hover:[filter:drop-shadow(0_0_8px_rgba(255,255,255,0.7))]"
               style={{
@@ -1312,23 +1323,57 @@ ftPerUnit={ftPerUnit}
         </svg>
       </div>
 
-      {!zoomedId && hoveredUnit && (
-        <div
-          className="pointer-events-none absolute z-[550] -translate-x-1/2 -translate-y-[calc(100%+10px)] whitespace-nowrap rounded-md border border-map-border bg-map-panel/95 px-2.5 py-1.5 text-xs text-white shadow-lg backdrop-blur"
-          style={{ left: hoveredUnit.x, top: hoveredUnit.y }}
-        >
-          <span className="font-semibold">
-            {hoveredUnit.unit.wing ? `${hoveredUnit.unit.wing}-` : ""}
-            {hoveredUnit.unit.unit_number}
-          </span>
-          {(hoveredUnit.unit.dimensions || hoveredUnit.unit.area_sqft) && (
-            <span className="ml-1.5 text-white/80">
-              {hoveredUnit.unit.dimensions ?? `${Math.round(hoveredUnit.unit.area_sqft ?? 0).toLocaleString("en-IN")} sqft`}
-            </span>
-          )}
-          <span className="ml-1.5 text-white/60">{UNIT_STATUS_STYLES[hoveredUnit.unit.status].label}</span>
-        </div>
-      )}
+      {!zoomedId && hoveredUnit && (() => {
+        const u = hoveredUnit.unit;
+        // Same rate computation as UnitInfoCard.tsx (the full click-to-open
+        // card) - kept identical on purpose so a viewer never sees a
+        // different number on hover vs. after clicking the same plot.
+        const rate = u.rate_per_sqft ?? (u.total_price && u.area_sqft ? Math.round(u.total_price / u.area_sqft) : null);
+        return (
+          // Enriched by explicit request (2026-10-11): this used to show
+          // only unit number/size/status, with facing (Vastu direction),
+          // category, and rate only appearing after a click opened the
+          // full UnitInfoCard. A viewer wanted these visible on hover
+          // itself, before committing to a click.
+          <div
+            className="pointer-events-none absolute z-[550] -translate-x-1/2 -translate-y-[calc(100%+10px)] max-w-[220px] rounded-md border border-map-border bg-map-panel/95 px-2.5 py-2 text-xs text-white shadow-lg backdrop-blur"
+            style={{ left: hoveredUnit.x, top: hoveredUnit.y }}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold">
+                {u.wing ? `${u.wing}-` : ""}
+                {u.unit_number}
+              </span>
+              <span className="text-white/60">{UNIT_STATUS_STYLES[u.status].label}</span>
+            </div>
+            {(u.dimensions || u.area_sqft) && (
+              <div className="mt-0.5 text-white/80">
+                {u.dimensions ?? `${Math.round(u.area_sqft ?? 0).toLocaleString("en-IN")} sqft`}
+              </div>
+            )}
+            {(u.facing || u.category || u.bhk_type) && (
+              <div className="mt-1 flex flex-wrap gap-1">
+                {u.facing && (
+                  <span className="rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-white/80">
+                    Facing {u.facing}
+                  </span>
+                )}
+                {u.category && (
+                  <span className="rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-white/80">
+                    {u.category}
+                  </span>
+                )}
+                {u.bhk_type && (
+                  <span className="rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-white/80">
+                    {u.bhk_type}
+                  </span>
+                )}
+              </div>
+            )}
+            {rate != null && <div className="mt-1 text-white/70">₹{rate.toLocaleString()}/sqft</div>}
+          </div>
+        );
+      })()}
 
       {!zoomedId && (
         <div className="absolute bottom-3 right-3 z-10 flex flex-col gap-1.5">
