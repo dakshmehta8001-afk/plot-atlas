@@ -195,6 +195,9 @@ export function ProjectMapClient({
                 planImageUrl={project.plan_image_url}
                 planImageSize={{ width: project.plan_image_width, height: project.plan_image_height }}
                 projectName={project.name}
+                contactPhone={project.contact_phone}
+                contactWhatsapp={project.contact_whatsapp}
+                contactEmail={project.contact_email}
                 plots={plots}
                 buildings={buildings}
                 roads={roads}

@@ -49,6 +49,7 @@ import { roadLabelText } from "@/lib/map/roadWidth";
 import { feetPerUnit } from "@/lib/image/calibration";
 import { EDGE_INSET, EDGE_LINE, GATE_ROAD_ID, cornerAsphaltRadius, roadMetrics } from "@/lib/map/mapTraffic";
 import { MapTraffic, usePrefersReducedMotion } from "@/components/map/MapTraffic";
+import { QuickContactIcons } from "@/components/ui/UnitInfoCard";
 import { clientPointToLocalFraction } from "@/lib/map/svgCoords";
 
 const VB = MAP_VIEWBOX_SIZE;
@@ -600,8 +601,12 @@ const MapShapes = memo(function MapShapes({
                   : `drop-shadow(0 0 4px ${style.border}80)`,
               }}
               onClick={() => onPlotClick(unit)}
+              // onMouseEnter only (no onMouseMove) - the popup's position
+              // is now fixed once set, not continuously re-positioned to
+              // follow the cursor around inside the same plot. See the
+              // hideTimerRef comment above for why a stable target matters
+              // now that the popup has clickable contact icons.
               onMouseEnter={(e) => onPlotHover(unit, e)}
-              onMouseMove={(e) => onPlotHover(unit, e)}
               onMouseLeave={() => onPlotHoverEnd(unit.id)}
             />
             {/* Zone mode only: sold / booked / hold plots get diagonal stripes
@@ -752,6 +757,9 @@ export function SitePlanViewer({
   planImageUrl,
   planImageSize,
   projectName = "",
+  contactPhone = null,
+  contactWhatsapp = null,
+  contactEmail = null,
   plots,
   buildings,
   roads = [],
@@ -770,6 +778,10 @@ export function SitePlanViewer({
   planImageSize?: { width?: number | null; height?: number | null };
   /** Shown on the entry gate's arch, if the project has a gate. */
   projectName?: string;
+  /** The project's public contact details, for the hover popup's clickable call/WhatsApp/email icons. */
+  contactPhone?: string | null;
+  contactWhatsapp?: string | null;
+  contactEmail?: string | null;
   plots: Unit[];
   buildings: Building[];
   roads?: Road[];
@@ -912,6 +924,22 @@ export function SitePlanViewer({
   // this component sits on the page.
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoveredUnit, setHoveredUnit] = useState<{ unit: Unit; x: number; y: number } | null>(null);
+  // Set once per plot entered, not updated on every subsequent mousemove -
+  // this is what gives the popup (below) a stable position to anchor on,
+  // rather than jittering around with the cursor the whole time it's over
+  // a plot, which made it an impossible target to actually move the mouse
+  // onto and click something inside (needed once the popup grew clickable
+  // quick-contact icons, 2026-10-11 - previously this didn't matter since
+  // the popup was purely informational and never meant to be interacted
+  // with directly).
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function cancelHoverHide() {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+  }
 
   // Wrapped in useCallback (stable across the pan/zoom/hover re-renders
   // this component has often) so they can be passed as props into the
@@ -919,13 +947,31 @@ export function SitePlanViewer({
   // a fresh function identity on every render would make React.memo's prop
   // comparison always see "something changed" and re-render anyway.
   const updateHoverPosition = useCallback((unit: Unit, e: React.MouseEvent) => {
+    cancelHoverHide();
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
     setHoveredUnit({ unit, x: e.clientX - rect.left, y: e.clientY - rect.top });
   }, []);
 
+  // Deliberately NOT instant: the popup's own quick-contact icons need to
+  // be clickable, which means the user has to be able to move their mouse
+  // off the plot shape and onto the popup floating above it without the
+  // popup disappearing mid-journey. A short grace period, cancelled by
+  // cancelHoverHide() the moment the mouse actually reaches either the
+  // next plot (via updateHoverPosition above) or the popup itself (via
+  // its own onMouseEnter below), is the standard fix for this - an
+  // instant hide here would make the icons impossible to ever reach.
   const handlePlotHoverEnd = useCallback((unitId: string) => {
-    setHoveredUnit((prev) => (prev?.unit.id === unitId ? null : prev));
+    hideTimerRef.current = setTimeout(() => {
+      setHoveredUnit((prev) => (prev?.unit.id === unitId ? null : prev));
+    }, 250);
+  }, []);
+
+  // Cleanup: don't let a pending hide timer fire setState after this
+  // component has already unmounted (e.g. the viewer navigated away
+  // while a popup's hide was still pending).
+  useEffect(() => {
+    return () => cancelHoverHide();
   }, []);
 
   // Also reset on highlightZone changing (entering a zone, leaving one, or
@@ -1329,48 +1375,91 @@ ftPerUnit={ftPerUnit}
         // card) - kept identical on purpose so a viewer never sees a
         // different number on hover vs. after clicking the same plot.
         const rate = u.rate_per_sqft ?? (u.total_price && u.area_sqft ? Math.round(u.total_price / u.area_sqft) : null);
+        const statusStyle = UNIT_STATUS_STYLES[u.status];
         return (
-          // Enriched by explicit request (2026-10-11): this used to show
-          // only unit number/size/status, with facing (Vastu direction),
-          // category, and rate only appearing after a click opened the
-          // full UnitInfoCard. A viewer wanted these visible on hover
-          // itself, before committing to a click.
+          // Redesigned to match a reference screenshot (2026-10-11):
+          // header with status pill + clickable quick-contact icons, a
+          // tags row, then a two-column AREA/SIZE grid and a RATE row -
+          // the same structure/fields UnitInfoCard already shows after a
+          // CLICK, now also available on hover, before committing to one.
+          //
+          // No longer pointer-events-none, and has its own onMouseEnter/
+          // onMouseLeave wired into the same hide-timer as the plots
+          // themselves (see hideTimerRef above) - required for the
+          // contact icons below to be reachable/clickable at all: the
+          // user's mouse has to be able to leave the plot shape and
+          // arrive here without the popup disappearing first.
           <div
-            className="pointer-events-none absolute z-[550] -translate-x-1/2 -translate-y-[calc(100%+10px)] max-w-[220px] rounded-md border border-map-border bg-map-panel/95 px-2.5 py-2 text-xs text-white shadow-lg backdrop-blur"
+            className="absolute z-[550] -translate-x-1/2 -translate-y-[calc(100%+10px)] w-[260px] rounded-xl border border-map-border bg-map-panel/95 p-3 text-xs text-white shadow-lg backdrop-blur"
             style={{ left: hoveredUnit.x, top: hoveredUnit.y }}
+            onMouseEnter={cancelHoverHide}
+            // eslint-disable-next-line react-hooks/refs -- handlePlotHoverEnd only reads/writes hideTimerRef.current when this onMouseLeave handler actually FIRES later (a real mouse event), never during render itself; cancelHoverHide two lines up does the exact same kind of ref access and isn't flagged, since it's passed directly rather than wrapped in this inline closure - a static-analysis limitation, not a real issue
+            onMouseLeave={() => handlePlotHoverEnd(u.id)}
           >
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-semibold">
-                {u.wing ? `${u.wing}-` : ""}
-                {u.unit_number}
-              </span>
-              <span className="text-white/60">{UNIT_STATUS_STYLES[u.status].label}</span>
-            </div>
-            {(u.dimensions || u.area_sqft) && (
-              <div className="mt-0.5 text-white/80">
-                {u.dimensions ?? `${Math.round(u.area_sqft ?? 0).toLocaleString("en-IN")} sqft`}
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm font-bold">
+                  {u.wing ? `${u.wing}-` : ""}
+                  {u.unit_number}
+                </span>
+                <span
+                  className="rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide"
+                  style={{ backgroundColor: statusStyle.fill, color: statusStyle.border, borderColor: statusStyle.border }}
+                >
+                  {statusStyle.label}
+                </span>
+                <span className="text-[10px] capitalize text-white/50">{u.unit_type}</span>
               </div>
-            )}
+              <QuickContactIcons
+                contactPhone={contactPhone}
+                contactWhatsapp={contactWhatsapp}
+                contactEmail={contactEmail}
+                unit={u}
+                projectName={projectName}
+              />
+            </div>
+
             {(u.facing || u.category || u.bhk_type) && (
-              <div className="mt-1 flex flex-wrap gap-1">
+              <div className="mt-2 flex flex-wrap gap-1.5">
                 {u.facing && (
-                  <span className="rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-white/80">
+                  <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-white/80">
                     Facing {u.facing}
                   </span>
                 )}
                 {u.category && (
-                  <span className="rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-white/80">
+                  <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-white/80">
                     {u.category}
                   </span>
                 )}
                 {u.bhk_type && (
-                  <span className="rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-white/80">
+                  <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-white/80">
                     {u.bhk_type}
                   </span>
                 )}
               </div>
             )}
-            {rate != null && <div className="mt-1 text-white/70">₹{rate.toLocaleString()}/sqft</div>}
+
+            {(u.dimensions || u.area_sqft) && (
+              <div className="mt-2.5 grid grid-cols-2 gap-2 border-t border-white/10 pt-2 text-center">
+                <div>
+                  <p className="text-[9px] uppercase tracking-wide text-white/40">Area</p>
+                  <p className="font-semibold">
+                    {u.area_sqft ? `${Math.round(u.area_sqft).toLocaleString("en-IN")} sq ft` : "—"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[9px] uppercase tracking-wide text-white/40">Size</p>
+                  <p className="font-semibold">{u.dimensions ?? "—"}</p>
+                </div>
+              </div>
+            )}
+
+            {rate != null && (
+              <div className="mt-2 border-t border-white/10 pt-2">
+                <p className="text-[9px] uppercase tracking-wide text-white/40">Rate</p>
+                <p className="font-semibold text-amber-300">₹{rate.toLocaleString()}/sq ft</p>
+              </div>
+            )}
           </div>
         );
       })()}

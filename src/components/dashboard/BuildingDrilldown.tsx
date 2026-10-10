@@ -35,6 +35,9 @@ export function BuildingDrilldown({
   planImageUrl,
   planImageSize,
   projectName,
+  contactPhone = null,
+  contactWhatsapp = null,
+  contactEmail = null,
   plots,
   buildings,
   roads = [],
@@ -54,6 +57,10 @@ export function BuildingDrilldown({
   planImageSize?: { width?: number | null; height?: number | null };
   /** The project's name, shown on the entry gate. */
   projectName?: string;
+  /** Forwarded to SitePlanViewer's hover popup for its quick-contact icons. */
+  contactPhone?: string | null;
+  contactWhatsapp?: string | null;
+  contactEmail?: string | null;
   plots: Unit[];
   buildings: BuildingWithFloors[];
   roads?: Road[];
@@ -116,6 +123,9 @@ export function BuildingDrilldown({
             planImageUrl={planImageUrl}
             planImageSize={planImageSize}
             projectName={projectName}
+            contactPhone={contactPhone}
+            contactWhatsapp={contactWhatsapp}
+            contactEmail={contactEmail}
             plots={plots}
             buildings={buildings}
             roads={roads}

@@ -17,17 +17,33 @@ function digitsOnly(phone: string): string {
   return phone.replace(/[^\d+]/g, "");
 }
 
-function QuickContactIcons({ project, unit }: { project: Project; unit: Unit }) {
+// Exported (and taking the three contact strings directly, rather than a
+// whole Project) so SitePlanViewer's hover popup can render the exact
+// same clickable icons without needing the full Project type threaded
+// all the way down to it - only these three fields actually matter here.
+export function QuickContactIcons({
+  contactPhone,
+  contactWhatsapp,
+  contactEmail,
+  unit,
+  projectName,
+}: {
+  contactPhone: string | null;
+  contactWhatsapp: string | null;
+  contactEmail: string | null;
+  unit: Unit;
+  projectName: string;
+}) {
   const label = `${unit.wing ? `${unit.wing}-` : ""}${unit.unit_number}`;
-  const enquiryText = `Hi, I'm interested in ${label} at ${project.name}.`;
+  const enquiryText = `Hi, I'm interested in ${label} at ${projectName}.`;
 
-  if (!project.contact_phone && !project.contact_whatsapp && !project.contact_email) return null;
+  if (!contactPhone && !contactWhatsapp && !contactEmail) return null;
 
   return (
     <div className="flex items-center gap-2">
-      {project.contact_phone && (
+      {contactPhone && (
         <a
-          href={`tel:${digitsOnly(project.contact_phone)}`}
+          href={`tel:${digitsOnly(contactPhone)}`}
           title="Call"
           className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-white/70 hover:bg-white/20 hover:text-white"
         >
@@ -36,9 +52,9 @@ function QuickContactIcons({ project, unit }: { project: Project; unit: Unit }) 
           </svg>
         </a>
       )}
-      {project.contact_whatsapp && (
+      {contactWhatsapp && (
         <a
-          href={`https://wa.me/${digitsOnly(project.contact_whatsapp).replace("+", "")}?text=${encodeURIComponent(enquiryText)}`}
+          href={`https://wa.me/${digitsOnly(contactWhatsapp).replace("+", "")}?text=${encodeURIComponent(enquiryText)}`}
           target="_blank"
           rel="noopener noreferrer"
           title="WhatsApp"
@@ -49,9 +65,9 @@ function QuickContactIcons({ project, unit }: { project: Project; unit: Unit }) 
           </svg>
         </a>
       )}
-      {project.contact_email && (
+      {contactEmail && (
         <a
-          href={`mailto:${project.contact_email}?subject=${encodeURIComponent(`Enquiry: ${label}, ${project.name}`)}&body=${encodeURIComponent(enquiryText)}`}
+          href={`mailto:${contactEmail}?subject=${encodeURIComponent(`Enquiry: ${label}, ${projectName}`)}&body=${encodeURIComponent(enquiryText)}`}
           title="Email"
           className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-white/70 hover:bg-white/20 hover:text-white"
         >
@@ -100,7 +116,13 @@ export function UnitInfoCard({
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <QuickContactIcons project={project} unit={unit} />
+          <QuickContactIcons
+            contactPhone={project.contact_phone}
+            contactWhatsapp={project.contact_whatsapp}
+            contactEmail={project.contact_email}
+            unit={unit}
+            projectName={project.name}
+          />
           <button type="button" onClick={onClose} aria-label="Close" className="-m-1.5 p-1.5 text-white/50 hover:text-white">
             ✕
           </button>
