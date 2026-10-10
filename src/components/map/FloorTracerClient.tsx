@@ -6,8 +6,8 @@
 // a floor only ever traces one kind of shape (a flat).
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { PolygonTracer, type TracerShape } from "@/components/PolygonTracer";
-import { UnitFormModal } from "@/components/UnitFormModal";
+import { PolygonTracer, type TracerShape } from "@/components/map/PolygonTracer";
+import { UnitFormModal } from "@/components/forms/UnitFormModal";
 import { UNIT_STATUS_STYLES, type PolygonPoint, type Unit } from "@/lib/types";
 
 export function FloorTracerClient({

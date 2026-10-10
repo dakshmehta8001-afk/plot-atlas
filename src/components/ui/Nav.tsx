@@ -4,7 +4,7 @@
 // client-side flash of the wrong nav before the session loads.
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { SignOutButton } from "@/components/AuthButtons";
+import { SignOutButton } from "@/components/ui/AuthButtons";
 
 export async function Nav() {
   const supabase = await createClient();

@@ -19,8 +19,8 @@
 import { useEffect, useState } from "react";
 import type { Building, Floor, MapCalibration, Road, SiteFeature, Unit, UnitStatus } from "@/lib/types";
 import { floorLabel, sortFloors } from "@/lib/types";
-import { SitePlanViewer } from "@/components/SitePlanViewer";
-import { FloorPlanViewer } from "@/components/FloorPlanViewer";
+import { SitePlanViewer } from "@/components/map/SitePlanViewer";
+import { FloorPlanViewer } from "@/components/map/FloorPlanViewer";
 
 export interface BuildingWithFloors extends Building {
   floors: Floor[];

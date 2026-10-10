@@ -8,14 +8,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { ProjectTracerClient } from "@/components/ProjectTracerClient";
-import { PlanImageUpload } from "@/components/PlanImageUpload";
-import { MediaManager } from "@/components/MediaManager";
-import { PublishToggle } from "@/components/PublishToggle";
-import { RoadWidthList } from "@/components/RoadWidthList";
-import { ProjectDetailsForm } from "@/components/ProjectDetailsForm";
-import { StatusBadge, CategoryBadge } from "@/components/StatusBadge";
-import { sortByUnitNumber } from "@/lib/sortUnits";
+import { ProjectTracerClient } from "@/components/map/ProjectTracerClient";
+import { PlanImageUpload } from "@/components/media/PlanImageUpload";
+import { MediaManager } from "@/components/media/MediaManager";
+import { PublishToggle } from "@/components/ui/PublishToggle";
+import { RoadWidthList } from "@/components/dashboard/RoadWidthList";
+import { ProjectDetailsForm } from "@/components/forms/ProjectDetailsForm";
+import { StatusBadge, CategoryBadge } from "@/components/ui/StatusBadge";
+import { sortByUnitNumber } from "@/lib/utils/sortUnits";
 import type { Building, Project, ProjectMedia, Road, SiteFeature, Unit } from "@/lib/types";
 
 export default async function ManageProjectPage(props: PageProps<"/dashboard/projects/[id]">) {

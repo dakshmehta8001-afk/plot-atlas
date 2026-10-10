@@ -11,8 +11,8 @@
 // recognition involved (see the plan-parsing discussion in project memory).
 import { useRef, useState } from "react";
 import { MAP_VIEWBOX_SIZE, type PolygonPoint } from "@/lib/types";
-import { useImageAspectRatio } from "@/lib/useImageAspectRatio";
-import { toSvgPoints } from "@/lib/svgPolygon";
+import { useImageAspectRatio } from "@/lib/hooks/useImageAspectRatio";
+import { toSvgPoints } from "@/lib/map/svgPolygon";
 
 const VB = MAP_VIEWBOX_SIZE;
 

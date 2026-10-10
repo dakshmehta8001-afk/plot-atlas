@@ -57,7 +57,7 @@
 // road-detection behavior. See extractCandidateSegments below for exactly
 // what's duplicated and why each piece exists.
 import type { PolygonPoint } from "@/lib/types";
-import { pointInPolygon } from "@/lib/svgPolygon";
+import { pointInPolygon } from "@/lib/map/svgPolygon";
 import type { Cv } from "../opencvLoader";
 import { recognizeCropWords, type OcrWordResult } from "../ocrWorker";
 import type { DetectedShape } from "../types";

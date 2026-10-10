@@ -11,14 +11,14 @@
 // initial data fetch.
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { BuildingDrilldown, type BuildingWithFloors } from "@/components/BuildingDrilldown";
-import { MediaPanel } from "@/components/MediaPanel";
-import { AboutPanel } from "@/components/AboutPanel";
-import { ZonesSheet } from "@/components/ZonesSheet";
-import { UnitInfoCard } from "@/components/UnitInfoCard";
-import { PENDING_ENQUIRY_KEY } from "@/lib/useEnquiryFlow";
+import { BuildingDrilldown, type BuildingWithFloors } from "@/components/dashboard/BuildingDrilldown";
+import { MediaPanel } from "@/components/media/MediaPanel";
+import { AboutPanel } from "@/components/ui/AboutPanel";
+import { ZonesSheet } from "@/components/dashboard/ZonesSheet";
+import { UnitInfoCard } from "@/components/ui/UnitInfoCard";
+import { PENDING_ENQUIRY_KEY } from "@/lib/hooks/useEnquiryFlow";
 import { createLead } from "@/lib/actions/leads";
-import { useCountUp } from "@/lib/useCountUp";
+import { useCountUp } from "@/lib/hooks/useCountUp";
 import {
   distinctZones,
   SITE_FEATURE_STYLES,

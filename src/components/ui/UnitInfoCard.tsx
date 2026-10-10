@@ -7,7 +7,7 @@
 // only render when present. The enquiry logic itself (Google sign-in
 // handoff, submit) lives in useEnquiryFlow so it isn't duplicated between
 // UI styles.
-import { useEnquiryFlow } from "@/lib/useEnquiryFlow";
+import { useEnquiryFlow } from "@/lib/hooks/useEnquiryFlow";
 import { UNIT_STATUS_STYLES, type Project, type Unit } from "@/lib/types";
 
 // Kept to digits (and a leading +) since wa.me/tel: links don't tolerate

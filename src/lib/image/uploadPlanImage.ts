@@ -5,8 +5,8 @@
 // (not the generated Database type) since none of the three callers share
 // a more specific type either.
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { readImageSize } from "@/lib/imageSize";
-import { isPdf, renderPdfFirstPageToPng } from "@/lib/pdfToImage";
+import { readImageSize } from "@/lib/image/imageSize";
+import { isPdf, renderPdfFirstPageToPng } from "@/lib/image/pdfToImage";
 
 export async function uploadPlanImageFile(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- matches the loosely-typed client already used throughout lib/actions

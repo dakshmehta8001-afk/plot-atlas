@@ -10,10 +10,10 @@
 // road/draw-area tool modes.
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { MAP_VIEWBOX_SIZE, type MapCalibration, type PolygonPoint } from "@/lib/types";
-import { toSvgPoints, boundingBoxCenter, pointInPolygon, splitPolygonWithLine } from "@/lib/svgPolygon";
+import { toSvgPoints, boundingBoxCenter, pointInPolygon, splitPolygonWithLine } from "@/lib/map/svgPolygon";
 import type { DetectedShape } from "@/lib/digitize/types";
 import { ShapeLayer } from "./ShapeLayer";
-import { clientPointToLocalFraction } from "@/lib/svgCoords";
+import { clientPointToLocalFraction } from "@/lib/map/svgCoords";
 import type { ToolMode } from "./Toolbar";
 
 const VB = MAP_VIEWBOX_SIZE;

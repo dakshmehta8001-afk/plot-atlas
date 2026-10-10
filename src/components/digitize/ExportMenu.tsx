@@ -11,7 +11,7 @@
 // attributes — satisfying "the exported SVG must preserve the individual
 // plot shapes", not just a flattened picture of them.
 import { MAP_VIEWBOX_SIZE, SITE_FEATURE_STYLES, UNIT_STATUS_STYLES } from "@/lib/types";
-import { toSvgPoints } from "@/lib/svgPolygon";
+import { toSvgPoints } from "@/lib/map/svgPolygon";
 import type { DetectedShape } from "@/lib/digitize/types";
 
 const VB = MAP_VIEWBOX_SIZE;

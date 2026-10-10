@@ -13,8 +13,8 @@
 // It never skips frames. If frames run slow it removes a car (then a walker)
 // instead, so a weak phone still gets a smooth map with less traffic.
 import { memo, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
-import { activeCars, buildWalkGraph, createSim, removeOneCar, stepSim, WALKER_BASE_WIDTH, type Network, type Pose } from "@/lib/mapTraffic";
-import { WalkerSim, type WalkerPose } from "@/lib/mapWalkers";
+import { activeCars, buildWalkGraph, createSim, removeOneCar, stepSim, WALKER_BASE_WIDTH, type Network, type Pose } from "@/lib/map/mapTraffic";
+import { WalkerSim, type WalkerPose } from "@/lib/map/mapWalkers";
 
 const CAR_COLORS = ["#d7473f", "#f4f4f2", "#2f6fb5", "#b8bcc4", "#1f2933", "#e0a526"];
 const BIKE_COLORS = ["#e11d48", "#2563eb", "#16a34a", "#f59e0b", "#6b7280"];

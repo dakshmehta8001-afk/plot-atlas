@@ -3,7 +3,7 @@
 // text search. Search happens server-side via searchParams so the page
 // works without JavaScript and is trivially shareable/bookmarkable as a URL.
 import { createClient } from "@/lib/supabase/server";
-import { ProjectCard } from "@/components/ProjectCard";
+import { ProjectCard } from "@/components/ui/ProjectCard";
 import type { Project } from "@/lib/types";
 
 export default async function HomePage(props: PageProps<"/">) {

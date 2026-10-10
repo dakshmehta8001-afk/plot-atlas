@@ -6,10 +6,10 @@
 // removes it (ShapeDetailsPanel/Toolbar's Delete button removes the whole
 // shape instead).
 import { MAP_VIEWBOX_SIZE, SITE_FEATURE_STYLES, UNIT_STATUS_STYLES } from "@/lib/types";
-import { boundingBoxCenter, deleteVertex, insertVertex, moveVertex, nearestEdgeInsertion, toSvgPoints } from "@/lib/svgPolygon";
+import { boundingBoxCenter, deleteVertex, insertVertex, moveVertex, nearestEdgeInsertion, toSvgPoints } from "@/lib/map/svgPolygon";
 import type { DetectedShape } from "@/lib/digitize/types";
 import { VertexHandle } from "./VertexHandle";
-import { clientPointToLocalFraction } from "@/lib/svgCoords";
+import { clientPointToLocalFraction } from "@/lib/map/svgCoords";
 import type { ToolMode } from "./Toolbar";
 
 const VB = MAP_VIEWBOX_SIZE;

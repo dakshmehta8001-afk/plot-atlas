@@ -20,7 +20,7 @@ import { uploadPlanImage, setProjectCalibration } from "@/lib/actions/projects";
 import { saveDigitizedShapes } from "@/lib/actions/digitize";
 import { useDetectionPipeline, loadFileToCanvas, loadUrlToCanvas } from "@/lib/digitize/useDetectionPipeline";
 import type { DetectedShape } from "@/lib/digitize/types";
-import { computeDimensionFields, feetPerUnit, northAngleFromPoints } from "@/lib/calibration";
+import { computeDimensionFields, feetPerUnit, northAngleFromPoints } from "@/lib/image/calibration";
 import { UploadDropzone } from "./UploadDropzone";
 import { CornerWarpTool } from "./CornerWarpTool";
 import { ProcessingProgress } from "./ProcessingProgress";

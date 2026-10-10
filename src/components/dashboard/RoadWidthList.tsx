@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { updateRoadWidth } from "@/lib/actions/roads";
-import { hasRoadWidth } from "@/lib/roadWidth";
+import { hasRoadWidth } from "@/lib/map/roadWidth";
 import { ROAD_WIDTH_PRESETS, type Road } from "@/lib/types";
 
 function RoadRow({ road, index, projectId }: { road: Road; index: number; projectId: string }) {

@@ -5,7 +5,7 @@
 // hold one bit of "is the modal open" state.
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { FloorFormModal } from "@/components/FloorFormModal";
+import { FloorFormModal } from "@/components/forms/FloorFormModal";
 
 export function AddFloorButton({ buildingId, projectId }: { buildingId: string; projectId: string }) {
   const [open, setOpen] = useState(false);

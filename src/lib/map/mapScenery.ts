@@ -8,7 +8,7 @@
 // Everything is in "scaled" map units: x = fraction * VB, y = fraction *
 // vbHeight (the same convention toScaledSvgPoints uses).
 import type { PolygonPoint } from "@/lib/types";
-import { GATE_ROAD_ID, buildStreetlights, connectRoads, edgeMidpoint, type Edge, type Network, type Streetlight } from "@/lib/mapTraffic";
+import { GATE_ROAD_ID, buildStreetlights, connectRoads, edgeMidpoint, type Edge, type Network, type Streetlight } from "@/lib/map/mapTraffic";
 
 export interface Pt {
   x: number;

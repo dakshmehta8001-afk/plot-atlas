@@ -9,14 +9,14 @@
 // opening an edit modal here.
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { PolygonTracer, type TracerShape } from "@/components/PolygonTracer";
-import { UnitFormModal } from "@/components/UnitFormModal";
-import { BuildingFormModal } from "@/components/BuildingFormModal";
-import { RoadFormModal } from "@/components/RoadFormModal";
+import { PolygonTracer, type TracerShape } from "@/components/map/PolygonTracer";
+import { UnitFormModal } from "@/components/forms/UnitFormModal";
+import { BuildingFormModal } from "@/components/forms/BuildingFormModal";
+import { RoadFormModal } from "@/components/forms/RoadFormModal";
 import { deleteRoad } from "@/lib/actions/roads";
 import { calibrateProjectFromPlan } from "@/lib/actions/projects";
-import { computeDimensionFields } from "@/lib/calibration";
-import { useImageAspectRatio } from "@/lib/useImageAspectRatio";
+import { computeDimensionFields } from "@/lib/image/calibration";
+import { useImageAspectRatio } from "@/lib/hooks/useImageAspectRatio";
 import { MAP_VIEWBOX_SIZE, UNIT_STATUS_STYLES, type Building, type MapCalibration, type PolygonPoint, type Road, type Unit } from "@/lib/types";
 
 export function ProjectTracerClient({

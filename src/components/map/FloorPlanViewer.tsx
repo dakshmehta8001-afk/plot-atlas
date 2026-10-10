@@ -7,9 +7,9 @@
 // selector.
 import { memo, useCallback, useMemo, useRef, useState } from "react";
 import { MAP_VIEWBOX_SIZE, UNIT_STATUS_STYLES, distinctZones, zoneColorFor, type Unit } from "@/lib/types";
-import { useImageAspectRatio } from "@/lib/useImageAspectRatio";
-import { toScaledSvgPoints, scaledBoundingBoxCenter } from "@/lib/svgPolygon";
-import { clientPointToLocalFraction } from "@/lib/svgCoords";
+import { useImageAspectRatio } from "@/lib/hooks/useImageAspectRatio";
+import { toScaledSvgPoints, scaledBoundingBoxCenter } from "@/lib/map/svgPolygon";
+import { clientPointToLocalFraction } from "@/lib/map/svgCoords";
 
 const VB = MAP_VIEWBOX_SIZE;
 const ZOOM_SCALE = 3;

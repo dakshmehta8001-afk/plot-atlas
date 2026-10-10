@@ -23,7 +23,7 @@
 import type { PolygonPoint } from "@/lib/types";
 import type { Cv } from "../opencvLoader";
 import type { DetectedShape } from "../types";
-import { pointInPolygon } from "@/lib/svgPolygon";
+import { pointInPolygon } from "@/lib/map/svgPolygon";
 
 interface Segment {
   x1: number;

@@ -41,15 +41,15 @@ import {
   type Unit,
   type UnitStatus,
 } from "@/lib/types";
-import { useImageAspectRatio } from "@/lib/useImageAspectRatio";
-import { toScaledSvgPoints, scaledBoundingBoxCenter } from "@/lib/svgPolygon";
-import { Compass } from "@/components/Compass";
-import { buildScene, type Scene } from "@/lib/mapScenery";
-import { roadLabelText } from "@/lib/roadWidth";
-import { feetPerUnit } from "@/lib/calibration";
-import { EDGE_INSET, EDGE_LINE, GATE_ROAD_ID, cornerAsphaltRadius, roadMetrics } from "@/lib/mapTraffic";
-import { MapTraffic, usePrefersReducedMotion } from "@/components/MapTraffic";
-import { clientPointToLocalFraction } from "@/lib/svgCoords";
+import { useImageAspectRatio } from "@/lib/hooks/useImageAspectRatio";
+import { toScaledSvgPoints, scaledBoundingBoxCenter } from "@/lib/map/svgPolygon";
+import { Compass } from "@/components/map/Compass";
+import { buildScene, type Scene } from "@/lib/map/mapScenery";
+import { roadLabelText } from "@/lib/map/roadWidth";
+import { feetPerUnit } from "@/lib/image/calibration";
+import { EDGE_INSET, EDGE_LINE, GATE_ROAD_ID, cornerAsphaltRadius, roadMetrics } from "@/lib/map/mapTraffic";
+import { MapTraffic, usePrefersReducedMotion } from "@/components/map/MapTraffic";
+import { clientPointToLocalFraction } from "@/lib/map/svgCoords";
 
 const VB = MAP_VIEWBOX_SIZE;
 const ZOOM_SCALE = 4;

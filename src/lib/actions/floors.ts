@@ -6,7 +6,7 @@
 // footprints are traced against.
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { uploadPlanImageFile } from "@/lib/uploadPlanImage";
+import { uploadPlanImageFile } from "@/lib/image/uploadPlanImage";
 import type { ActionResult } from "./auth";
 
 export async function createFloor(

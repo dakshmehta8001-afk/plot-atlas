@@ -9,8 +9,8 @@
 // - Anything else: say so plainly and offer Try again / Reload / Back.
 //   Next 16 names the recovery callback `retry` (it was `reset` before).
 import { useEffect, useState } from "react";
-import { markAndReload, shouldAutoReload } from "@/lib/staleBuildRecovery";
-import { reportClientError } from "@/lib/reportClientError";
+import { markAndReload, shouldAutoReload } from "@/lib/utils/staleBuildRecovery";
+import { reportClientError } from "@/lib/utils/reportClientError";
 
 export default function AppError({ error, retry }: { error: Error & { digest?: string }; retry: () => void }) {
   // Decided once, at mount — the effect below only carries it out.

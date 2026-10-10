@@ -5,9 +5,9 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { FloorTracerClient } from "@/components/FloorTracerClient";
-import { AddFloorButton } from "@/components/AddFloorButton";
-import { StatusBadge } from "@/components/StatusBadge";
+import { FloorTracerClient } from "@/components/map/FloorTracerClient";
+import { AddFloorButton } from "@/components/ui/AddFloorButton";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import { floorLabel, sortFloors, type Building, type Floor, type Unit } from "@/lib/types";
 
 export default async function ManageBuildingPage(

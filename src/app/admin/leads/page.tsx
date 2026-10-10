@@ -2,7 +2,7 @@
 // the sub-admin dashboard — the "admins read/update all leads" RLS policies
 // are what actually make the wider dataset visible here.
 import { createClient } from "@/lib/supabase/server";
-import { LeadsTable, type LeadRow } from "@/components/LeadsTable";
+import { LeadsTable, type LeadRow } from "@/components/dashboard/LeadsTable";
 
 export default async function AdminLeadsPage() {
   const supabase = await createClient();

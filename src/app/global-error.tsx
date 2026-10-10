@@ -6,8 +6,8 @@
 // app/error.tsx: auto-reload once for a stale build, otherwise a plain
 // message with Try again / Reload.
 import { useEffect, useState } from "react";
-import { markAndReload, shouldAutoReload } from "@/lib/staleBuildRecovery";
-import { reportClientError } from "@/lib/reportClientError";
+import { markAndReload, shouldAutoReload } from "@/lib/utils/staleBuildRecovery";
+import { reportClientError } from "@/lib/utils/reportClientError";
 
 const button: React.CSSProperties = {
   padding: "8px 16px",

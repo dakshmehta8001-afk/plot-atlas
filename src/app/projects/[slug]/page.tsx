@@ -3,12 +3,12 @@
 // into the nested structure BuildingDrilldown expects, then hands off to
 // ProjectMapClient — the MapBhoomi-style dark panel with the header/stats/
 // legend overlay, the map/media/about tabs, and the "I'm interested" flow.
-import { sortByUnitNumber } from "@/lib/sortUnits";
+import { sortByUnitNumber } from "@/lib/utils/sortUnits";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { ProjectMapClient } from "@/components/ProjectMapClient";
+import { ProjectMapClient } from "@/components/map/ProjectMapClient";
 import type { Building, Floor, Project, ProjectMedia, Road, SiteFeature, Unit } from "@/lib/types";
-import type { BuildingWithFloors } from "@/components/BuildingDrilldown";
+import type { BuildingWithFloors } from "@/components/dashboard/BuildingDrilldown";
 
 export default async function ProjectPage(props: PageProps<"/projects/[slug]">) {
   const { slug } = await props.params;

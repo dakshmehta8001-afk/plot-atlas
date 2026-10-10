@@ -9,7 +9,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { uploadPlanImageFile } from "@/lib/uploadPlanImage";
+import { uploadPlanImageFile } from "@/lib/image/uploadPlanImage";
 import type { MapBounds, MapCalibration } from "@/lib/types";
 import type { ActionResult } from "./auth";
 

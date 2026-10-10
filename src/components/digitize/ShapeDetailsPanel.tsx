@@ -5,7 +5,7 @@
 // where an OCR mistake or an unlabeled auto-detected shape actually gets
 // corrected; the canvas itself only handles boundary geometry.
 import { ROAD_WIDTH_PRESETS, SITE_FEATURE_KIND_OPTIONS, SITE_FEATURE_STYLES, UNIT_STATUS_OPTIONS, UNIT_STATUS_STYLES, type SiteFeatureKind, type UnitStatus } from "@/lib/types";
-import { polygonAreaFraction } from "@/lib/svgPolygon";
+import { polygonAreaFraction } from "@/lib/map/svgPolygon";
 import type { DetectedShape } from "@/lib/digitize/types";
 
 export function ShapeDetailsPanel({

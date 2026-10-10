@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { SubAdminsTable } from "@/components/SubAdminsTable";
+import { SubAdminsTable } from "@/components/dashboard/SubAdminsTable";
 import type { AppUser } from "@/lib/types";
 
 export default async function AdminSubAdminsPage() {

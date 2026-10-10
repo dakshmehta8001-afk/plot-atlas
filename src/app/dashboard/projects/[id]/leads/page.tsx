@@ -5,7 +5,7 @@
 // PostgREST embed since a lead's unit can be null (a general project
 // enquiry, not tied to one plot/flat).
 import { createClient } from "@/lib/supabase/server";
-import { LeadsTable, type LeadRow } from "@/components/LeadsTable";
+import { LeadsTable, type LeadRow } from "@/components/dashboard/LeadsTable";
 import { LEAD_STATUS_OPTIONS, type LeadStatus } from "@/lib/types";
 
 export default async function ProjectLeadsPage(props: PageProps<"/dashboard/projects/[id]/leads">) {
