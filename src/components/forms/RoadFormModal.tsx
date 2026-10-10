@@ -42,7 +42,8 @@ export function RoadFormModal({
       <form
         onSubmit={handleSubmit}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-sm space-y-3 rounded-lg bg-white p-6 shadow-xl dark:bg-gray-900"
+        // See UnitFormModal.tsx's comment on this same pattern.
+        className="w-full max-w-sm space-y-3 rounded-lg bg-white p-6 text-gray-900 shadow-xl dark:bg-gray-900 dark:text-gray-100"
       >
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Road width</h2>

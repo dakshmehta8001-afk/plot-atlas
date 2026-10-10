@@ -107,7 +107,16 @@ export function UnitFormModal(props: CreateProps | EditProps) {
       <form
         onSubmit={handleSubmit}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md space-y-3 rounded-lg bg-white p-6 shadow-xl dark:bg-gray-900"
+        // text-gray-900: the rest of the site relies on a single global
+        // dark theme (body { color: #fff } in globals.css, applied
+        // unconditionally - there's no actual light/dark toggle despite
+        // the dark: classes below), so every label/heading in here was
+        // inheriting that white text color against this modal's own
+        // explicit white background - completely invisible. Setting the
+        // color explicitly here, inherited down to every label/input/h2
+        // inside via normal CSS cascade, fixes all of them in one place
+        // rather than touching each element individually.
+        className="w-full max-w-md space-y-3 rounded-lg bg-white p-6 text-gray-900 shadow-xl dark:bg-gray-900 dark:text-gray-100"
       >
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">

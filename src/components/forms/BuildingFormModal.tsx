@@ -52,7 +52,11 @@ export function BuildingFormModal({
       <form
         onSubmit={handleSubmit}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md space-y-3 rounded-lg bg-white p-6 shadow-xl dark:bg-gray-900"
+        // See UnitFormModal.tsx's comment on this same pattern: the site's
+        // single global dark theme makes body text white unconditionally,
+        // which was invisible against this modal's own explicit white
+        // background until this was added.
+        className="w-full max-w-md space-y-3 rounded-lg bg-white p-6 text-gray-900 shadow-xl dark:bg-gray-900 dark:text-gray-100"
       >
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">New building</h2>
