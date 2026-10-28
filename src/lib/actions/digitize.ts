@@ -10,6 +10,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { ActionResult } from "./auth";
+import { plotNumberConflictMessage } from "@/lib/utils/plotNumberConflict";
 import type { PolygonPoint, SiteFeatureKind, UnitStatus } from "@/lib/types";
 
 export interface DigitizedShapeInput {
@@ -96,6 +97,10 @@ export async function saveDigitizedShapes(
     p_roads: roadRows,
     p_features: featureRows,
   });
+  // A plot number already used in this project, or used twice in this save
+  // (units_unique_plot_number). The RPC is one transaction, so nothing was saved.
+  const duplicate = plotNumberConflictMessage(error);
+  if (duplicate) return { error: duplicate };
   if (error) return { error: error.message };
 
   revalidatePath(`/dashboard/projects/${input.projectId}`, "layout");
