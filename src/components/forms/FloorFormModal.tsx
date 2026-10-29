@@ -73,7 +73,7 @@ export function FloorFormModal({
           <input
             type="file"
             name="plan_image"
-            accept="image/*,application/pdf"
+            accept="image/jpeg,image/png,image/webp,application/pdf"
             className="mt-1 w-full text-sm"
           />
         </label>

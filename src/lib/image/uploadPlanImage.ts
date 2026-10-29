@@ -7,6 +7,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { readImageSize } from "@/lib/image/imageSize";
 import { isPdf, renderPdfFirstPageToPng } from "@/lib/image/pdfToImage";
+import { storageUploadErrorMessage } from "@/lib/utils/storageUploadError";
 
 export async function uploadPlanImageFile(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- matches the loosely-typed client already used throughout lib/actions
@@ -33,7 +34,8 @@ export async function uploadPlanImageFile(
   const { error: uploadError } = await supabase.storage
     .from("plan-images")
     .upload(path, bytes, { contentType });
-  if (uploadError) return { error: uploadError.message };
+  // Wrong type or over the bucket's size limit: a plain message instead of Storage's.
+  if (uploadError) return { error: storageUploadErrorMessage(uploadError, "plan-images") ?? uploadError.message };
 
   const { data: publicUrl } = supabase.storage.from("plan-images").getPublicUrl(path);
   // The pixel size, read from the file itself, so callers can store it.

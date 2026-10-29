@@ -5,6 +5,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { ActionResult } from "./auth";
+import { storageUploadErrorMessage } from "@/lib/utils/storageUploadError";
 
 export async function uploadProjectMedia(projectId: string, file: File): Promise<ActionResult> {
   const supabase = await createClient();
@@ -17,7 +18,8 @@ export async function uploadProjectMedia(projectId: string, file: File): Promise
   const { error: uploadError } = await supabase.storage
     .from("project-media")
     .upload(path, file, { contentType: file.type });
-  if (uploadError) return { error: uploadError.message };
+  // Wrong type (e.g. an iPhone .mov) or over the bucket's size limit: a plain message.
+  if (uploadError) return { error: storageUploadErrorMessage(uploadError, "project-media") ?? uploadError.message };
 
   const { data: publicUrl } = supabase.storage.from("project-media").getPublicUrl(path);
   const mediaType = file.type.startsWith("video/") ? "video" : "image";

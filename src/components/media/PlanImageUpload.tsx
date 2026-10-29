@@ -36,7 +36,7 @@ export function PlanImageUpload({ projectId }: { projectId: string }) {
       <p className="mb-3 text-sm text-gray-500">
         Upload a master site-plan image (or PDF) to start tracing plots and building footprints.
       </p>
-      <input type="file" accept="image/*,application/pdf" onChange={handleChange} disabled={uploading} className="text-sm" />
+      <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={handleChange} disabled={uploading} className="text-sm" />
       {uploading && <p className="mt-2 text-sm text-gray-500">Uploading…</p>}
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
     </div>
