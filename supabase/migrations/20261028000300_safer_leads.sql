@@ -16,6 +16,10 @@
 --    for viewer_id, ignoring whatever the client sent. createLead()
 --    (src/lib/actions/leads.ts) already sends the same values, so it keeps
 --    working unchanged.
+-- 2b. The same trigger sets status = 'new' on every insert, so a viewer
+--    cannot create a lead that already looks 'converted' or 'closed' in the
+--    developer's pipeline. createLead() never sends a status, so the default
+--    was already 'new' for the app's own inserts.
 -- 3. One lead per viewer per unit (a unique index). Leads without a unit,
 --    and leads whose viewer was deleted (viewer_id set to NULL), are not
 --    limited.
@@ -46,6 +50,9 @@ as $$
 declare
   profile record;
 begin
+  -- Every new lead starts at the beginning of the pipeline.
+  new.status := 'new';
+
   if new.viewer_id is null then
     return new;
   end if;

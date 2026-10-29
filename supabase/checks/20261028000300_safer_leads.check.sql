@@ -62,6 +62,19 @@ where schemaname = 'public' and indexname = 'leads_one_per_viewer_unit';
 --   insert into public.leads (project_id, unit_id, viewer_id, name) values ('<pub project>', '<unit in pub>', '<viewer>', 'x');
 -- rollback;
 
+-- 4e. A client-chosen status is replaced by 'new'.
+--     Expect: the returned status is 'new', not 'converted'.
+-- begin;
+--   set local role authenticated;
+--   select set_config('request.jwt.claims', json_build_object('sub', '<viewer>', 'role', 'authenticated')::text, true);
+--   insert into public.leads (project_id, unit_id, viewer_id, name, status)
+--   values ('<pub project>', '<unit in pub>', '<viewer>', 'x', 'converted')
+--   returning status;
+-- rollback;
+
+-- 4f. AFTER APPLYING: the trigger function sets the status. Expect: true.
+select pg_get_functiondef('public.set_lead_contact_from_profile'::regproc) ilike '%new.status := ''new''%' as forces_new_status;
+
 -- Cleanup after the manual UI test (the two enquiries made from the browser).
 -- Run only for the test viewer.
 -- delete from public.leads where viewer_id = '<viewer>';
