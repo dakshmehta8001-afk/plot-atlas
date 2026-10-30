@@ -37,7 +37,7 @@ export function SatelliteView({ alignment, plots, highlightStatus, onPlotClick }
     if (!containerRef.current) return;
     import("maplibre-gl").then((mod) => {
       if (!containerRef.current || mapRef.current) return;
-      const center: [number, number] = [alignment.geo1.lng, alignment.geo1.lat];
+      const center: [number, number] = [alignment.center.lng, alignment.center.lat];
       const map = new mod.Map({
         container: containerRef.current,
         style: {

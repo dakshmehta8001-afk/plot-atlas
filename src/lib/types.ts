@@ -16,15 +16,19 @@ export interface AppUser {
   created_at: string;
 }
 
-// 2-control-point satellite alignment: maps two plan fractional points
-// (x/y each in 0..1) to their real-world lat/lng. Gives a similarity
-// transform (translate + scale + rotate, no shear) — accurate enough for
-// a small site. Null until the sub-admin runs "Place on map" in the dashboard.
+// Satellite alignment stored in project.map_bounds. Encodes where the plan
+// sits on real-world imagery as center + rotation + per-axis scale, which
+// maps cleanly to a drag/rotate/resize UI and lets any plan point be
+// projected to lat/lng in one step (see lib/map/geo.ts).
 export interface SatelliteAlignment {
-  plan1: { x: number; y: number };
-  geo1: { lat: number; lng: number };
-  plan2: { x: number; y: number };
-  geo2: { lat: number; lng: number };
+  /** Geo location of plan centre (plan fractional point 0.5, 0.5). */
+  center: { lat: number; lng: number };
+  /** Clockwise degrees from true north to the plan's UP direction (−y axis). */
+  northAngle: number;
+  /** Metres corresponding to 1.0 plan x-unit (full image width). */
+  mppX: number;
+  /** Metres corresponding to 1.0 plan y-unit (full image height). */
+  mppY: number;
 }
 
 export type ProjectStatus = "draft" | "published";

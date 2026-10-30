@@ -1,58 +1,97 @@
-// Projects a shape's fractional polygon (traced on the flat plan image, see
-// PolygonPoint in lib/types.ts) onto real lat/lng coordinates using the
-// 2-control-point SatelliteAlignment stored in project.map_bounds.
+// Projects a shape's fractional polygon (traced on the flat plan image) onto
+// real lat/lng coordinates using the SatelliteAlignment stored in
+// project.map_bounds. Also provides helpers for deriving the alignment from
+// a project calibration and for computing the plan image's four geo corners
+// (used by MapLibre's image source).
 //
-// The transform is a 2D similarity (translate + uniform scale + rotation),
-// derived from two matched plan/geo control points. No shear — accurate for
-// a small site plan that isn't strongly distorted. No external projection
-// library needed at these zoom levels.
-import type { SatelliteAlignment, PolygonPoint } from "@/lib/types";
+// The alignment model: plan centre (0.5, 0.5) sits at alignment.center. The
+// plan's UP direction (−y axis) points at bearing alignment.northAngle
+// (clockwise degrees from true north). mppX / mppY give real-world metres
+// per 1.0 plan unit on each axis. This is a similarity transform (no shear).
+import type { MapCalibration, PolygonPoint, SatelliteAlignment } from "@/lib/types";
 
 export interface LatLng {
   lat: number;
   lng: number;
 }
 
-// Solve for the similarity coefficients (a, b) from the two control points,
-// then apply: lat = lat1 + a*Δpx - b*Δpy, lng = lng1 + b*Δpx + a*Δpy.
-export function projectPoint(point: PolygonPoint, alignment: SatelliteAlignment): LatLng {
-  const { plan1, geo1, plan2, geo2 } = alignment;
-  const dpx = plan2.x - plan1.x;
-  const dpy = plan2.y - plan1.y;
-  const d2 = dpx * dpx + dpy * dpy;
-  if (d2 === 0) return geo1;
-  const dlat = geo2.lat - geo1.lat;
-  const dlng = geo2.lng - geo1.lng;
-  const a = (dlat * dpx + dlng * dpy) / d2;
-  const b = (dlng * dpx - dlat * dpy) / d2;
-  const px = point.x - plan1.x;
-  const py = point.y - plan1.y;
-  return { lat: geo1.lat + a * px - b * py, lng: geo1.lng + b * px + a * py };
+const M_PER_DEG_LAT = 111320;
+
+function mPerDegLng(lat: number) {
+  return M_PER_DEG_LAT * Math.cos((lat * Math.PI) / 180);
 }
 
-export function projectPolygon(points: PolygonPoint[], alignment: SatelliteAlignment): LatLng[] {
-  return points.map((p) => projectPoint(p, alignment));
-}
-
-// Inverse: given a lat/lng (e.g., from a map click) find the fractional plan
-// coordinate. Used in AlignmentTool to show the plan crosshair while the user
-// hovers the satellite map.
-export function unprojectPoint(latLng: LatLng, alignment: SatelliteAlignment): PolygonPoint {
-  const { plan1, geo1, plan2, geo2 } = alignment;
-  const dpx = plan2.x - plan1.x;
-  const dpy = plan2.y - plan1.y;
-  const d2 = dpx * dpx + dpy * dpy;
-  if (d2 === 0) return plan1;
-  const dlat = geo2.lat - geo1.lat;
-  const dlng = geo2.lng - geo1.lng;
-  const a = (dlat * dpx + dlng * dpy) / d2;
-  const b = (dlng * dpx - dlat * dpy) / d2;
-  const ab2 = a * a + b * b;
-  if (ab2 === 0) return plan1;
-  const glat = latLng.lat - geo1.lat;
-  const glng = latLng.lng - geo1.lng;
+// Project any plan point (px, py in 0..1) to geo.
+// Movement in plan space:
+//   right (+x) → bearing (northAngle + 90)°
+//   up    (−y) → bearing northAngle°
+export function projectPoint(point: PolygonPoint, a: SatelliteAlignment): LatLng {
+  const dx = (point.x - 0.5) * a.mppX; // metres, positive = plan right
+  const dy = (0.5 - point.y) * a.mppY; // metres, positive = plan up
+  const nRad = (a.northAngle * Math.PI) / 180;
+  // Δlat = (dy·cos n  −  dx·sin n) / M_PER_DEG_LAT
+  // Δlng = (dy·sin n  +  dx·cos n) / mPerDegLng
+  const cos = Math.cos(nRad);
+  const sin = Math.sin(nRad);
   return {
-    x: plan1.x + (a * glat + b * glng) / ab2,
-    y: plan1.y + (-b * glat + a * glng) / ab2,
+    lat: a.center.lat + (dy * cos - dx * sin) / M_PER_DEG_LAT,
+    lng: a.center.lng + (dy * sin + dx * cos) / mPerDegLng(a.center.lat),
+  };
+}
+
+export function projectPolygon(points: PolygonPoint[], a: SatelliteAlignment): LatLng[] {
+  return points.map((p) => projectPoint(p, a));
+}
+
+// Inverse: geo → plan fractional point. Used while dragging the plan overlay.
+export function unprojectPoint(geo: LatLng, a: SatelliteAlignment): PolygonPoint {
+  const latM = (geo.lat - a.center.lat) * M_PER_DEG_LAT;
+  const lngM = (geo.lng - a.center.lng) * mPerDegLng(a.center.lat);
+  const nRad = (a.northAngle * Math.PI) / 180;
+  const cos = Math.cos(nRad);
+  const sin = Math.sin(nRad);
+  // Inverse rotation: dy = latM·cos n + lngM·sin n, dx = −latM·sin n + lngM·cos n
+  const dy = latM * cos + lngM * sin;
+  const dx = -latM * sin + lngM * cos;
+  return { x: 0.5 + dx / a.mppX, y: 0.5 - dy / a.mppY };
+}
+
+// The plan image's four geo corners, in MapLibre image-source order:
+// top-left, top-right, bottom-right, bottom-left (counter-clockwise).
+export function computeCorners(a: SatelliteAlignment): [[number, number], [number, number], [number, number], [number, number]] {
+  const tl = projectPoint({ x: 0, y: 0 }, a);
+  const tr = projectPoint({ x: 1, y: 0 }, a);
+  const br = projectPoint({ x: 1, y: 1 }, a);
+  const bl = projectPoint({ x: 0, y: 1 }, a);
+  return [
+    [tl.lng, tl.lat],
+    [tr.lng, tr.lat],
+    [br.lng, br.lat],
+    [bl.lng, bl.lat],
+  ];
+}
+
+// Build a SatelliteAlignment from a project calibration + one geo reference
+// point (the plan's centre, 0.5, 0.5). feetPerUnit is the same calculation
+// calibration.ts makes for computing plot dimensions.
+export function autoAlignFromCalibration(
+  centerLat: number,
+  centerLng: number,
+  cal: MapCalibration,
+  imgW: number,
+  imgH: number,
+): SatelliteAlignment {
+  const axS = cal.pointA.x * imgW;
+  const ayS = cal.pointA.y * imgH;
+  const bxS = cal.pointB.x * imgW;
+  const byS = cal.pointB.y * imgH;
+  const calDist = Math.hypot(bxS - axS, byS - ayS);
+  const FT_TO_M = 0.3048;
+  const fpu = calDist > 0 ? cal.realDistanceFt / calDist : 1;
+  return {
+    center: { lat: centerLat, lng: centerLng },
+    northAngle: cal.northAngleDegrees ?? 0,
+    mppX: imgW * fpu * FT_TO_M,
+    mppY: imgH * fpu * FT_TO_M,
   };
 }
