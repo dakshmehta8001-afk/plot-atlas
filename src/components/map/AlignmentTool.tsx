@@ -15,7 +15,7 @@
 //
 // MapLibre is imported dynamically inside a useEffect so it never runs on
 // the server (it needs the DOM and WebGL).
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { projectPolygon } from "@/lib/map/geo";
 import { saveSatelliteAlignment } from "@/lib/actions/projects";
 import { ESRI_TILE_URL, ESRI_ATTRIBUTION } from "@/lib/satellite";
@@ -55,12 +55,18 @@ export function AlignmentTool({ projectId, planImageUrl, plots, existingAlignmen
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const maplibreRef = useRef<any>(null);
   const planImgRef = useRef<HTMLImageElement>(null);
+  // Indirection so the map's click handler always calls the latest version
+  // of handleSatClick without needing to re-register the map listener.
+  const satClickRef = useRef<(lat: number, lng: number) => void>(() => {});
 
-  // Start at step 1 when re-aligning
-  const alignment: SatelliteAlignment | null =
-    planPt1 && planPt2 && geoPt1 && geoPt2
-      ? { plan1: planPt1, geo1: geoPt1, plan2: planPt2, geo2: geoPt2 }
-      : null;
+  // Memoised so the preview useEffect doesn't re-run on every render.
+  const alignment = useMemo<SatelliteAlignment | null>(
+    () =>
+      planPt1 && planPt2 && geoPt1 && geoPt2
+        ? { plan1: planPt1, geo1: geoPt1, plan2: planPt2, geo2: geoPt2 }
+        : null,
+    [planPt1, planPt2, geoPt1, geoPt2],
+  );
 
   // Initialise MapLibre once on mount
   useEffect(() => {
@@ -94,10 +100,8 @@ export function AlignmentTool({ projectId, planImageUrl, plots, existingAlignmen
         attributionControl: { compact: false },
       });
       mapRef.current = map;
-      // Expose click handler — set via closure-update below
-      map.on("click", (e: { lngLat: { lat: number; lng: number } }) => {
-        handleSatClick(e.lngLat.lat, e.lngLat.lng);
-      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      map.on("click", (e: any) => satClickRef.current(e.lngLat.lat, e.lngLat.lng));
     });
     return () => {
       if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
@@ -149,6 +153,7 @@ export function AlignmentTool({ projectId, planImageUrl, plots, existingAlignmen
     if (stepRef.current === 2) { setGeoPt1({ lat, lng }); setStep(3); }
     else if (stepRef.current === 4) { setGeoPt2({ lat, lng }); setStep(1); }
   }, []);
+  useEffect(() => { satClickRef.current = handleSatClick; }, [handleSatClick]);
 
   function handlePlanClick(e: React.MouseEvent<HTMLImageElement>) {
     const img = planImgRef.current;
