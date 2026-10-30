@@ -21,10 +21,12 @@ import * as pdfjsLib from "pdfjs-dist";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
-// Cap matches imagePrep.ts's resize step — no reason to rasterize a PDF
-// bigger than the resolution the detection pipeline will immediately
-// downscale to.
-const MAX_EDGE_PX = 1600;
+// Raised from 1600 to 2400 to match the plan-image upload path — a
+// rasterized PDF used as a plan image is stored at this resolution and then
+// zoomed into by viewers, so the extra detail is worth the larger file.
+// The detection pipeline's own downscale cap (MAX_SOURCE_EDGE_PX in
+// useDetectionPipeline.ts) still applies when the image is fed into OpenCV.
+const MAX_EDGE_PX = 2400;
 
 export async function renderPdfFirstPageToCanvas(
   file: File,

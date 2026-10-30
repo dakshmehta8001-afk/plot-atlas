@@ -16,7 +16,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MAP_VIEWBOX_SIZE, type MapCalibration, type PolygonPoint } from "@/lib/types";
-import { uploadPlanImage, setProjectCalibration } from "@/lib/actions/projects";
+import { setPlanImage, setProjectCalibration } from "@/lib/actions/projects";
+import { uploadFromBrowser } from "@/lib/storage/uploadFromBrowser";
 import { saveDigitizedShapes } from "@/lib/actions/digitize";
 import { useDetectionPipeline, loadFileToCanvas, loadUrlToCanvas } from "@/lib/digitize/useDetectionPipeline";
 import type { DetectedShape } from "@/lib/digitize/types";
@@ -292,10 +293,23 @@ export function DigitizeWorkspace({
     setStage("saving");
     try {
       if (!hasExistingPlanImage) {
+        // Upload the canvas PNG from the browser so Vercel's 4.5 MB request
+        // body cap doesn't apply. canvasToFile produces a File (which is a
+        // Blob) with type "image/png", accepted by plan-images.
         const file = await canvasToFile(sourceCanvas, "digitized-plan.png");
-        const uploadResult = await uploadPlanImage(projectId, file);
-        if (uploadResult.error) {
+        const uploadResult = await uploadFromBrowser("plan-images", file, "digitized-plan.png");
+        if ("error" in uploadResult) {
           setSaveError(`Saving the plan image failed: ${uploadResult.error}`);
+          setStage("review");
+          return;
+        }
+        const planResult = await setPlanImage(projectId, {
+          path: uploadResult.path,
+          width: uploadResult.width,
+          height: uploadResult.height,
+        });
+        if (planResult.error) {
+          setSaveError(`Saving the plan image failed: ${planResult.error}`);
           setStage("review");
           return;
         }

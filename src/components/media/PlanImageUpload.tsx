@@ -1,12 +1,23 @@
 "use client";
 
-// Small standalone uploader shown on a project's manage page when it has no
-// plan image yet (a sub-admin can create the project before the final plan
-// is ready, then add it here once they have it).
+// Shown on a project's manage page when it has no plan image yet. Uploads
+// straight from the browser to Supabase Storage (bypassing Vercel's 4.5 MB
+// request body cap), then calls setPlanImage with only the storage path.
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { uploadPlanImage } from "@/lib/actions/projects";
+import { setPlanImage } from "@/lib/actions/projects";
+import { uploadFromBrowser } from "@/lib/storage/uploadFromBrowser";
+import { renderPdfFirstPageToCanvas } from "@/lib/digitize/pdfToImageClient";
 import { ACCEPT } from "@/lib/storage/limits";
+
+function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) reject(new Error("Could not export the PDF page as an image."));
+      else resolve(blob);
+    }, "image/png");
+  });
+}
 
 export function PlanImageUpload({ projectId }: { projectId: string }) {
   const [uploading, setUploading] = useState(false);
@@ -18,17 +29,40 @@ export function PlanImageUpload({ projectId }: { projectId: string }) {
     if (!file) return;
     setUploading(true);
     setError(null);
-    const result = await uploadPlanImage(projectId, file);
+
+    let blob: Blob = file;
+    let filename = file.name;
+
+    if (file.type === "application/pdf" || filename.toLowerCase().endsWith(".pdf")) {
+      try {
+        const { canvas } = await renderPdfFirstPageToCanvas(file);
+        blob = await canvasToBlob(canvas);
+        filename = filename.replace(/\.pdf$/i, ".png");
+      } catch (err) {
+        setUploading(false);
+        setError(`Could not convert that PDF: ${err instanceof Error ? err.message : "unknown error"}`);
+        return;
+      }
+    }
+
+    const uploadResult = await uploadFromBrowser("plan-images", blob, filename);
+    if ("error" in uploadResult) {
+      setUploading(false);
+      setError(uploadResult.error);
+      return;
+    }
+
+    const result = await setPlanImage(projectId, {
+      path: uploadResult.path,
+      width: uploadResult.width,
+      height: uploadResult.height,
+    });
     setUploading(false);
     if (result.error) {
       setError(result.error);
       return;
     }
-    // Into auto-digitize immediately, same as the new-project flow — the
-    // sub-admin just picked this file specifically to start tracing/
-    // digitizing from, so landing back on the plain project page (with yet
-    // another prompt to click through) would be the exact redundant step
-    // this whole change exists to remove.
+    // Into auto-digitize immediately, same as the new-project flow.
     router.push(`/dashboard/projects/${projectId}/digitize`);
   }
 
