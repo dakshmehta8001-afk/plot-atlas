@@ -14,8 +14,16 @@ export default async function DigitizePage(props: PageProps<"/dashboard/projects
   const { id } = await props.params;
   const supabase = await createClient();
 
-  const { data: project } = await supabase.from("projects").select("id, name, plan_image_url, map_calibration").eq("id", id).single();
+  const [{ data: project }, { data: existingUnits }, { count: roadCount }, { count: featureCount }] =
+    await Promise.all([
+      supabase.from("projects").select("id, name, plan_image_url, map_calibration").eq("id", id).single(),
+      supabase.from("units").select("unit_number").eq("project_id", id),
+      supabase.from("roads").select("id", { count: "exact", head: true }).eq("project_id", id),
+      supabase.from("site_features").select("id", { count: "exact", head: true }).eq("project_id", id),
+    ]);
   if (!project) notFound();
+
+  const existingPlotNumbers = (existingUnits ?? []).map((u) => u.unit_number as string).filter(Boolean);
 
   return (
     // A fixed viewport-relative height + overflow-hidden here used to clip
@@ -41,6 +49,9 @@ export default async function DigitizePage(props: PageProps<"/dashboard/projects
         hasExistingPlanImage={!!project.plan_image_url}
         planImageUrl={project.plan_image_url}
         initialCalibration={project.map_calibration as MapCalibration | null}
+        existingPlotNumbers={existingPlotNumbers}
+        existingRoadCount={roadCount ?? 0}
+        existingFeatureCount={featureCount ?? 0}
       />
     </div>
   );

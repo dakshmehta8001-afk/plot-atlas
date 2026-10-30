@@ -22,6 +22,9 @@ export function DigitizeWorkspaceLoader(props: {
   hasExistingPlanImage: boolean;
   planImageUrl: string | null;
   initialCalibration: MapCalibration | null;
+  existingPlotNumbers: string[];
+  existingRoadCount: number;
+  existingFeatureCount: number;
 }) {
   return <DigitizeWorkspace {...props} />;
 }
