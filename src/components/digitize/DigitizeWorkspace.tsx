@@ -100,7 +100,15 @@ export function DigitizeWorkspace({
   const canvasRef = useRef<ReviewCanvasHandle>(null);
   const selectedShape = shapesState.value.find((s) => s.localId === selectedId) ?? null;
 
+  // Tracks whether the sub-admin applied the corner-warp step (vs. skipping
+  // it). When a project already has a plan image BUT the sub-admin straightened
+  // it in the warp step, handleSave must replace the stored image with the
+  // warped one — the shapes are traced against the warped canvas, so the
+  // original (unwarped) image would show them in the wrong place.
+  const warpApplied = useRef(false);
+
   async function handleStart(file: File) {
+    warpApplied.current = false;
     try {
       const canvas = await loadFileToCanvas(file);
       setPreviewCanvas(canvas);
@@ -292,7 +300,7 @@ export function DigitizeWorkspace({
     setSaveError(null);
     setStage("saving");
     try {
-      if (!hasExistingPlanImage) {
+      if (!hasExistingPlanImage || warpApplied.current) {
         // Upload the canvas PNG from the browser so Vercel's 4.5 MB request
         // body cap doesn't apply. canvasToFile produces a File (which is a
         // Blob) with type "image/png", accepted by plan-images.
@@ -365,8 +373,8 @@ export function DigitizeWorkspace({
     return (
       <CornerWarpTool
         sourceCanvas={previewCanvas}
-        onComplete={(warped) => runDetection(warped)}
-        onSkip={() => runDetection(previewCanvas)}
+        onComplete={(warped) => { warpApplied.current = true; runDetection(warped); }}
+        onSkip={() => { warpApplied.current = false; runDetection(previewCanvas); }}
       />
     );
   }
