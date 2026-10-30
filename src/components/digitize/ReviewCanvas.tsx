@@ -37,6 +37,9 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
   onSelect: (id: string | null) => void;
   mode: ToolMode;
   onUpdateShape: (id: string, points: PolygonPoint[]) => void;
+  onUpdateShapeSilent: (id: string, points: PolygonPoint[]) => void;
+  onDragStart: () => void;
+  onDragEnd: () => void;
   onAddShape: (kind: "plot" | "road" | "feature", points: PolygonPoint[]) => void;
   /** Replaces one shape with two, the result of the Split tool cutting it along a line. */
   onSplitShape: (id: string, parts: [PolygonPoint[], PolygonPoint[]]) => void;
@@ -62,6 +65,9 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
     onSelect,
     mode,
     onUpdateShape,
+    onUpdateShapeSilent,
+    onDragStart,
+    onDragEnd,
     onAddShape,
     onSplitShape,
     onModeChange,
@@ -444,6 +450,9 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
             onSelect={onSelect}
             mode={mode}
             onUpdateShape={onUpdateShape}
+            onUpdateShapeSilent={onUpdateShapeSilent}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
             splitHoverId={isSplitMode ? splitHoverId : null}
           />
 

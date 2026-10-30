@@ -214,6 +214,32 @@ export function DigitizeWorkspace({
       }),
     );
   }
+
+  // Snapshot of shapes at drag-start — on pointer-up it becomes the history
+  // entry so one Undo restores the pre-drag state, not the last-pixel state.
+  const beforeDragRef = useRef<DetectedShape[] | null>(null);
+  const dragMovedRef = useRef(false);
+
+  function handleUpdatePointsSilent(id: string, points: PolygonPoint[]) {
+    dragMovedRef.current = true;
+    shapesState.silentUpdate(
+      shapesState.value.map((s) => {
+        if (s.localId !== id) return s;
+        if (s.kind !== "plot") return { ...s, points };
+        return { ...s, points, ...computeDimensionFields(points, calibration, VB, vbHeight) };
+      }),
+    );
+  }
+  function handleDragStart() {
+    beforeDragRef.current = shapesState.value;
+    dragMovedRef.current = false;
+  }
+  function handleDragEnd() {
+    if (beforeDragRef.current !== null && dragMovedRef.current) {
+      shapesState.pushToHistory(beforeDragRef.current);
+    }
+    beforeDragRef.current = null;
+  }
   function handleChangeShape(next: DetectedShape) {
     shapesState.set(shapesState.value.map((s) => (s.localId === next.localId ? next : s)));
   }
@@ -602,6 +628,9 @@ export function DigitizeWorkspace({
           onSelect={setSelectedId}
           mode={mode}
           onUpdateShape={handleUpdatePoints}
+          onUpdateShapeSilent={handleUpdatePointsSilent}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
           onAddShape={handleAddShape}
           onSplitShape={handleSplitShape}
           onModeChange={setMode}
