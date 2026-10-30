@@ -3,6 +3,11 @@
 Apply the six migrations one at a time. Every migration is compatible with
 the code on `main`, so apply them all before deploying the branch.
 
+> **Step 2 deployment dependency:** the Step 2 code changes (browser-side
+> uploads) must not be deployed until migration 1.6
+> (`20261028000500_bucket_upload_limits.sql`) is applied. Apply all seven
+> migrations first, then merge the branch.
+
 Run everything from the repo root, on branch `fix/security-and-uploads`,
 in PowerShell.
 

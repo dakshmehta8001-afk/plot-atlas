@@ -5,6 +5,7 @@
 // (separate from the project's master site-plan image).
 import { useState } from "react";
 import { createFloor } from "@/lib/actions/floors";
+import { ACCEPT } from "@/lib/storage/limits";
 
 export function FloorFormModal({
   buildingId,
@@ -73,7 +74,7 @@ export function FloorFormModal({
           <input
             type="file"
             name="plan_image"
-            accept="image/jpeg,image/png,image/webp,application/pdf"
+            accept={ACCEPT["plan-images"]}
             className="mt-1 w-full text-sm"
           />
         </label>

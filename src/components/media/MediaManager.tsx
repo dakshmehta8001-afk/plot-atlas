@@ -8,6 +8,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { uploadProjectMedia, deleteProjectMedia } from "@/lib/actions/media";
 import type { ProjectMedia } from "@/lib/types";
+import { ACCEPT } from "@/lib/storage/limits";
 
 export function MediaManager({ projectId, media }: { projectId: string; media: ProjectMedia[] }) {
   const [uploading, setUploading] = useState(false);
@@ -35,7 +36,7 @@ export function MediaManager({ projectId, media }: { projectId: string; media: P
 
   return (
     <div className="space-y-3">
-      <input type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" onChange={handleUpload} disabled={uploading} className="text-sm" />
+      <input type="file" accept={ACCEPT["project-media"]} onChange={handleUpload} disabled={uploading} className="text-sm" />
       {uploading && <p className="text-sm text-gray-500">Uploading…</p>}
       {error && <p className="text-sm text-red-600">{error}</p>}
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">

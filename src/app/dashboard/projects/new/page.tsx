@@ -10,6 +10,7 @@
 
 import { useState } from "react";
 import { createProject } from "@/lib/actions/projects";
+import { ACCEPT } from "@/lib/storage/limits";
 
 export default function NewProjectPage() {
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +59,7 @@ export default function NewProjectPage() {
         </label>
         <label className="block text-sm">
           Master site-plan image (image or PDF)
-          <input name="plan_image" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="mt-1 w-full text-sm" />
+          <input name="plan_image" type="file" accept={ACCEPT["plan-images"]} className="mt-1 w-full text-sm" />
         </label>
         {error && <p className="text-sm text-red-600">{error}</p>}
         <button
