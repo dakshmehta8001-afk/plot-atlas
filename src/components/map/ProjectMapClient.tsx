@@ -195,6 +195,9 @@ export function ProjectMapClient({
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   alignment={project.map_bounds as any}
                   plots={plots}
+                  roads={roads}
+                  features={features}
+                  planImageUrl={project.plan_image_url ?? undefined}
                   highlightStatus={statusFilter}
                   onPlotClick={setSelectedUnit}
                 />
