@@ -10,7 +10,11 @@ import { createClient } from "@/lib/supabase/server";
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/";
+  // Accept `next` only when it is an absolute path on this origin — a bare
+  // "/" prefix allows e.g. "/dashboard", while "//" or "/\" would start a
+  // protocol-relative or path-escape URL that could redirect off-site.
+  const rawNext = searchParams.get("next") ?? "";
+  const next = rawNext.startsWith("/") && !rawNext.startsWith("//") && !rawNext.startsWith("/\\") ? rawNext : "/";
 
   if (code) {
     const supabase = await createClient();

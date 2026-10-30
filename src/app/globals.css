@@ -1,6 +1,14 @@
 @import "tailwindcss";
 
+/* Bind Tailwind's `dark:` variant to the "dark" class on <html> (added
+   statically in layout.tsx) rather than the browser's prefers-color-scheme
+   media query. This makes dark styles predictable regardless of the OS
+   theme setting, which matters here because the app has its own dark
+   palette that must always be active. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
+  color-scheme: dark;
   --background: #030712;
   --foreground: #ffffff;
 

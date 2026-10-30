@@ -16,7 +16,14 @@ export default async function HomePage(props: PageProps<"/">) {
     .select("*")
     .eq("status", "published")
     .order("created_at", { ascending: false });
-  if (q) query = query.or(`name.ilike.%${q}%,location.ilike.%${q}%`);
+  if (q) {
+    // Escape backslash first (must come before the quote escape so the
+    // replacement itself isn't re-escaped), then double-quote, then wrap the
+    // whole value in double quotes so Supabase's PostgREST parser treats it as
+    // a literal string even when it contains commas, parentheses, or dots.
+    const safe = q.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    query = query.or(`name.ilike."%${safe}%",location.ilike."%${safe}%"`);
+  }
 
   const { data: projects } = await query;
 
