@@ -92,7 +92,7 @@ export function ShapeLayer({
                 // plot was underneath instead of ever registering as a
                 // calibration point. Every other mode keeps the normal
                 // select-on-click behavior.
-                if (mode === "split-plot" || mode === "set-scale" || mode === "set-north") return;
+                if (mode === "split-plot" || mode === "set-scale" || mode === "set-north" || mode === "draw-plot" || mode === "draw-road" || mode === "draw-area") return;
                 e.stopPropagation();
                 onSelect(shape.localId);
               }}
