@@ -6,7 +6,7 @@
 // footprints are traced against.
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { uploadPlanImageFile } from "@/lib/image/uploadPlanImage";
+import { getValidatedPublicUrl } from "@/lib/storage/serverPaths";
 import type { ActionResult } from "./auth";
 
 export async function createFloor(
@@ -22,15 +22,17 @@ export async function createFloor(
 
   const floorNumber = Number(formData.get("floor_number"));
   const name = String(formData.get("name") ?? "").trim() || null;
-  const planImage = formData.get("plan_image");
+  // The browser uploaded the plan image and sent back a storage path; the
+  // file bytes never reach this server action.
+  const planImagePath = String(formData.get("plan_image_path") ?? "").trim() || null;
 
   if (Number.isNaN(floorNumber)) return { error: "Floor number is required." };
 
   let planImageUrl: string | null = null;
-  if (planImage instanceof File && planImage.size > 0) {
-    const result = await uploadPlanImageFile(supabase, user.id, planImage);
-    if (result.error) return { error: `Floor plan upload failed: ${result.error}` };
-    planImageUrl = result.url!;
+  if (planImagePath) {
+    const validated = getValidatedPublicUrl(supabase, "plan-images", planImagePath, user.id);
+    if ("error" in validated) return { error: validated.error };
+    planImageUrl = validated.url;
   }
 
   const { error } = await supabase.from("floors").insert({
