@@ -16,14 +16,15 @@ export interface AppUser {
   created_at: string;
 }
 
-// A lat/lng rectangle the project's plan image is aligned to on a satellite
-// map (see lib/geo.ts). Null until the sub-admin runs the satellite
-// alignment step in the dashboard.
-export interface MapBounds {
-  north: number;
-  south: number;
-  east: number;
-  west: number;
+// 2-control-point satellite alignment: maps two plan fractional points
+// (x/y each in 0..1) to their real-world lat/lng. Gives a similarity
+// transform (translate + scale + rotate, no shear) — accurate enough for
+// a small site. Null until the sub-admin runs "Place on map" in the dashboard.
+export interface SatelliteAlignment {
+  plan1: { x: number; y: number };
+  geo1: { lat: number; lng: number };
+  plan2: { x: number; y: number };
+  geo2: { lat: number; lng: number };
 }
 
 export type ProjectStatus = "draft" | "published";
@@ -57,7 +58,7 @@ export interface Project {
   /** Pixel size of the plan image, stored at upload so the map has the right shape from the first render. Null until known. */
   plan_image_width: number | null;
   plan_image_height: number | null;
-  map_bounds: MapBounds | null;
+  map_bounds: SatelliteAlignment | null;
   map_calibration: MapCalibration | null;
   status: ProjectStatus;
   // The developer's own published business contact info (opt-in, shown as

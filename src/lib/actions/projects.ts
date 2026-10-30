@@ -10,7 +10,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getValidatedPublicUrl } from "@/lib/storage/serverPaths";
-import type { MapBounds, MapCalibration } from "@/lib/types";
+import type { SatelliteAlignment, MapCalibration } from "@/lib/types";
 import type { ActionResult } from "./auth";
 
 function slugify(name: string): string {
@@ -200,17 +200,16 @@ export async function setPlanImage(
   return {};
 }
 
-// Saves the satellite alignment a sub-admin sets up in SatelliteLayoutEditor
-// (drag the plan image's two corners onto real satellite imagery). Setting
-// this switches both the sub-admin's tracer and every viewer's map over to
-// the satellite-based rendering; it's what lib/geo.ts projects each
-// building/unit's existing fractional polygon into for lat/lng rendering.
-export async function updateMapBounds(projectId: string, bounds: MapBounds): Promise<ActionResult> {
+// Saves the 2-point satellite alignment a sub-admin sets up in the
+// "Place on map" dashboard page. Once saved, the public map shows a
+// Plan | Satellite switch and plot outlines on the satellite photo.
+export async function saveSatelliteAlignment(
+  projectId: string,
+  alignment: SatelliteAlignment,
+): Promise<ActionResult> {
   const supabase = await createClient();
-
-  const { error } = await supabase.from("projects").update({ map_bounds: bounds }).eq("id", projectId);
+  const { error } = await supabase.from("projects").update({ map_bounds: alignment }).eq("id", projectId);
   if (error) return { error: error.message };
-
   revalidatePath(`/dashboard/projects/${projectId}`);
   revalidatePath("/projects", "layout");
   return {};
