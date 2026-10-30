@@ -1,12 +1,13 @@
 "use client";
 
-// Dashboard-side gallery uploader for a project (feeds MediaPanel on the
-// public page). Kept as a simple grid + file input rather than drag-and-
-// drop, since a sub-admin uploading a handful of brochure photos doesn't
-// need more than that.
+// Dashboard gallery uploader for a project. Files go straight from the
+// browser to Supabase Storage (uploadFromBrowser), so Vercel's 4.5 MB
+// request body cap doesn't apply. The server action receives only the
+// storage path and media type.
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { uploadProjectMedia, deleteProjectMedia } from "@/lib/actions/media";
+import { uploadFromBrowser } from "@/lib/storage/uploadFromBrowser";
 import type { ProjectMedia } from "@/lib/types";
 import { ACCEPT } from "@/lib/storage/limits";
 
@@ -20,7 +21,17 @@ export function MediaManager({ projectId, media }: { projectId: string; media: P
     if (!file) return;
     setUploading(true);
     setError(null);
-    const result = await uploadProjectMedia(projectId, file);
+
+    const uploadResult = await uploadFromBrowser("project-media", file, file.name);
+    if ("error" in uploadResult) {
+      setUploading(false);
+      setError(uploadResult.error);
+      return;
+    }
+
+    // Derive media type from the MIME type — the server also validates this.
+    const mediaType = file.type.startsWith("video/") ? "video" : "image";
+    const result = await uploadProjectMedia(projectId, { path: uploadResult.path, mediaType });
     setUploading(false);
     if (result.error) {
       setError(result.error);
