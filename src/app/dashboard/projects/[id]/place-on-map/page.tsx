@@ -50,6 +50,7 @@ export default async function PlaceOnMapPage(props: PageProps<"/dashboard/projec
         calibration={typedProject.map_calibration as MapCalibration | null}
         imageWidth={typedProject.plan_image_width}
         imageHeight={typedProject.plan_image_height}
+        projectLocation={typedProject.location}
       />
     </div>
   );
