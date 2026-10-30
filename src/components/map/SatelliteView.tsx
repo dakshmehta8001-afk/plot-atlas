@@ -54,7 +54,7 @@ export function SatelliteView({ alignment, plots, highlightStatus, onPlotClick }
         },
         center,
         zoom: 17,
-        attributionControl: { compact: true },
+        attributionControl: { compact: false },
       });
       mapRef.current = map;
 

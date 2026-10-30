@@ -7,7 +7,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { AlignmentTool } from "@/components/map/AlignmentTool";
-import type { Project, Unit, SatelliteAlignment } from "@/lib/types";
+import type { Project, Unit, SatelliteAlignment, MapCalibration } from "@/lib/types";
 
 export default async function PlaceOnMapPage(props: PageProps<"/dashboard/projects/[id]/place-on-map">) {
   const { id } = await props.params;
@@ -37,9 +37,9 @@ export default async function PlaceOnMapPage(props: PageProps<"/dashboard/projec
       </div>
 
       <p className="mb-6 text-sm text-white/60 max-w-2xl">
-        Pick two recognisable landmarks — a plot corner, a road junction, or a boundary wall — that you can
-        identify on both the plan and the satellite photo. Click each one on the plan first, then on the
-        satellite. Two points are enough to fix the position, scale, and rotation.
+        Paste a Google Maps coordinate for any point on this project&apos;s land, then click
+        &quot;Auto-place&quot; — if the project has a scale and north direction set, the whole alignment is
+        computed for you. Otherwise pick two landmarks manually: click each on the plan, then on the satellite.
       </p>
 
       <AlignmentTool
@@ -47,6 +47,9 @@ export default async function PlaceOnMapPage(props: PageProps<"/dashboard/projec
         planImageUrl={typedProject.plan_image_url!}
         plots={plots}
         existingAlignment={typedProject.map_bounds as SatelliteAlignment | null}
+        calibration={typedProject.map_calibration as MapCalibration | null}
+        imageWidth={typedProject.plan_image_width}
+        imageHeight={typedProject.plan_image_height}
       />
     </div>
   );
