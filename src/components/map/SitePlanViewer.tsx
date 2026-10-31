@@ -1271,13 +1271,22 @@ export function SitePlanViewer({
       panGroupRef.current.style.transform = `translate(${view.tx * pxPerUnit.current}px, ${view.ty * pxPerUnit.current}px) scale(${view.scale})`;
     }
   }, [applyK, view]);
+  // Last size handed to setMapSize. Calling setMapSize at all (even with an
+  // updater that returns prev) can schedule a re-render, which rebuilds
+  // `box` and re-runs this effect: an infinite update loop that crashed the
+  // page when a plot card closed. So only call it on a real size change.
+  const lastMapSize = useRef<{ w: number; h: number } | null>(null);
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg || typeof ResizeObserver === "undefined") return;
     const measure = () => {
       const r = svg.getBoundingClientRect();
       pxPerUnit.current = Math.min(r.width / box.w, r.height / box.h) || 0.4;
-      setMapSize((prev) => (prev && Math.abs(prev.w - r.width) < 0.5 && Math.abs(prev.h - r.height) < 0.5 ? prev : { w: r.width, h: r.height }));
+      const prev = lastMapSize.current;
+      if (!prev || Math.abs(prev.w - r.width) >= 0.5 || Math.abs(prev.h - r.height) >= 0.5) {
+        lastMapSize.current = { w: r.width, h: r.height };
+        setMapSize(lastMapSize.current);
+      }
       applyK();
     };
     measure();
