@@ -1285,7 +1285,6 @@ export function SitePlanViewer({
   const handlePlotClick = useCallback(
     (unit: Unit) => {
       if (pointerMovedRef.current > 6) return;
-      setZoomedId(unit.id);
       setHoveredUnit(null);
       onPlotClick(unit);
     },
