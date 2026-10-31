@@ -60,7 +60,7 @@ export default async function HomePage(props: PageProps<"/">) {
 
       {q && (
         <p className="mb-4 text-[13px] text-white/45">
-          {projects.length} {projects.length === 1 ? "result" : "results"} for â€œ{q}â€
+          {projects.length} {projects.length === 1 ? "result" : "results"} for &ldquo;{q}&rdquo;
         </p>
       )}
 
