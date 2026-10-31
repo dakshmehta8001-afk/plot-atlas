@@ -1498,42 +1498,50 @@ ftPerUnit={ftPerUnit}
       })()}
 
       {!zoomedId && (
-        <div className="absolute bottom-3 right-3 z-10 flex flex-col gap-1.5">
+        <div className="absolute bottom-24 right-3 z-10 flex flex-col items-center gap-2 sm:bottom-6">
           <Compass inline angleDegrees={calibration?.northAngleDegrees} />
-          <button
-            type="button"
-            onClick={() => zoomBy(1.3)}
-            aria-label="Zoom in"
-            className="flex h-11 w-11 items-center justify-center rounded-md bg-white/90 text-lg font-semibold text-[#0f2436] shadow hover:bg-white sm:h-8 sm:w-8 sm:text-base"
-          >
-            +
-          </button>
-          <button
-            type="button"
-            onClick={() => zoomBy(1 / 1.3)}
-            aria-label="Zoom out"
-            className="flex h-11 w-11 items-center justify-center rounded-md bg-white/90 text-lg font-semibold text-[#0f2436] shadow hover:bg-white sm:h-8 sm:w-8 sm:text-base"
-          >
-            −
-          </button>
-          <button
-            type="button"
-            onClick={resetView}
-            aria-label="Fit to view"
-            className="flex h-11 items-center justify-center rounded-md bg-white/90 px-2 text-xs font-medium text-[#0f2436] shadow hover:bg-white sm:h-8 sm:w-8 sm:px-0 sm:text-[11px]"
-          >
-            Fit
-          </button>
-          <button
-            type="button"
-            onClick={() => setPlayTraffic(true)}
-            disabled={!prefersReducedMotion || playTraffic}
-            aria-label="Play traffic"
-            className="flex h-11 w-11 items-center justify-center rounded-md bg-white/90 text-[10px] font-bold text-[#0f2436] shadow hover:bg-white disabled:pointer-events-none disabled:opacity-50 sm:h-8 sm:w-8"
-            title="Play traffic"
-          >
-            ▶
-          </button>
+          <div className="flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/45 shadow-lg backdrop-blur-md">
+            <button
+              type="button"
+              onClick={() => zoomBy(1.3)}
+              aria-label="Zoom in"
+              className="flex h-11 w-11 items-center justify-center text-lg text-white/85 transition-colors hover:bg-white/10 active:bg-white/20"
+            >
+              +
+            </button>
+            <span className="mx-2 h-px bg-white/10" />
+            <button
+              type="button"
+              onClick={() => zoomBy(1 / 1.3)}
+              aria-label="Zoom out"
+              className="flex h-11 w-11 items-center justify-center text-lg text-white/85 transition-colors hover:bg-white/10 active:bg-white/20"
+            >
+              −
+            </button>
+            <span className="mx-2 h-px bg-white/10" />
+            <button
+              type="button"
+              onClick={resetView}
+              aria-label="Fit to view"
+              title="Fit to view"
+              className="flex h-11 w-11 items-center justify-center text-white/85 transition-colors hover:bg-white/10 active:bg-white/20"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-4 w-4">
+                <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+              </svg>
+            </button>
+          </div>
+          {prefersReducedMotion && !playTraffic && (
+            <button
+              type="button"
+              onClick={() => setPlayTraffic(true)}
+              aria-label="Play traffic"
+              title="Play traffic"
+              className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/45 text-[11px] text-white/85 shadow-lg backdrop-blur-md hover:bg-white/10"
+            >
+              ▶
+            </button>
+          )}
         </div>
       )}
     </div>

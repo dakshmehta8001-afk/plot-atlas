@@ -9,9 +9,10 @@
 // MediaPanel/AboutPanel (the other two tabs), and UnitInfoCard (the enquiry
 // flow) — the project page itself stays a Server Component that does the
 // initial data fetch.
-import { useEffect, useState, lazy, Suspense } from "react";
+import { useCallback, useEffect, useState, lazy, Suspense } from "react";
 import { useUpdateCheck } from "@/lib/hooks/useUpdateCheck";
 const SatelliteView = lazy(() => import("./SatelliteView").then((m) => ({ default: m.SatelliteView })));
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { BuildingDrilldown, type BuildingWithFloors } from "@/components/dashboard/BuildingDrilldown";
 import { MediaPanel } from "@/components/media/MediaPanel";
@@ -130,14 +131,34 @@ export function ProjectMapClient({
   // corner as this header/stats/legend overlay — showing both collides, so
   // this chrome steps aside until the viewer backs out to the full site.
   // Esc closes the plot details panel (same as its close button).
+  // Opening a plot card pushes one history entry, so the phone's Back
+  // gesture closes the card instead of leaving the project page.
+  const openUnit = useCallback((unit: Unit) => {
+    if (!window.history.state?.plotCard) {
+      window.history.pushState({ ...window.history.state, plotCard: true }, "");
+    }
+    setSelectedUnit(unit);
+  }, []);
+
+  const closeUnit = useCallback(() => {
+    if (window.history.state?.plotCard) window.history.back();
+    else setSelectedUnit(null);
+  }, []);
+
+  useEffect(() => {
+    const onPop = () => setSelectedUnit(null);
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
   useEffect(() => {
     if (!selectedUnit) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSelectedUnit(null);
+      if (e.key === "Escape") closeUnit();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedUnit]);
+  }, [selectedUnit, closeUnit]);
 
   const showMapChrome = activeTab === "map" && drilldownStage === "site";
 
@@ -176,12 +197,12 @@ export function ProjectMapClient({
     // positioned, contributing ~0 to that content-based width.
     <>
     {hasUpdate && (
-      <div className="fixed left-0 right-0 top-0 z-[2000] flex items-center justify-between gap-3 bg-blue-700/95 px-4 py-2 text-sm text-white shadow-lg backdrop-blur-sm">
-        <span>Update available — new features ready.</span>
+      <div className="fixed left-1/2 top-[calc(0.75rem+env(safe-area-inset-top))] z-[2000] flex -translate-x-1/2 items-center gap-3 rounded-full border border-white/15 bg-black/70 py-1 pl-4 pr-1 text-xs text-white/85 shadow-xl backdrop-blur-md">
+        <span>New version available</span>
         <button
           type="button"
           onClick={() => window.location.reload()}
-          className="rounded-md bg-white/15 px-3 py-1 text-xs font-semibold transition-colors hover:bg-white/30"
+          className="min-h-[32px] rounded-full bg-white px-3 text-xs font-semibold text-[#030712] transition-transform active:scale-95"
         >
           Refresh
         </button>
@@ -213,7 +234,7 @@ export function ProjectMapClient({
                   roads={roads}
                   features={features}
                   highlightStatus={statusFilter}
-                  onPlotClick={setSelectedUnit}
+                  onPlotClick={openUnit}
                 />
               </Suspense>
             ) : !project.plan_image_url ? (
@@ -233,8 +254,8 @@ export function ProjectMapClient({
                 roads={roads}
                 features={features}
                 unitsByFloor={unitsByFloor}
-                onPlotClick={setSelectedUnit}
-                onFlatClick={setSelectedUnit}
+                onPlotClick={openUnit}
+                onFlatClick={openUnit}
                 colorMode={zoneColourMode ? "zone" : "status"}
                 zones={zones}
                 highlightZone={selectedZone}
@@ -245,7 +266,7 @@ export function ProjectMapClient({
             )}
           </div>
 
-          <div className="absolute bottom-6 left-1/2 z-[600] flex -translate-x-1/2 gap-1 rounded-full border border-white/10 bg-[var(--map-panel)]/50 p-1.5 shadow-2xl backdrop-blur-xl">
+          <div className="absolute bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 z-[600] flex -translate-x-1/2 gap-0.5 rounded-full border border-white/10 bg-black/45 p-1 shadow-lg backdrop-blur-md">
             <TabButton label="Map" active={activeTab === "map"} onClick={() => setActiveTab("map")} />
             <TabButton label="Media" active={activeTab === "media"} onClick={() => toggleTab("media")} />
             <TabButton label="About" active={activeTab === "about"} onClick={() => toggleTab("about")} />
@@ -260,7 +281,7 @@ export function ProjectMapClient({
             roads={roads}
             isSignedIn={isSignedIn}
             projectSlug={project.slug}
-            onClose={() => setSelectedUnit(null)}
+            onClose={closeUnit}
           />
         )}
       </div>
@@ -272,16 +293,19 @@ export function ProjectMapClient({
         // pointer-events-none so the map beneath is always clickable.
         <div className="pointer-events-none absolute left-0 right-0 top-0 z-[500]">
           {/* Gradient veil — fades from black to transparent so map bleeds through */}
-          <div className="h-28 bg-gradient-to-b from-black/75 via-black/30 to-transparent sm:h-24" />
+          <div className="h-[88px] bg-gradient-to-b from-black/70 via-black/30 to-transparent" />
 
           {/* Row 1: back + title + plan/satellite toggle */}
           <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-2 px-3 pt-3 sm:px-5 sm:pt-4">
-            <a
+            <Link
               href="/"
-              className="pointer-events-auto flex shrink-0 items-center gap-1 rounded-full bg-black/40 px-2.5 py-1 text-[11px] font-medium text-white/80 backdrop-blur-sm transition-colors hover:bg-black/60 hover:text-white border border-white/10"
+              aria-label="Back to projects"
+              className="pointer-events-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/40 text-white/85 backdrop-blur-sm transition-colors hover:bg-black/60 hover:text-white"
             >
-              ← Back
-            </a>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+            </Link>
 
             <div className="pointer-events-none min-w-0 flex-1">
               {ownerName && (
@@ -315,7 +339,7 @@ export function ProjectMapClient({
           </div>
 
           {/* Row 2: status chips — scrollable, each chip has its own backdrop */}
-          <div className="pointer-events-none absolute inset-x-0 top-10 flex gap-1.5 overflow-x-auto px-3 pb-1 [scrollbar-width:none] sm:top-11 sm:flex-wrap sm:overflow-visible sm:px-5 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
+          <div className="pointer-events-none absolute inset-x-0 top-[52px] flex gap-1.5 overflow-x-auto px-3 pb-1 [scrollbar-width:none] sm:top-[56px]sm:flex-wrap sm:overflow-visible sm:px-5 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
             <Pill label="Total" value={counts.total} tone="neutral" />
             <StatusChip label="Avail" value={counts.available} tone="green" active={statusFilter === "available"} onClick={() => toggleStatus("available")} />
             <StatusChip label="Hold" value={counts.hold} tone="yellow" active={statusFilter === "hold"} onClick={() => toggleStatus("hold")} />
@@ -411,7 +435,7 @@ function Pill({ label, value, tone }: { label: string; value: number; tone: "neu
   };
   const displayValue = useCountUp(value);
   return (
-    <span className={`rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-medium shadow-inner ${toneClasses[tone]}`}>
+    <span className={`rounded-full border border-white/10 bg-black/35 px-2.5 py-1 text-[11px] font-medium backdrop-blur-sm ${toneClasses[tone]}`}>
       {label} <span className="font-bold tabular-nums ml-1">{displayValue}</span>
     </span>
   );
@@ -445,8 +469,8 @@ function StatusChip({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`rounded-full border px-3 py-1 text-[11px] font-medium transition-all hover:scale-105 active:scale-95 ${toneClasses[tone]} ${
-        active ? "bg-white/20 ring-1 ring-white/50 shadow-[0_0_15px_rgba(255,255,255,0.2)]" : "border-white/10 bg-white/5 hover:bg-white/10 shadow-inner"
+      className={`pointer-events-auto rounded-full border px-2.5 py-1 text-[11px] font-medium backdrop-blur-sm transition-colors active:scale-95 ${toneClasses[tone]} ${
+        active ? "bg-white/20 ring-1 ring-white/50" : "border-white/10 bg-black/35 hover:bg-black/55"
       }`}
     >
       {label} <span className="font-bold tabular-nums ml-1">{displayValue}</span>
@@ -457,9 +481,11 @@ function StatusChip({
 function TabButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={`rounded-full px-5 py-2 text-[13px] font-medium transition-all hover:scale-105 active:scale-95 ${
-        active ? "bg-white text-[var(--map-background)] shadow-[0_0_15px_rgba(255,255,255,0.4)]" : "text-white/80 hover:bg-white/10 hover:text-white"
+      aria-pressed={active}
+      className={`min-h-[40px] rounded-full px-4 text-[12px] font-semibold tracking-wide transition-colors ${
+        active ? "bg-white/90 text-[#030712]" : "text-white/65 hover:bg-white/10 hover:text-white"
       }`}
     >
       {label}
