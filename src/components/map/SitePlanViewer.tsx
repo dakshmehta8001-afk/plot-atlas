@@ -992,6 +992,11 @@ export function SitePlanViewer({
   const [prevZoomedIdForView, setPrevZoomedIdForView] = useState(zoomedId);
   const [prevResetSignalForView, setPrevResetSignalForView] = useState(resetSignal);
   const [prevHighlightZoneForView, setPrevHighlightZoneForView] = useState(highlightZone);
+  // Declared here (above the render-time adjustment block below that references
+  // it) so the hook is unconditionally called before any conditional branches.
+  // Tracks the plot whose info card is open for glow/dim — separate from
+  // zoomedId (which only triggers scripted camera zoom, now only for buildings).
+  const [selectedPlotId, setSelectedPlotId] = useState<string | null>(null);
   if (
     zoomedId !== prevZoomedIdForView ||
     resetSignal !== prevResetSignalForView ||
@@ -1001,6 +1006,10 @@ export function SitePlanViewer({
     setPrevResetSignalForView(resetSignal);
     setPrevHighlightZoneForView(highlightZone);
     setView({ tx: 0, ty: 0, scale: 1 });
+    // Clear plot selection glow when the camera resets (e.g. zone change,
+    // back-from-building) so we never show a stale selected plot after the
+    // viewer context has changed.
+    if (selectedPlotId !== null) setSelectedPlotId(null);
   }
 
   // Mouse wheel and trackpad pinch zoom toward the cursor. A native listener
@@ -1286,6 +1295,7 @@ export function SitePlanViewer({
     (unit: Unit) => {
       if (pointerMovedRef.current > 6) return;
       setHoveredUnit(null);
+      setSelectedPlotId(unit.id);
       onPlotClick(unit);
     },
     [onPlotClick],
@@ -1294,6 +1304,7 @@ export function SitePlanViewer({
   const handleBuildingClick = useCallback(
     (building: Building) => {
       if (pointerMovedRef.current > 6) return;
+      setSelectedPlotId(null);
       setZoomedId(building.id);
       // Let the zoom-in transition play out before telling the parent to
       // swap to the floor selector, so the building visually "opens up"
@@ -1372,7 +1383,7 @@ export function SitePlanViewer({
               zones={zones}
               highlightZone={highlightZone}
               highlightStatus={highlightStatus}
-              selectedId={zoomedId}
+              selectedId={selectedPlotId ?? zoomedId}
 ftPerUnit={ftPerUnit}
               onPlotClick={handlePlotClick}
               onBuildingClick={handleBuildingClick}
