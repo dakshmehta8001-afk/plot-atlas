@@ -1,7 +1,6 @@
-// Public landing page: every viewer's entry point. Lists all published
-// projects (public-read per RLS — no login needed to browse) with a simple
-// text search. Search happens server-side via searchParams so the page
-// works without JavaScript and is trivially shareable/bookmarkable as a URL.
+// Public landing page: lists published projects with server-side search via
+// ?q= so results are shareable and work without JavaScript.
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { ProjectCard } from "@/components/ui/ProjectCard";
 import type { Project } from "@/lib/types";
@@ -17,49 +16,67 @@ export default async function HomePage(props: PageProps<"/">) {
     .eq("status", "published")
     .order("created_at", { ascending: false });
   if (q) {
-    // Escape backslash first (must come before the quote escape so the
-    // replacement itself isn't re-escaped), then double-quote, then wrap the
-    // whole value in double quotes so Supabase's PostgREST parser treats it as
-    // a literal string even when it contains commas, parentheses, or dots.
+    // Escape backslash first, then quotes, so PostgREST reads it as a literal.
     const safe = q.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
     query = query.or(`name.ilike."%${safe}%",location.ilike."%${safe}%"`);
   }
 
-  const { data: projects } = await query;
+  const { data } = await query;
+  const projects = (data ?? []) as Project[];
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-12">
-      <div className="mb-10 text-center sm:text-left">
-        <h1 className="mb-3 text-4xl font-extrabold tracking-tight text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]">Browse projects</h1>
-        <p className="text-lg text-white/60">Explore plotted layouts and apartment societies, plot by plot and flat by flat.</p>
-      </div>
+    <main className="mx-auto w-full max-w-6xl px-4 pb-16 pt-8 sm:px-6 sm:pt-14">
+      <header className="mb-6 sm:mb-10">
+        <h1 className="text-[28px] font-bold leading-tight tracking-tight text-white sm:text-4xl">Projects</h1>
+        <p className="mt-1.5 max-w-xl text-[15px] text-white/55">
+          Explore plotted layouts and apartment societies, plot by plot.
+        </p>
+      </header>
 
-      <form className="mb-10 flex flex-col gap-3 sm:flex-row sm:items-center" method="get">
-        <div className="relative flex-1">
+      <form method="get" role="search" className="sticky top-14 z-10 -mx-4 mb-8 bg-[#030712]/80 px-4 py-3 backdrop-blur-xl sm:static sm:mx-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+        <label htmlFor="q" className="sr-only">
+          Search projects
+        </label>
+        <div className="relative">
+          <svg aria-hidden viewBox="0 0 20 20" fill="currentColor" className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35">
+            <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 3.4 9.83l3.13 3.14a.75.75 0 1 0 1.06-1.06l-3.13-3.14A5.5 5.5 0 0 0 9 3.5ZM5 9a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z" clipRule="evenodd" />
+          </svg>
           <input
-            type="text"
+            id="q"
+            type="search"
             name="q"
             defaultValue={q}
-            placeholder="Search by name or location…"
-            className="w-full rounded-2xl border border-white/10 bg-black/30 px-5 py-4 text-base text-white placeholder:text-white/30 shadow-inner transition-colors focus:border-white/30 focus:outline-none focus:ring-0"
+            placeholder="Search by name or location"
+            className="h-12 w-full rounded-full border border-white/10 bg-white/[0.04] pl-11 pr-24 text-[15px] text-white placeholder:text-white/35 transition-colors focus:border-white/25 focus:bg-white/[0.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
           />
+          <button
+            type="submit"
+            className="absolute right-1.5 top-1/2 h-9 -translate-y-1/2 rounded-full bg-white px-4 text-[13px] font-semibold text-[#030712] transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+          >
+            Search
+          </button>
         </div>
-        <button
-          type="submit"
-          className="rounded-2xl border border-white/10 bg-white px-8 py-4 text-base font-bold text-[#030712] shadow-[0_0_20px_rgba(255,255,255,0.2)] transition-all hover:scale-[1.02] hover:bg-white/90 hover:shadow-[0_0_25px_rgba(255,255,255,0.4)] active:scale-95"
-        >
-          Search
-        </button>
       </form>
 
-      {!projects || projects.length === 0 ? (
-        <div className="rounded-3xl border border-white/10 bg-[var(--map-panel)] p-12 text-center shadow-inner">
-          <p className="text-lg font-medium text-white/50">No projects match your search yet.</p>
+      {q && (
+        <p className="mb-4 text-[13px] text-white/45">
+          {projects.length} {projects.length === 1 ? "result" : "results"} for â€œ{q}â€
+        </p>
+      )}
+
+      {projects.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-white/10 px-6 py-16 text-center">
+          <p className="text-[15px] font-medium text-white/70">{q ? "No projects match your search" : "No projects published yet"}</p>
+          {q && (
+            <Link href="/" className="mt-3 inline-flex min-h-11 items-center text-[13px] text-white/50 underline-offset-4 hover:text-white hover:underline">
+              Clear search
+            </Link>
+          )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {(projects as Project[]).map((project) => (
-            <ProjectCard key={project.id} project={project} />
+        <div className="grid grid-cols-1 gap-x-5 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
+          {projects.map((project, i) => (
+            <ProjectCard key={project.id} project={project} index={i} />
           ))}
         </div>
       )}

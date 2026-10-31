@@ -1,10 +1,11 @@
-// Top navigation bar. A server component so it can read the current session
-// once per request and show role-appropriate links (a viewer never sees
-// "Admin", a sub-admin never sees "Manage sub-admins", etc.) without a
-// client-side flash of the wrong nav before the session loads.
+// Top navigation bar. Server component: reads the session once per request so
+// role-specific links render without a client-side flash.
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SignOutButton } from "@/components/ui/AuthButtons";
+
+const linkCls =
+  "inline-flex min-h-11 items-center rounded-full px-3 text-[13px] font-medium text-white/70 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40";
 
 export async function Nav() {
   const supabase = await createClient();
@@ -19,30 +20,39 @@ export async function Nav() {
   }
 
   return (
-    <header className="sticky top-0 z-[1000] border-b border-white/10 bg-[#030712]/70 backdrop-blur-xl shadow-2xl">
-      <nav className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-        <Link href="/" className="text-xl font-bold tracking-tight text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.4)] transition-transform hover:scale-105 active:scale-95">
+    <header className="sticky top-0 z-[1000] border-b border-white/[0.06] bg-[#030712]/80 backdrop-blur-xl">
+      <nav className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
+        <Link
+          href="/"
+          className="flex min-h-11 items-center gap-2 rounded-full pr-2 text-[15px] font-semibold tracking-tight text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+        >
+          <span aria-hidden className="grid h-6 w-6 place-items-center rounded-md bg-white text-[11px] font-bold text-[#030712]">
+            P
+          </span>
           PlotAtlas
         </Link>
-        <div className="flex items-center gap-6 text-sm font-medium">
-          <Link href="/" className="text-white/80 transition-all hover:text-white hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]">
-            Browse projects
+        <div className="flex items-center gap-1">
+          <Link href="/" className={`${linkCls} hidden sm:inline-flex`}>
+            Projects
           </Link>
           {role === "admin" && (
-            <Link href="/admin" className="text-white/80 transition-all hover:text-white hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]">
+            <Link href="/admin" className={linkCls}>
               Admin
             </Link>
           )}
           {role === "sub_admin" && (
-            <Link href="/dashboard" className="text-white/80 transition-all hover:text-white hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]">
+            <Link href="/dashboard" className={linkCls}>
               Dashboard
             </Link>
           )}
           {user ? (
-            <SignOutButton className="text-white/80 transition-all hover:text-white hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
+            <SignOutButton className={linkCls} />
           ) : (
-            <Link href="/login" className="rounded-full bg-white/10 px-5 py-2 text-white transition-all hover:bg-white/20 hover:scale-105 active:scale-95 border border-white/5 shadow-inner">
-              Login
+            <Link
+              href="/login"
+              className="ml-1 inline-flex min-h-9 items-center rounded-full bg-white px-4 text-[13px] font-semibold text-[#030712] transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+            >
+              Sign in
             </Link>
           )}
         </div>
