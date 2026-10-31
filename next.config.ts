@@ -15,6 +15,11 @@ const nextConfig: NextConfig = {
   // is set automatically on every Vercel build; it's undefined locally,
   // which simply leaves the feature off in `next dev`.
   deploymentId: process.env.VERCEL_DEPLOYMENT_ID,
+  // Baked into the client bundle so an error screen can ask /api/version
+  // whether this tab is running an older build than the live one.
+  env: {
+    NEXT_PUBLIC_BUILD_SHA: process.env.VERCEL_GIT_COMMIT_SHA ?? "dev",
+  },
 };
 
 export default nextConfig;

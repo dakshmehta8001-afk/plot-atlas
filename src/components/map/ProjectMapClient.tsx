@@ -396,7 +396,7 @@ export function ProjectMapClient({
       )}
 
       {/* Mobile-only: floating Zones button (bottom-left, above the tab bar) */}
-      {showMapChrome && (zones.length > 0 || featureKindsPresent.length > 0) && (
+      {showMapChrome && !selectedUnit && (zones.length > 0 || featureKindsPresent.length > 0) && (
         <div className="pointer-events-none absolute bottom-20 left-4 z-[500] sm:hidden">
           <button
             type="button"

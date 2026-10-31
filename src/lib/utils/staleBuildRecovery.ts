@@ -50,6 +50,26 @@ export function shouldAutoReload(error: Error | undefined | null): boolean {
   }
 }
 
+// Fallback for errors with no recognisable wording (mobile browsers often
+// report only "Script error."): if the live deployment is newer than the
+// build this tab is running, the crash is almost certainly version skew,
+// so reload once (same 30s loop guard) instead of showing the error screen.
+export async function reloadIfOutdatedBuild(): Promise<boolean> {
+  const ownBuild = process.env.NEXT_PUBLIC_BUILD_SHA;
+  if (!ownBuild || ownBuild === "dev") return false;
+  try {
+    const last = Number(sessionStorage.getItem(LAST_RELOAD_KEY) ?? 0);
+    if (Date.now() - last < RELOAD_GUARD_MS) return false;
+    const res = await fetch("/api/version", { cache: "no-store" });
+    const { build } = (await res.json()) as { build?: string };
+    if (!build || build === ownBuild) return false;
+  } catch {
+    return false;
+  }
+  markAndReload();
+  return true;
+}
+
 // Side effect half — call from an effect only after shouldAutoReload()
 // said yes. Records the attempt first so a second failure shows the
 // error screen instead of reloading again.

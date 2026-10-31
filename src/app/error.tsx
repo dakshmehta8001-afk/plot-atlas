@@ -9,7 +9,7 @@
 // - Anything else: say so plainly and offer Try again / Reload / Back.
 //   Next 16 names the recovery callback `retry` (it was `reset` before).
 import { useEffect, useState } from "react";
-import { markAndReload, shouldAutoReload } from "@/lib/utils/staleBuildRecovery";
+import { markAndReload, reloadIfOutdatedBuild, shouldAutoReload } from "@/lib/utils/staleBuildRecovery";
 import { reportClientError } from "@/lib/utils/reportClientError";
 
 export default function AppError({ error, retry }: { error: Error & { digest?: string }; retry: () => void }) {
@@ -20,6 +20,7 @@ export default function AppError({ error, retry }: { error: Error & { digest?: s
     console.error(error);
     reportClientError(reloading ? "boundary-stale-build" : "boundary", error);
     if (reloading) markAndReload();
+    else void reloadIfOutdatedBuild();
   }, [error, reloading]);
 
   if (reloading) {

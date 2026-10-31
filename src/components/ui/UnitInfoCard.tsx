@@ -1,6 +1,6 @@
 "use client";
 
-// Compact floating card shown when a viewer clicks a unit on the map Ã¢â‚¬â€
+// Compact floating card shown when a viewer clicks a unit on the map —
 // styled after the MapBhoomi-style reference (status badge, zone/facing
 // tags, area/size/rate stats, quick-contact icons, then the enquiry box).
 // Works for both plots and flats: flat-only fields (BHK, carpet area, wing)
@@ -87,7 +87,7 @@ export function QuickContactIcons({
 }
 
 // Returns the width label of the road whose centerline is nearest to the
-// plot boundary Ã¢â‚¬â€ used as "road ahead" on the info card.
+// plot boundary — used as "road ahead" on the info card.
 function nearestRoadWidth(unit: Unit, roads: Road[]): string | null {
   if (roads.length === 0 || unit.polygon_points.length < 3) return null;
   const pts = unit.polygon_points;
@@ -174,7 +174,7 @@ export function UnitInfoCard({
             <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: statusStyle.border }}>
               {statusStyle.label}
             </span>
-            {unit.category && <span className="text-xs text-white/40">Ã‚Â· {unit.category}</span>}
+            {unit.category && <span className="text-xs text-white/40">· {unit.category}</span>}
           </div>
         </div>
         <button
@@ -189,26 +189,26 @@ export function UnitInfoCard({
         </button>
       </div>
 
-      {/* Key facts Ã¢â‚¬â€ one divided grid, numbers first */}
+      {/* Key facts — one divided grid, numbers first */}
       <dl className="mb-4 grid grid-cols-2 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] [&>div]:p-3.5 [&>div:nth-child(odd)]:border-r [&>div:nth-child(n+3)]:border-t [&>div]:border-white/10">
         <div>
           <dt className="text-[10px] font-semibold uppercase tracking-wider text-white/40">Size</dt>
-          <dd className="mt-1 text-[15px] font-semibold">{unit.dimensions ?? "Ã¢â‚¬â€"}</dd>
+          <dd className="mt-1 text-[15px] font-semibold">{unit.dimensions ?? "—"}</dd>
         </div>
         <div>
           <dt className="text-[10px] font-semibold uppercase tracking-wider text-white/40">Area</dt>
           <dd className="mt-1 text-[15px] font-semibold">
-            {areaSqft ? `${areaSqft.toLocaleString()} sqft` : "Ã¢â‚¬â€"}
+            {areaSqft ? `${areaSqft.toLocaleString()} sqft` : "—"}
             {areaSqm ? <span className="block text-xs font-normal text-white/45">{areaSqm.toLocaleString()} sqm</span> : null}
           </dd>
         </div>
         <div>
           <dt className="text-[10px] font-semibold uppercase tracking-wider text-white/40">Facing</dt>
-          <dd className="mt-1 text-[15px] font-semibold">{unit.facing ?? "Ã¢â‚¬â€"}</dd>
+          <dd className="mt-1 text-[15px] font-semibold">{unit.facing ?? "—"}</dd>
         </div>
         <div>
           <dt className="text-[10px] font-semibold uppercase tracking-wider text-white/40">Road ahead</dt>
-          <dd className="mt-1 text-[15px] font-semibold">{roadWidth ?? "Ã¢â‚¬â€"}</dd>
+          <dd className="mt-1 text-[15px] font-semibold">{roadWidth ?? "—"}</dd>
         </div>
       </dl>
 
@@ -220,9 +220,9 @@ export function UnitInfoCard({
       {(rate || unit.total_price != null) && (
         <div className="mb-4 flex items-baseline justify-between gap-3">
           {unit.total_price != null ? (
-            <p className="text-2xl font-bold tracking-tight">Ã¢â€šÂ¹{unit.total_price.toLocaleString("en-IN")}</p>
+            <p className="text-2xl font-bold tracking-tight">₹{unit.total_price.toLocaleString("en-IN")}</p>
           ) : <span />}
-          {rate && <p className="text-xs text-white/45">Ã¢â€šÂ¹{rate.toLocaleString("en-IN")} / sqft</p>}
+          {rate && <p className="text-xs text-white/45">₹{rate.toLocaleString("en-IN")} / sqft</p>}
         </div>
       )}
 
@@ -241,12 +241,12 @@ export function UnitInfoCard({
       )}
       </div>
 
-      {/* Action bar Ã¢â‚¬â€ always visible at the bottom of the sheet */}
+      {/* Action bar — always visible at the bottom of the sheet */}
       <div className="shrink-0 border-t border-white/10 px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 sm:pb-4">
         {errorText && <p className="mb-2 text-xs text-red-400">{errorText}</p>}
         {state === "sent" ? (
           <p className="rounded-xl bg-green-500/15 p-3 text-center text-sm text-green-300">
-            Thanks Ã¢â‚¬â€ your enquiry has been sent.
+            Thanks — your enquiry has been sent.
           </p>
         ) : (
           <div className="flex items-center gap-2">
@@ -256,7 +256,7 @@ export function UnitInfoCard({
               disabled={state === "submitting"}
               className="min-h-[48px] flex-1 rounded-xl bg-white px-4 text-sm font-bold text-[#030712] transition-transform active:scale-[0.98] disabled:opacity-60"
             >
-              {state === "submitting" ? "SendingÃ¢â‚¬Â¦" : "I'm interested"}
+              {state === "submitting" ? "Sending…" : "I'm interested"}
             </button>
             <QuickContactIcons
               contactPhone={project.contact_phone}
