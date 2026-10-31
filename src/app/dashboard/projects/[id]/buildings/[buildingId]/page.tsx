@@ -3,7 +3,7 @@
 // buildings/floors/flats data model — the first priority out of the full
 // spec — actually gets filled in, floor by floor.
 import { notFound } from "next/navigation";
-import Link from "next/link";
+import { PageHeader, EmptyState } from "@/components/dashboard/PageHeader";
 import { createClient } from "@/lib/supabase/server";
 import { FloorTracerClient } from "@/components/map/FloorTracerClient";
 import { AddFloorButton } from "@/components/ui/AddFloorButton";
@@ -30,30 +30,26 @@ export default async function ManageBuildingPage(
 
   return (
     <div>
-      <p className="mb-1 text-sm">
-        <Link href={`/dashboard/projects/${id}`} className="underline">
-          ← Back to project
-        </Link>
-      </p>
-      <h1 className="mb-1 text-2xl font-semibold">{typedBuilding.name}</h1>
-      <p className="mb-6 text-gray-500">
-        {typedFloors.length} floor(s) · {allFlats.length} flat(s) traced
-      </p>
-
-      <div className="mb-8 flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Floors</h2>
-        <AddFloorButton buildingId={buildingId} projectId={id} />
-      </div>
+      <PageHeader
+        crumbs={[
+          { label: "Projects", href: "/dashboard" },
+          { label: "Project", href: `/dashboard/projects/${id}` },
+          { label: typedBuilding.name },
+        ]}
+        title={typedBuilding.name}
+        subtitle={`${typedFloors.length} floors · ${allFlats.length} flats traced`}
+        actions={<AddFloorButton buildingId={buildingId} projectId={id} />}
+      />
 
       {typedFloors.length === 0 ? (
-        <p className="text-gray-500">No floors yet — add one above to start tracing flats on it.</p>
+        <EmptyState title="No floors yet" body="Add a floor with its plate layout image, then trace the flats on it." />
       ) : (
         <div className="space-y-10">
           {typedFloors.map((floor) => {
             const flatsOnFloor = allFlats.filter((f) => f.floor_id === floor.id);
             return (
-              <div key={floor.id} className="rounded-lg border border-gray-200 p-4 dark:border-gray-800">
-                <h3 className="mb-3 font-medium">
+              <div key={floor.id} className="rounded-2xl border border-white/10 bg-[var(--map-panel)] p-4 sm:p-5">
+                <h3 className="mb-3 font-semibold text-white">
                   {floorLabel(floor)} · {flatsOnFloor.length} flat(s)
                 </h3>
                 {floor.plan_image_url ? (

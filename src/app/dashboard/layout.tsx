@@ -18,18 +18,20 @@ export default async function DashboardLayout({ children }: LayoutProps<"/dashbo
 
   if (profile?.status !== "active") {
     return (
-      <main className="mx-auto w-full max-w-lg px-4 py-16 text-center">
-        <h1 className="mb-3 text-xl font-semibold">
+      <main className="mx-auto w-full max-w-lg px-6 py-20 text-center">
+        <div className="rounded-3xl border border-white/10 bg-[var(--map-panel)] p-10">
+        <h1 className="mb-3 text-xl font-semibold text-white">
           {profile?.status === "rejected" ? "Account not approved" : "Account pending approval"}
         </h1>
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-white/50">
           {profile?.status === "rejected"
             ? "Your sub-admin account request was not approved. Contact the platform admin for details."
             : "An admin still needs to approve your sub-admin account before you can manage projects."}
         </p>
+        </div>
       </main>
     );
   }
 
-  return <div className="mx-auto w-full max-w-6xl px-4 py-8">{children}</div>;
+  return <div className="mx-auto w-full max-w-6xl px-4 py-8 text-white sm:px-6 sm:py-10">{children}</div>;
 }

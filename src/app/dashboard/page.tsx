@@ -5,6 +5,7 @@
 // filter to write to a project that isn't theirs), not the only guard.
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { PageHeader, EmptyState, btnPrimary, card } from "@/components/dashboard/PageHeader";
 import type { Project } from "@/lib/types";
 
 export default async function DashboardHomePage() {
@@ -19,48 +20,78 @@ export default async function DashboardHomePage() {
     .eq("sub_admin_id", user!.id)
     .order("created_at", { ascending: false });
 
+  const list = (projects ?? []) as Project[];
+  const newButton = (
+    <Link href="/dashboard/projects/new" className={btnPrimary}>
+      New project
+    </Link>
+  );
+
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Your projects</h1>
-        <Link
-          href="/dashboard/projects/new"
-          className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 dark:bg-white dark:text-gray-900"
-        >
-          + New project
-        </Link>
-      </div>
+      <PageHeader
+        title="Your projects"
+        subtitle={list.length ? `${list.length} project${list.length === 1 ? "" : "s"}` : undefined}
+        actions={list.length ? newButton : undefined}
+      />
 
-      {!projects || projects.length === 0 ? (
-        <p className="text-gray-500">You haven&apos;t created a project yet.</p>
+      {list.length === 0 ? (
+        <EmptyState
+          title="No projects yet"
+          body="Create a project, upload its site plan, and the plots are detected for you to review."
+          action={newButton}
+        />
       ) : (
-        <ul className="divide-y divide-gray-200 rounded-lg border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
-          {(projects as Project[]).map((project) => (
-            <li key={project.id} className="flex items-center justify-between p-4">
-              <div>
-                <p className="font-medium">
-                  {project.name}{" "}
-                  <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-xs capitalize text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                    {project.status}
-                  </span>
-                </p>
-                <p className="text-sm text-gray-500">{project.location ?? "No location set"}</p>
-              </div>
-              <div className="flex gap-3 text-sm">
-                <Link href={`/dashboard/projects/${project.id}`} className="underline">
-                  Manage
+        <ul className="grid gap-3">
+          {list.map((project) => (
+            <li key={project.id} className={`${card} group transition-colors hover:border-white/20`}>
+              <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:p-5">
+                <Link href={`/dashboard/projects/${project.id}`} className="flex min-w-0 flex-1 items-center gap-4">
+                  <div className="h-14 w-20 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-black/40">
+                    {project.plan_image_url && (
+                      // eslint-disable-next-line @next/next/no-img-element -- Supabase storage thumbnail
+                      <img src={project.plan_image_url} alt="" className="h-full w-full object-cover opacity-80" />
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate font-semibold text-white">{project.name}</p>
+                      <StatusPill status={project.status} />
+                    </div>
+                    <p className="mt-0.5 truncate text-sm text-white/45">
+                      {project.location && !project.location.startsWith("http") ? project.location : "No location set"}
+                    </p>
+                  </div>
                 </Link>
-                <Link href={`/dashboard/projects/${project.id}/leads`} className="underline">
-                  Leads
-                </Link>
-                <Link href={`/projects/${project.slug}`} className="underline">
-                  View live
-                </Link>
+                <div className="flex gap-2 text-sm">
+                  <Link href={`/dashboard/projects/${project.id}`} className="rounded-lg bg-white/10 px-3 py-1.5 font-medium text-white transition-colors hover:bg-white/15">
+                    Manage
+                  </Link>
+                  <Link href={`/dashboard/projects/${project.id}/leads`} className="rounded-lg px-3 py-1.5 text-white/60 transition-colors hover:bg-white/5 hover:text-white">
+                    Leads
+                  </Link>
+                  <Link href={`/projects/${project.slug}`} className="rounded-lg px-3 py-1.5 text-white/60 transition-colors hover:bg-white/5 hover:text-white">
+                    View live
+                  </Link>
+                </div>
               </div>
             </li>
           ))}
         </ul>
       )}
     </div>
+  );
+}
+
+function StatusPill({ status }: { status: string }) {
+  const live = status === "published";
+  return (
+    <span
+      className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+        live ? "border-green-500/30 bg-green-500/10 text-green-300" : "border-white/15 bg-white/5 text-white/50"
+      }`}
+    >
+      {live ? "Live" : status}
+    </span>
   );
 }

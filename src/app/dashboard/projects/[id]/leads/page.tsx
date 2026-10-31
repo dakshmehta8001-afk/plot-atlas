@@ -6,6 +6,7 @@
 // enquiry, not tied to one plot/flat).
 import { createClient } from "@/lib/supabase/server";
 import { LeadsTable, type LeadRow } from "@/components/dashboard/LeadsTable";
+import { PageHeader } from "@/components/dashboard/PageHeader";
 import { LEAD_STATUS_OPTIONS, type LeadStatus } from "@/lib/types";
 
 export default async function ProjectLeadsPage(props: PageProps<"/dashboard/projects/[id]/leads">) {
@@ -41,7 +42,15 @@ export default async function ProjectLeadsPage(props: PageProps<"/dashboard/proj
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-semibold">Leads &amp; site visits</h1>
+      <PageHeader
+        crumbs={[
+          { label: "Projects", href: "/dashboard" },
+          { label: "Project", href: `/dashboard/projects/${id}` },
+          { label: "Leads" },
+        ]}
+        title="Leads and site visits"
+        subtitle={`${leads.length} ${statusFilter ? `${statusFilter} ` : ""}lead${leads.length === 1 ? "" : "s"}`}
+      />
 
       <form className="mb-4 flex gap-2" method="get">
         <select

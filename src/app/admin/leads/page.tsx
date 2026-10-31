@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/dashboard/PageHeader";
 // Platform-wide leads, across every project. Reuses the same LeadsTable as
 // the sub-admin dashboard — the "admins read/update all leads" RLS policies
 // are what actually make the wider dataset visible here.
@@ -27,7 +28,7 @@ export default async function AdminLeadsPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-semibold">All leads</h1>
+      <PageHeader title="All leads" subtitle="Enquiries across every project" />
       {error && <p className="text-sm text-red-600">{error.message}</p>}
       <LeadsTable leads={leads} editable />
     </div>

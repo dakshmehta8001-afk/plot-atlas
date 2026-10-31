@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/dashboard/PageHeader";
 import { createClient } from "@/lib/supabase/server";
 import { SubAdminsTable } from "@/components/dashboard/SubAdminsTable";
 import type { AppUser } from "@/lib/types";
@@ -12,7 +13,7 @@ export default async function AdminSubAdminsPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-semibold">Sub-admins</h1>
+      <PageHeader title="Sub-admins" subtitle="Approve or reject project owners" />
       <SubAdminsTable subAdmins={(data ?? []) as AppUser[]} />
     </div>
   );

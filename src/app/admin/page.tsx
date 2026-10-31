@@ -3,6 +3,7 @@
 // full sub-admins table.
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { PageHeader, Section, EmptyState, card } from "@/components/dashboard/PageHeader";
 
 export default async function AdminOverviewPage() {
   const supabase = await createClient();
@@ -18,39 +19,44 @@ export default async function AdminOverviewPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-semibold">Overview</h1>
+      <PageHeader title="Overview" subtitle="Platform activity at a glance" />
 
-      <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className="mb-10 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
           { label: "Sub-admins", value: subAdminCount ?? 0 },
-          { label: "Pending approval", value: pendingCount ?? 0 },
+          { label: "Pending approval", value: pendingCount ?? 0, alert: (pendingCount ?? 0) > 0 },
           { label: "Projects", value: projectCount ?? 0 },
-          { label: "Leads (all-time)", value: leadCount ?? 0 },
+          { label: "Leads, all time", value: leadCount ?? 0 },
         ].map((stat) => (
-          <div key={stat.label} className="rounded-lg border border-gray-200 p-4 dark:border-gray-800">
-            <p className="text-2xl font-semibold">{stat.value}</p>
-            <p className="text-sm text-gray-500">{stat.label}</p>
+          <div
+            key={stat.label}
+            className={`rounded-2xl border p-4 sm:p-5 ${stat.alert ? "border-amber-500/30 bg-amber-500/5" : "border-white/10 bg-white/[0.03]"}`}
+          >
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-white/40">{stat.label}</p>
+            <p className={`mt-1 text-3xl font-bold tabular-nums ${stat.alert ? "text-amber-300" : "text-white"}`}>{stat.value}</p>
           </div>
         ))}
       </div>
 
-      {pending && pending.length > 0 && (
-        <div>
-          <h2 className="mb-3 text-lg font-semibold">Awaiting approval</h2>
-          <ul className="divide-y divide-gray-200 rounded-lg border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+      <Section title="Awaiting approval">
+        {pending && pending.length > 0 ? (
+          <ul className={`${card} divide-y divide-white/5 overflow-hidden`}>
             {pending.map((p) => (
-              <li key={p.id} className="flex items-center justify-between p-3 text-sm">
-                <span>
-                  {p.name ?? p.email} <span className="text-gray-500">({p.email})</span>
-                </span>
-                <Link href="/admin/sub-admins" className="underline">
+              <li key={p.id} className="flex items-center justify-between gap-3 p-4 text-sm">
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-white">{p.name ?? p.email}</p>
+                  <p className="truncate text-xs text-white/45">{p.email}</p>
+                </div>
+                <Link href="/admin/sub-admins" className="shrink-0 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/15">
                   Review
                 </Link>
               </li>
             ))}
           </ul>
-        </div>
-      )}
+        ) : (
+          <EmptyState title="Nothing waiting" body="New sub-admin requests appear here for review." />
+        )}
+      </Section>
     </div>
   );
 }

@@ -4,7 +4,7 @@
 // projects.map_bounds. Once saved, the public project map shows a
 // Plan | Satellite switch.
 import { notFound } from "next/navigation";
-import Link from "next/link";
+import { PageHeader } from "@/components/dashboard/PageHeader";
 import { createClient } from "@/lib/supabase/server";
 import { AlignmentTool } from "@/components/map/AlignmentTool";
 import type { Project, Unit, SatelliteAlignment, MapCalibration } from "@/lib/types";
@@ -24,23 +24,16 @@ export default async function PlaceOnMapPage(props: PageProps<"/dashboard/projec
   const plots = (units ?? []) as Unit[];
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
-      <div className="mb-6 flex items-center gap-4">
-        <Link
-          href={`/dashboard/projects/${id}`}
-          className="text-sm text-white/50 hover:text-white transition-colors"
-        >
-          ← {typedProject.name}
-        </Link>
-        <span className="text-white/20">/</span>
-        <h1 className="text-lg font-semibold text-white">Place on map</h1>
-      </div>
-
-      <p className="mb-6 text-sm text-white/60 max-w-2xl">
-        Paste a Google Maps coordinate for any point on this project&apos;s land, then click
-        &quot;Auto-place&quot; — if the project has a scale and north direction set, the whole alignment is
-        computed for you. Otherwise pick two landmarks manually: click each on the plan, then on the satellite.
-      </p>
+    <div>
+      <PageHeader
+        crumbs={[
+          { label: "Projects", href: "/dashboard" },
+          { label: typedProject.name, href: `/dashboard/projects/${id}` },
+          { label: "Place on map" },
+        ]}
+        title="Place on map"
+        subtitle="Paste a Google Maps link or coordinates for the site, then drag, rotate, and resize until the plots line up with the satellite image."
+      />
 
       <AlignmentTool
         projectId={id}

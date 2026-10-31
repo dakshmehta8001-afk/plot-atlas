@@ -4,7 +4,7 @@
 // project fetch and ownership check, same pattern as
 // buildings/[buildingId]/page.tsx: a non-owner/non-admin gets `notFound()`
 // because RLS silently returns no row, not a special check here.
-import Link from "next/link";
+import { PageHeader } from "@/components/dashboard/PageHeader";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { DigitizeWorkspaceLoader } from "@/components/digitize/DigitizeWorkspaceLoader";
@@ -34,15 +34,15 @@ export default async function DigitizePage(props: PageProps<"/dashboard/projects
     // canvas itself given a comfortable fixed height below, works
     // regardless of viewport size.
     <div className="flex flex-col">
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Auto-digitize: {project.name}</h1>
-          <p className="text-sm text-gray-500">Automatic detection + manual correction — review everything before saving.</p>
-        </div>
-        <Link href={`/dashboard/projects/${id}`} className="text-sm underline">
-          ← Back to project
-        </Link>
-      </div>
+      <PageHeader
+        crumbs={[
+          { label: "Projects", href: "/dashboard" },
+          { label: project.name, href: `/dashboard/projects/${id}` },
+          { label: "Digitize" },
+        ]}
+        title="Digitize plan"
+        subtitle="Shapes are detected automatically. Review and correct them before saving."
+      />
       <DigitizeWorkspaceLoader
         projectId={id}
         projectName={project.name}

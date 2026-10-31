@@ -16,6 +16,7 @@ import { RoadWidthList } from "@/components/dashboard/RoadWidthList";
 import { ProjectDetailsForm } from "@/components/forms/ProjectDetailsForm";
 import { StatusBadge, CategoryBadge } from "@/components/ui/StatusBadge";
 import { sortByUnitNumber } from "@/lib/utils/sortUnits";
+import { PageHeader, Section, btnSecondary, card } from "@/components/dashboard/PageHeader";
 import type { Building, Project, ProjectMedia, Road, SiteFeature, Unit } from "@/lib/types";
 
 export default async function ManageProjectPage(props: PageProps<"/dashboard/projects/[id]">) {
@@ -44,28 +45,40 @@ export default async function ManageProjectPage(props: PageProps<"/dashboard/pro
 
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">{typedProject.name}</h1>
-        <div className="flex gap-2">
-          <Link
-            href={`/dashboard/projects/${id}/place-on-map`}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-white/20 px-3 py-1.5 text-sm text-white/70 hover:text-white transition-colors"
-            title="Align plan image with satellite map"
-          >
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            {typedProject.map_bounds ? "Re-align satellite" : "Place on map"}
-          </Link>
-          <ProjectDetailsForm project={typedProject} />
-          <PublishToggle projectId={id} status={typedProject.status} />
-        </div>
-      </div>
-      <p className="mb-6 text-gray-500">
-        {plots.length} plot(s) · {typedBuildings.length} building(s) · {flats.length} flat(s) · {typedRoads.length} road(s) ·{" "}
-        {typedFeatures.length} area(s) traced
-      </p>
+      <PageHeader
+        crumbs={[{ label: "Projects", href: "/dashboard" }, { label: typedProject.name }]}
+        title={typedProject.name}
+        actions={
+          <>
+            <Link href={`/projects/${typedProject.slug}`} className={btnSecondary}>
+              View live
+            </Link>
+            <Link href={`/dashboard/projects/${id}/leads`} className={btnSecondary}>
+              Leads
+            </Link>
+            <Link href={`/dashboard/projects/${id}/place-on-map`} className={btnSecondary} title="Align plan with satellite map">
+              {typedProject.map_bounds ? "Re-align satellite" : "Place on map"}
+            </Link>
+            <ProjectDetailsForm project={typedProject} />
+            <PublishToggle projectId={id} status={typedProject.status} />
+          </>
+        }
+      />
+
+      <dl className="mb-8 grid grid-cols-3 gap-2 sm:grid-cols-5">
+        {[
+          ["Plots", plots.length],
+          ["Buildings", typedBuildings.length],
+          ["Flats", flats.length],
+          ["Roads", typedRoads.length],
+          ["Areas", typedFeatures.length],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+            <dt className="text-[10px] font-semibold uppercase tracking-wider text-white/40">{label}</dt>
+            <dd className="mt-0.5 text-xl font-bold tabular-nums text-white">{value}</dd>
+          </div>
+        ))}
+      </dl>
 
       {/* No separate "Auto-digitize a plan" prompt here anymore — uploading
           a plan image (at project creation, or via PlanImageUpload below
@@ -92,44 +105,61 @@ export default async function ManageProjectPage(props: PageProps<"/dashboard/pro
       <RoadWidthList projectId={id} roads={typedRoads} />
 
       {typedBuildings.length > 0 && (
-        <div className="mt-8">
-          <h2 className="mb-3 text-lg font-semibold">Buildings</h2>
-          <ul className="divide-y divide-gray-200 rounded-lg border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+        <Section title="Buildings">
+          <ul className={`${card} divide-y divide-white/5 overflow-hidden`}>
             {typedBuildings.map((building) => (
-              <li key={building.id} className="flex items-center justify-between p-4">
-                <div>
-                  <p className="font-medium">{building.name}</p>
-                  <p className="text-sm text-gray-500">{building.total_floors ?? "—"} floor(s) planned</p>
-                </div>
-                <Link href={`/dashboard/projects/${id}/buildings/${building.id}`} className="text-sm underline">
-                  Manage floors &amp; flats
+              <li key={building.id}>
+                <Link
+                  href={`/dashboard/projects/${id}/buildings/${building.id}`}
+                  className="flex items-center justify-between gap-4 p-4 transition-colors hover:bg-white/[0.03]"
+                >
+                  <div>
+                    <p className="font-medium text-white">{building.name}</p>
+                    <p className="text-sm text-white/45">{building.total_floors ?? "—"} floors planned</p>
+                  </div>
+                  <span className="text-sm text-white/50">Floors and flats →</span>
                 </Link>
               </li>
             ))}
           </ul>
-        </div>
+        </Section>
       )}
 
       {plots.length > 0 && (
-        <div className="mt-8">
-          <h2 className="mb-3 text-lg font-semibold">Plots</h2>
-          <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
+        <Section title="Plots" description="Click a plot's polygon on the map above to edit it.">
+          {/* Phone: cards */}
+          <ul className="grid gap-2 sm:hidden">
+            {plots.map((unit) => (
+              <li key={unit.id} className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                <div className="min-w-0">
+                  <p className="font-semibold text-white">Plot {unit.unit_number}</p>
+                  <p className="truncate text-xs text-white/45">
+                    {[unit.dimensions, unit.area_sqft ? `${unit.area_sqft.toLocaleString()} sq ft` : null, unit.facing]
+                      .filter(Boolean)
+                      .join(" · ") || "No details"}
+                  </p>
+                </div>
+                <StatusBadge status={unit.status} />
+              </li>
+            ))}
+          </ul>
+          <div className={`${card} hidden overflow-x-auto sm:block`}>
             <table className="w-full text-left text-sm">
-              <thead className="bg-gray-50 dark:bg-gray-900">
+              <thead className="border-b border-white/10 text-[11px] uppercase tracking-wider text-white/40">
                 <tr>
-                  <th className="p-3">Plot</th>
-                  <th className="p-3">Area</th>
-                  <th className="p-3">Size</th>
-                  <th className="p-3">Facing</th>
-                  <th className="p-3">Price</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3">Category</th>
+                  <th className="p-3 font-semibold">Plot</th>
+                  <th className="p-3 font-semibold">Area</th>
+                  <th className="p-3 font-semibold">Size</th>
+                  <th className="p-3 font-semibold">Facing</th>
+                  <th className="p-3 font-semibold">Price</th>
+                  <th className="p-3 font-semibold">Status</th>
+                  <th className="p-3 font-semibold">Category</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
+              <tbody className="divide-y divide-white/5 text-white/75">
                 {plots.map((unit) => (
-                  <tr key={unit.id}>
-                    <td className="p-3 font-medium">{unit.unit_number}</td>
+                  <tr key={unit.id} className="transition-colors hover:bg-white/[0.03]">
+                    <td className="p-3 font-medium text-white">{unit.unit_number}</td>
                     <td className="p-3">{unit.area_sqft ? `${unit.area_sqft.toLocaleString()} sq ft` : "—"}</td>
                     <td className="p-3">{unit.dimensions ?? "—"}</td>
                     <td className="p-3">{unit.facing ?? "—"}</td>
@@ -145,14 +175,12 @@ export default async function ManageProjectPage(props: PageProps<"/dashboard/pro
               </tbody>
             </table>
           </div>
-          <p className="mt-2 text-xs text-gray-500">Click a plot&apos;s polygon on the map above to edit it.</p>
-        </div>
+        </Section>
       )}
 
-      <div className="mt-8">
-        <h2 className="mb-3 text-lg font-semibold">Media gallery</h2>
+      <Section title="Media gallery">
         <MediaManager projectId={id} media={typedMedia} />
-      </div>
+      </Section>
     </div>
   );
 }
