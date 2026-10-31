@@ -242,6 +242,7 @@ export function ProjectMapClient({
             key={selectedUnit.id}
             unit={selectedUnit}
             project={project}
+            roads={roads}
             isSignedIn={isSignedIn}
             projectSlug={project.slug}
             onClose={() => setSelectedUnit(null)}
