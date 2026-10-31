@@ -4,16 +4,15 @@
 //
 // Layer order (bottom → top):
 //   1. Esri World Imagery tiles (base)
-//   2. Plan image overlay as a MapLibre raster "image" source — shows the
-//      whole plan (roads, plot colours, numbers, amenities) at 85% opacity.
-//   3. Roads as GeoJSON LineStrings — visible outside the plan image boundary.
-//   4. Site features as GeoJSON filled polygons — same idea.
-//   5. Plot fills + outlines (GeoJSON) — status colours, dimmed by filter.
-//   6. Plot labels (unit numbers).
+//   2. Roads as GeoJSON LineStrings (digitized centrelines).
+//   3. Site features as GeoJSON filled polygons (digitized amenities).
+//   4. Plot fills + outlines (GeoJSON) — status colours, dimmed by filter.
+//   5. Plot labels (unit numbers).
 //
+// Only the digitized shapes are drawn — not the raw plan image file.
 // Clicking a plot polygon fires onPlotClick so the caller opens UnitInfoCard.
 import { useEffect, useMemo, useRef } from "react";
-import { computeCorners, projectPoint, projectPolygon } from "@/lib/map/geo";
+import { projectPoint, projectPolygon } from "@/lib/map/geo";
 import { ESRI_TILE_URL, ESRI_ATTRIBUTION } from "@/lib/satellite";
 import { SITE_FEATURE_STYLES, UNIT_STATUS_STYLES } from "@/lib/types";
 import type { Road, SiteFeature, SatelliteAlignment, Unit, UnitStatus } from "@/lib/types";
@@ -23,13 +22,12 @@ interface Props {
   plots: Unit[];
   roads?: Road[];
   features?: SiteFeature[];
-  planImageUrl?: string;
   highlightStatus: UnitStatus | null;
   onPlotClick: (unit: Unit) => void;
 }
 
 export function SatelliteView({
-  alignment, plots, roads = [], features = [], planImageUrl,
+  alignment, plots, roads = [], features = [],
   highlightStatus, onPlotClick,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -75,12 +73,6 @@ export function SatelliteView({
 
       map.on("load", () => {
         const a = stableAlignment;
-
-        // Plan image overlay
-        if (planImageUrl) {
-          map.addSource("plan", { type: "image", url: planImageUrl, coordinates: computeCorners(a) });
-          map.addLayer({ id: "plan-layer", type: "raster", source: "plan", paint: { "raster-opacity": 0.85 } });
-        }
 
         // Roads
         if (roads.length > 0) {

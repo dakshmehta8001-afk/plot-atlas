@@ -197,7 +197,6 @@ export function ProjectMapClient({
                   plots={plots}
                   roads={roads}
                   features={features}
-                  planImageUrl={project.plan_image_url ?? undefined}
                   highlightStatus={statusFilter}
                   onPlotClick={setSelectedUnit}
                 />
