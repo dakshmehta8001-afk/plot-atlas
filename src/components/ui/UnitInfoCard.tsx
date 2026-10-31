@@ -8,7 +8,7 @@
 // handoff, submit) lives in useEnquiryFlow so it isn't duplicated between
 // UI styles.
 import { useEnquiryFlow } from "@/lib/hooks/useEnquiryFlow";
-import { UNIT_STATUS_STYLES, type Project, type Unit } from "@/lib/types";
+import { UNIT_STATUS_STYLES, type Project, type Road, type Unit } from "@/lib/types";
 
 // Kept to digits (and a leading +) since wa.me/tel: links don't tolerate
 // spaces, dashes, or brackets in a phone number typed freeform in the
@@ -80,15 +80,40 @@ export function QuickContactIcons({
   );
 }
 
+// Returns the width label of the road whose centerline is nearest to the
+// plot boundary — used as "road ahead" on the info card.
+function nearestRoadWidth(unit: Unit, roads: Road[]): string | null {
+  if (roads.length === 0 || unit.polygon_points.length < 3) return null;
+  const pts = unit.polygon_points;
+  // Edge midpoints as proxy for "plot boundary"
+  const edgeMids = pts.map((p, i) => {
+    const next = pts[(i + 1) % pts.length];
+    return { x: (p.x + next.x) / 2, y: (p.y + next.y) / 2 };
+  });
+  let nearest: Road | null = null;
+  let minDist = Infinity;
+  for (const road of roads) {
+    for (const rpt of road.path_points) {
+      for (const em of edgeMids) {
+        const d = Math.hypot(rpt.x - em.x, rpt.y - em.y);
+        if (d < minDist) { minDist = d; nearest = road; }
+      }
+    }
+  }
+  return nearest?.width_label ?? null;
+}
+
 export function UnitInfoCard({
   unit,
   project,
+  roads = [],
   isSignedIn,
   projectSlug,
   onClose,
 }: {
   unit: Unit;
   project: Project;
+  roads?: Road[];
   isSignedIn: boolean;
   projectSlug: string;
   onClose: () => void;
@@ -99,23 +124,29 @@ export function UnitInfoCard({
   const rate =
     unit.rate_per_sqft ?? (unit.total_price && unit.area_sqft ? Math.round(unit.total_price / unit.area_sqft) : null);
 
+  const areaSqft = unit.unit_type === "flat" ? unit.carpet_area_sqft : unit.area_sqft;
+  const areaSqm = areaSqft ? Math.round(areaSqft * 0.0929) : null;
+  const roadWidth = nearestRoadWidth(unit, roads);
+
   return (
     <div className="absolute inset-x-0 bottom-0 z-[900] max-h-[75%] overflow-y-auto rounded-t-3xl border-t border-white/10 bg-[var(--map-panel)] p-5 pb-[calc(1rem+env(safe-area-inset-bottom))] text-white shadow-[0_-10px_40px_rgba(0,0,0,0.5)] backdrop-blur-xl sm:absolute sm:right-6 sm:top-24 sm:bottom-auto sm:z-[800] sm:h-auto sm:max-h-[calc(100%-8rem)] sm:w-80 sm:flex-none sm:rounded-3xl sm:border sm:border-white/10 sm:bg-[var(--map-panel)] sm:shadow-2xl sm:[animation:slideInRight_320ms_ease]">
-      <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-white/20 sm:hidden" />
-      <div className="mb-2 flex items-start justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-lg font-bold">
-            {unit.wing ? `${unit.wing}-` : ""}
-            {unit.unit_number}
+      {/* Drag handle on mobile */}
+      <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/20 sm:hidden" />
+
+      {/* Header: plot number + status + close */}
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xl font-bold tracking-tight">
+            Plot {unit.wing ? `${unit.wing}-` : ""}{unit.unit_number}
           </span>
           <span
-            className="rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-widest shadow-[0_0_10px_rgba(255,255,255,0.1)]"
+            className="rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest"
             style={{ backgroundColor: statusStyle.fill, color: statusStyle.border, borderColor: statusStyle.border }}
           >
             {statusStyle.label}
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 shrink-0">
           <QuickContactIcons
             contactPhone={project.contact_phone}
             contactWhatsapp={project.contact_whatsapp}
@@ -123,84 +154,87 @@ export function UnitInfoCard({
             unit={unit}
             projectName={project.name}
           />
-          <button type="button" onClick={onClose} aria-label="Close" className="-m-1.5 p-1.5 text-white/50 hover:text-white">
+          <button type="button" onClick={onClose} aria-label="Close" className="-m-1 p-1 text-white/40 hover:text-white">
             ✕
           </button>
         </div>
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-1.5 border-b border-white/5 pb-4">
-        <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] capitalize text-white/80 shadow-inner">
-          {unit.unit_type}
-        </span>
-        {unit.bhk_type && (
-          <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-white/80 shadow-inner">{unit.bhk_type}</span>
+      {/* Dimensions + area */}
+      <div className="mb-3 rounded-xl border border-white/8 bg-white/4 p-3">
+        {unit.dimensions && (
+          <p className="text-base font-semibold tracking-tight">{unit.dimensions}</p>
         )}
-        {unit.category && (
-          <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-white/80 shadow-inner">{unit.category}</span>
-        )}
-        {unit.facing && (
-          <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-white/80 shadow-inner">
-            Facing {unit.facing}
-          </span>
+        {areaSqft ? (
+          <p className="text-sm text-white/70 mt-0.5">
+            {areaSqft.toLocaleString()} sqft
+            {areaSqm ? <span className="ml-2 text-white/40">· {areaSqm.toLocaleString()} sqm</span> : null}
+          </p>
+        ) : (
+          <p className="text-sm text-white/40">Area not set</p>
         )}
       </div>
 
-      <div className="mb-3 grid grid-cols-3 gap-2 text-center">
-        <div>
-          <p className="text-[10px] uppercase tracking-wide text-white/40">
-            {unit.unit_type === "flat" ? "Carpet area" : "Area"}
-          </p>
-          <p className="text-sm font-semibold">
-            {unit.unit_type === "flat"
-              ? unit.carpet_area_sqft
-                ? `${unit.carpet_area_sqft.toLocaleString()} sqft`
-                : "—"
-              : unit.area_sqft
-                ? `${unit.area_sqft.toLocaleString()} sqft`
-                : "—"}
-          </p>
+      {/* Facing + road ahead */}
+      <div className="mb-3 grid grid-cols-2 gap-2">
+        <div className="rounded-xl border border-white/8 bg-white/4 p-3">
+          <p className="text-[10px] uppercase tracking-wider text-white/40 mb-1">Facing</p>
+          <p className="text-sm font-medium">{unit.facing ?? "—"}</p>
         </div>
-        <div>
-          <p className="text-[10px] uppercase tracking-wide text-white/40">Size</p>
-          <p className="text-sm font-semibold">{unit.dimensions ?? "—"}</p>
-        </div>
-        <div>
-          <p className="text-[10px] uppercase tracking-wide text-white/40">Rate</p>
-          <p className="text-sm font-semibold">{rate ? `₹${rate.toLocaleString()}/sqft` : "—"}</p>
+        <div className="rounded-xl border border-white/8 bg-white/4 p-3">
+          <p className="text-[10px] uppercase tracking-wider text-white/40 mb-1">Road ahead</p>
+          <p className="text-sm font-medium">{roadWidth ?? "—"}</p>
         </div>
       </div>
 
-      {unit.total_price != null && (
-        <div className="mb-4 rounded-xl border border-white/10 bg-black/20 p-3 text-center shadow-inner">
-          <p className="text-[10px] uppercase tracking-widest text-white/40 mb-1">Total Price</p>
-          <p className="text-xl font-bold text-white tracking-tight">₹{unit.total_price.toLocaleString()}</p>
+      {/* Tags */}
+      {(unit.bhk_type || unit.category) && (
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {unit.bhk_type && (
+            <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-white/70">{unit.bhk_type}</span>
+          )}
+          {unit.category && (
+            <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-white/70">{unit.category}</span>
+          )}
+        </div>
+      )}
+
+      {/* Rate + total price */}
+      {(rate || unit.total_price != null) && (
+        <div className="mb-3 rounded-xl border border-white/10 bg-black/20 p-3 shadow-inner">
+          {unit.total_price != null && (
+            <p className="text-xl font-bold tracking-tight">₹{unit.total_price.toLocaleString()}</p>
+          )}
+          {rate && (
+            <p className="text-xs text-white/50 mt-0.5">₹{rate.toLocaleString()} / sqft</p>
+          )}
         </div>
       )}
 
       {unit.description && (
-        <p className="mb-4 whitespace-pre-wrap break-words text-xs text-white/70">{unit.description}</p>
+        <p className="mb-3 whitespace-pre-wrap break-words text-xs text-white/60">{unit.description}</p>
       )}
 
+      {/* Enquiry */}
       {state === "sent" ? (
-        <p className="rounded-md bg-green-500/15 p-2 text-xs text-green-300">
+        <p className="rounded-xl bg-green-500/15 p-3 text-xs text-green-300">
           Thanks — your enquiry has been sent.
         </p>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           <textarea
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             placeholder="Message (optional)"
             rows={2}
-            className="w-full resize-none rounded-xl border border-white/10 bg-black/30 p-3 text-xs text-white placeholder:text-white/30 shadow-inner transition-colors focus:border-white/30 focus:outline-none focus:ring-0"
+            className="w-full resize-none rounded-xl border border-white/10 bg-black/30 p-3 text-xs text-white placeholder:text-white/30 shadow-inner transition-colors focus:border-white/30 focus:outline-none"
           />
           {errorText && <p className="text-xs text-red-400">{errorText}</p>}
           <button
             type="button"
             onClick={submit}
             disabled={state === "submitting"}
-            className="w-full rounded-xl bg-white px-4 py-3 text-sm font-bold text-[#030712] transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-60 shadow-[0_0_20px_rgba(255,255,255,0.2)] hover:shadow-[0_0_25px_rgba(255,255,255,0.4)]"
+            className="w-full rounded-xl bg-white px-4 py-3 text-sm font-bold text-[#030712] transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-60 shadow-[0_0_20px_rgba(255,255,255,0.2)]"
           >
             {state === "submitting" ? "Sending…" : "I'm interested"}
           </button>

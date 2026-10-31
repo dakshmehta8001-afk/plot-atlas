@@ -8,6 +8,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { ActionResult } from "./auth";
+import { plotNumberConflictMessage } from "@/lib/utils/plotNumberConflict";
 import type { PolygonPoint, UnitKind, UnitStatus } from "@/lib/types";
 
 export interface UnitInput {
@@ -50,6 +51,9 @@ export async function createUnit(projectId: string, input: UnitInput): Promise<A
     polygon_points: input.polygon_points,
   });
 
+  // A plot number that already exists in this project (units_unique_plot_number).
+  const duplicate = input.unit_type === "plot" ? plotNumberConflictMessage(error, input.unit_number) : null;
+  if (duplicate) return { error: duplicate };
   if (error) return { error: error.message };
 
   revalidatePath(`/dashboard/projects/${projectId}`, "layout");
@@ -90,6 +94,9 @@ export async function updateUnit(
     .from("units")
     .update(confirmsSize ? { ...input, needs_dimension_review: false } : input)
     .eq("id", unitId);
+  // Renaming a plot to a number this project already has (units_unique_plot_number).
+  const duplicate = plotNumberConflictMessage(error, input.unit_number);
+  if (duplicate) return { error: duplicate };
   if (error) return { error: error.message };
 
   revalidatePath(`/dashboard/projects/${projectId}`, "layout");

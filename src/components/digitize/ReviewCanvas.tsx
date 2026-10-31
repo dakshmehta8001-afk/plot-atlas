@@ -37,6 +37,9 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
   onSelect: (id: string | null) => void;
   mode: ToolMode;
   onUpdateShape: (id: string, points: PolygonPoint[]) => void;
+  onUpdateShapeSilent: (id: string, points: PolygonPoint[]) => void;
+  onDragStart: () => void;
+  onDragEnd: () => void;
   onAddShape: (kind: "plot" | "road" | "feature", points: PolygonPoint[]) => void;
   /** Replaces one shape with two, the result of the Split tool cutting it along a line. */
   onSplitShape: (id: string, parts: [PolygonPoint[], PolygonPoint[]]) => void;
@@ -62,6 +65,9 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
     onSelect,
     mode,
     onUpdateShape,
+    onUpdateShapeSilent,
+    onDragStart,
+    onDragEnd,
     onAddShape,
     onSplitShape,
     onModeChange,
@@ -274,6 +280,11 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
     if (!contentGroupRef.current) return;
 
     if (isDrawMode) {
+      // A double-click fires: click (detail=1) → click (detail=2) → dblclick.
+      // The first click (detail=1) should add a point; the second click
+      // (detail=2) must be ignored — it would otherwise plant a stray point
+      // at the same location where the user double-clicked to finish.
+      if (e.detail > 1) return;
       const local = clientPointToLocalFraction(contentGroupRef.current, e.clientX, e.clientY, VB);
       if (local) setDrawPoints((prev) => [...prev, local]);
       return;
@@ -368,9 +379,21 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
   function finishDrawing() {
     if (!isDrawMode) return;
     const min = MIN_DRAW_POINTS[mode as "draw-plot" | "draw-road" | "draw-area"];
-    if (drawPoints.length < min) return;
+    let points = drawPoints;
+    // Defensive dedupe: if the last two points are nearly identical (closer
+    // than 0.5% of the viewBox), drop the last one. This covers the case
+    // where handleCanvasClick's e.detail>1 guard is somehow bypassed, or a
+    // future code path routes a duplicate point into drawPoints.
+    if (points.length >= 2) {
+      const last = points[points.length - 1];
+      const prev = points[points.length - 2];
+      if (Math.hypot(last.x - prev.x, last.y - prev.y) < 0.005) {
+        points = points.slice(0, -1);
+      }
+    }
+    if (points.length < min) return;
     const kind = mode === "draw-plot" ? "plot" : mode === "draw-road" ? "road" : "feature";
-    onAddShape(kind, drawPoints);
+    onAddShape(kind, points);
     setDrawPoints([]);
   }
 
@@ -427,6 +450,9 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
             onSelect={onSelect}
             mode={mode}
             onUpdateShape={onUpdateShape}
+            onUpdateShapeSilent={onUpdateShapeSilent}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
             splitHoverId={isSplitMode ? splitHoverId : null}
           />
 
@@ -564,7 +590,14 @@ export const ReviewCanvas = forwardRef<ReviewCanvasHandle, {
 
       {isDrawMode && drawPoints.length > 0 && (
         <div className="absolute left-3 top-3 flex items-center gap-2 rounded-md bg-black/60 px-3 py-1.5 text-xs text-white">
-          <span>{drawPoints.length} point(s) — double-click to finish</span>
+          <span>{drawPoints.length} point(s)</span>
+          <button
+            type="button"
+            onClick={finishDrawing}
+            className="rounded bg-white/20 px-2 py-0.5 font-medium hover:bg-white/30"
+          >
+            Finish
+          </button>
           <button
             type="button"
             onClick={() => setDrawPoints((prev) => prev.slice(0, -1))}

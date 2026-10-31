@@ -39,6 +39,9 @@ export function ShapeLayer({
   onSelect,
   mode,
   onUpdateShape,
+  onUpdateShapeSilent,
+  onDragStart,
+  onDragEnd,
   splitHoverId,
 }: {
   shapes: DetectedShape[];
@@ -46,6 +49,9 @@ export function ShapeLayer({
   onSelect: (id: string | null) => void;
   mode: ToolMode;
   onUpdateShape: (id: string, points: DetectedShape["points"]) => void;
+  onUpdateShapeSilent: (id: string, points: DetectedShape["points"]) => void;
+  onDragStart: () => void;
+  onDragEnd: () => void;
   /** The shape currently under the cursor in Split-plot mode — highlighted as the "you're about to cut this one" target. Not a selection; unrelated to selectedId. */
   splitHoverId?: string | null;
 }) {
@@ -92,7 +98,7 @@ export function ShapeLayer({
                 // plot was underneath instead of ever registering as a
                 // calibration point. Every other mode keeps the normal
                 // select-on-click behavior.
-                if (mode === "split-plot" || mode === "set-scale" || mode === "set-north") return;
+                if (mode === "split-plot" || mode === "set-scale" || mode === "set-north" || mode === "draw-plot" || mode === "draw-road" || mode === "draw-area") return;
                 e.stopPropagation();
                 onSelect(shape.localId);
               }}
@@ -155,11 +161,13 @@ export function ShapeLayer({
             key={index}
             x={point.x}
             y={point.y}
-            onDrag={(next) => onUpdateShape(selected.localId, moveVertex(selected.points, index, next))}
+            onDrag={(next) => onUpdateShapeSilent(selected.localId, moveVertex(selected.points, index, next))}
             onDoubleClick={() => {
               if (selected.points.length <= MIN_POINTS[selected.kind]) return;
               onUpdateShape(selected.localId, deleteVertex(selected.points, index));
             }}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
           />
         ))}
     </>

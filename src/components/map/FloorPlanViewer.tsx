@@ -5,7 +5,7 @@
 // same click-to-zoom interaction as SitePlanViewer. Used inside
 // BuildingDrilldown once a viewer has picked a floor from the floor
 // selector.
-import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MAP_VIEWBOX_SIZE, UNIT_STATUS_STYLES, distinctZones, zoneColorFor, type Unit } from "@/lib/types";
 import { useImageAspectRatio } from "@/lib/hooks/useImageAspectRatio";
 import { toScaledSvgPoints, scaledBoundingBoxCenter } from "@/lib/map/svgPolygon";
@@ -141,10 +141,13 @@ export function FloorPlanViewer({
   // plan), so a fresh mount already starts at identity — there's no
   // persistent instance that needs to be told to reset.
   const [view, setView] = useState({ tx: 0, ty: 0, scale: 1 });
+  const svgRef = useRef<SVGSVGElement>(null);
   const panGroupRef = useRef<SVGGElement>(null);
   const panState = useRef<{ startX: number; startY: number; origTx: number; origTy: number } | null>(null);
   const activePointers = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinchState = useRef<{ distance: number } | null>(null);
+  const pxPerUnit = useRef(0.4);
+  const pointerMovedRef = useRef(0);
 
   // React's documented "adjust state when a prop changes" pattern (a plain
   // render-time comparison + setState, not an effect) — resetting the
@@ -168,28 +171,53 @@ export function FloorPlanViewer({
     setHoveredUnit((prev) => (prev?.unit.id === unitId ? null : prev));
   }, []);
 
-  function handleWheel(e: React.WheelEvent<SVGSVGElement>) {
-    if (zoomedId) return;
-    e.preventDefault();
-    const group = panGroupRef.current;
-    if (!group) return;
-    const rawLocal = clientPointToLocalFraction(group, e.clientX, e.clientY, 1);
-    if (!rawLocal) return;
-    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-    setView((prev) => {
-      const nextScale = Math.min(MAX_FREE_ZOOM, Math.max(1, prev.scale * factor));
-      const px = rawLocal.x;
-      const py = rawLocal.y;
-      const tx = px - ((px - prev.tx) / prev.scale) * nextScale;
-      const ty = py - ((py - prev.ty) / prev.scale) * nextScale;
-      return { tx, ty, scale: nextScale };
-    });
-  }
+  // Apply the pan/zoom transform imperatively so the CSS string can multiply
+  // tx/ty by pxPerUnit (a ref) without reading it during render.
+  useEffect(() => {
+    if (panGroupRef.current) {
+      panGroupRef.current.style.transform = `translate(${view.tx * pxPerUnit.current}px, ${view.ty * pxPerUnit.current}px) scale(${view.scale})`;
+    }
+  });
+
+  // Native (non-passive) wheel listener so e.preventDefault() actually works —
+  // React registers onWheel as passive, which silently ignores preventDefault
+  // and lets the browser scroll or pinch-zoom the page instead.
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg || zoomedId) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const group = panGroupRef.current;
+      if (!group) return;
+      const rawLocal = clientPointToLocalFraction(group, e.clientX, e.clientY, 1);
+      if (!rawLocal) return;
+      const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      setView((prev) => {
+        const nextScale = Math.min(MAX_FREE_ZOOM, Math.max(1, prev.scale * factor));
+        const px = prev.tx + rawLocal.x * prev.scale;
+        const py = prev.ty + rawLocal.y * prev.scale;
+        const tx = px - ((px - prev.tx) / prev.scale) * nextScale;
+        const ty = py - ((py - prev.ty) / prev.scale) * nextScale;
+        return { tx, ty, scale: nextScale };
+      });
+    };
+    svg.addEventListener("wheel", onWheel, { passive: false });
+    return () => svg.removeEventListener("wheel", onWheel);
+  }, [zoomedId]);
 
   function handleBackgroundPointerDown(e: React.PointerEvent<SVGSVGElement>) {
     if (zoomedId) return;
     activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     (e.target as Element).setPointerCapture(e.pointerId);
+    pointerMovedRef.current = 0;
+
+    // Track pxPerUnit from the SVG's current bounding rect so pan/zoom
+    // formulas can convert between CSS pixels and SVG map units consistently.
+    const svgEl = svgRef.current;
+    if (svgEl) {
+      const r = svgEl.getBoundingClientRect();
+      pxPerUnit.current = Math.min(r.width / VB, r.height / vbHeight) || 0.4;
+    }
 
     if (activePointers.current.size === 2) {
       panState.current = null;
@@ -218,8 +246,8 @@ export function FloorPlanViewer({
       if (!rawLocal) return;
       setView((prev) => {
         const nextScale = Math.min(MAX_FREE_ZOOM, Math.max(1, prev.scale * factor));
-        const px = rawLocal.x;
-        const py = rawLocal.y;
+        const px = prev.tx + rawLocal.x * prev.scale;
+        const py = prev.ty + rawLocal.y * prev.scale;
         const tx = px - ((px - prev.tx) / prev.scale) * nextScale;
         const ty = py - ((py - prev.ty) / prev.scale) * nextScale;
         return { tx, ty, scale: nextScale };
@@ -230,13 +258,14 @@ export function FloorPlanViewer({
     if (!panState.current) return;
     const dx = e.clientX - panState.current.startX;
     const dy = e.clientY - panState.current.startY;
+    pointerMovedRef.current = Math.hypot(dx, dy);
     // Copied out BEFORE the state update: React runs the updater function
     // later, and by then pointer-up may already have cleared panState — which
     // crashed the whole page ("Cannot read properties of null (reading
     // 'origTx')") whenever a drag ended quickly. Confirmed from the
     // production crash log, not guessed.
     const { origTx, origTy } = panState.current;
-    setView((prev) => ({ ...prev, tx: origTx + dx, ty: origTy + dy }));
+    setView((prev) => ({ ...prev, tx: origTx + dx / pxPerUnit.current, ty: origTy + dy / pxPerUnit.current }));
   }
 
   function handleBackgroundPointerUp(e: React.PointerEvent<SVGSVGElement>) {
@@ -280,6 +309,7 @@ export function FloorPlanViewer({
 
   const handleClick = useCallback(
     (unit: Unit) => {
+      if (pointerMovedRef.current > 6) return;
       setZoomedId(unit.id);
       setHoveredUnit(null);
       onFlatClick(unit);
@@ -300,10 +330,10 @@ export function FloorPlanViewer({
       )}
       <div className="h-full w-full overflow-hidden">
         <svg
+          ref={svgRef}
           viewBox={`0 0 ${VB} ${vbHeight}`}
           className="h-full w-full bg-[#0b1f2e]"
           style={{ cursor: zoomedId ? "default" : "grab", touchAction: zoomedId ? "auto" : "none" }}
-          onWheel={handleWheel}
           onPointerDown={handleBackgroundPointerDown}
           onPointerMove={handleBackgroundPointerMove}
           onPointerUp={handleBackgroundPointerUp}
@@ -313,7 +343,7 @@ export function FloorPlanViewer({
               the scripted animation below) wraps the existing scripted
               zoom-to-flat group unchanged — same composition as
               SitePlanViewer. */}
-          <g ref={panGroupRef} style={{ transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`, transformOrigin: "0 0" }}>
+          <g ref={panGroupRef} style={{ transformOrigin: "0 0" }}>
             <g style={{ transform, transformOrigin: "0 0", transition: "transform 550ms var(--ease-cinematic)" }}>
               <image href={planImageUrl} x={0} y={0} width={VB} height={vbHeight} />
               <FlatShapes

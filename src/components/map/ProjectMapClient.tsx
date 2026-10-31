@@ -9,7 +9,8 @@
 // MediaPanel/AboutPanel (the other two tabs), and UnitInfoCard (the enquiry
 // flow) — the project page itself stays a Server Component that does the
 // initial data fetch.
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
+const SatelliteView = lazy(() => import("./SatelliteView").then((m) => ({ default: m.SatelliteView })));
 import { useRouter, useSearchParams } from "next/navigation";
 import { BuildingDrilldown, type BuildingWithFloors } from "@/components/dashboard/BuildingDrilldown";
 import { MediaPanel } from "@/components/media/MediaPanel";
@@ -72,6 +73,8 @@ export function ProjectMapClient({
   const [selectedZone, setSelectedZone] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<UnitStatus | null>(null);
   const [zonesOpen, setZonesOpen] = useState(false);
+  const [mapView, setMapView] = useState<"plan" | "satellite">("plan");
+  const hasSatellite = project.map_bounds !== null;
 
   useEffect(() => {
     const intent = searchParams.get("intent");
@@ -186,6 +189,18 @@ export function ProjectMapClient({
               <MediaPanel media={media} />
             ) : activeTab === "about" ? (
               <AboutPanel project={project} />
+            ) : mapView === "satellite" && hasSatellite ? (
+              <Suspense fallback={null}>
+                <SatelliteView
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  alignment={project.map_bounds as any}
+                  plots={plots}
+                  roads={roads}
+                  features={features}
+                  highlightStatus={statusFilter}
+                  onPlotClick={setSelectedUnit}
+                />
+              </Suspense>
             ) : !project.plan_image_url ? (
               <div className="flex h-full w-full items-center justify-center text-sm text-white/50">
                 This project has no plan image uploaded yet.
@@ -227,6 +242,7 @@ export function ProjectMapClient({
             key={selectedUnit.id}
             unit={selectedUnit}
             project={project}
+            roads={roads}
             isSignedIn={isSignedIn}
             projectSlug={project.slug}
             onClose={() => setSelectedUnit(null)}
@@ -237,12 +253,32 @@ export function ProjectMapClient({
       {showMapChrome && (
         <div className="pointer-events-none absolute left-0 right-0 top-0 z-[500] p-4 sm:p-6">
           <div className="pointer-events-auto flex flex-col gap-4 rounded-3xl border border-white/10 bg-[var(--map-panel)] p-4 shadow-2xl backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <div className="min-w-0">
-            {ownerName && (
-              <p className="truncate text-[10px] font-semibold uppercase tracking-widest text-blue-300/80">{ownerName}</p>
+          <div className="flex min-w-0 items-start gap-3 sm:items-center">
+            <div className="min-w-0">
+              {ownerName && (
+                <p className="truncate text-[10px] font-semibold uppercase tracking-widest text-blue-300/80">{ownerName}</p>
+              )}
+              <h1 className="truncate text-lg font-semibold text-white sm:text-xl">{project.name}</h1>
+              {project.location && <p className="truncate text-[11px] text-white/50">{project.location}</p>}
+            </div>
+            {hasSatellite && (
+              <div className="flex shrink-0 rounded-full border border-white/15 bg-black/20 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setMapView("plan")}
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-all ${mapView === "plan" ? "bg-white/15 text-white" : "text-white/50 hover:text-white"}`}
+                >
+                  Plan
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMapView("satellite")}
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-all ${mapView === "satellite" ? "bg-white/15 text-white" : "text-white/50 hover:text-white"}`}
+                >
+                  Satellite
+                </button>
+              </div>
             )}
-            <h1 className="truncate text-lg font-semibold text-white sm:text-xl">{project.name}</h1>
-            {project.location && <p className="truncate text-[11px] text-white/50">{project.location}</p>}
           </div>
 
           {/* One scrollable row on a phone (never wraps); wraps normally from sm up. */}

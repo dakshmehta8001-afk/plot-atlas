@@ -16,17 +16,22 @@ export function VertexHandle({
   y,
   onDrag,
   onDoubleClick,
+  onDragStart,
+  onDragEnd,
 }: {
   x: number;
   y: number;
   onDrag: (next: { x: number; y: number }) => void;
   /** Double-clicking a vertex removes it (see ShapeLayer's minimum-point guard). */
   onDoubleClick: () => void;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
 }) {
   function handlePointerDown(event: React.PointerEvent<SVGCircleElement>) {
     event.stopPropagation();
     const target = event.currentTarget;
     target.setPointerCapture(event.pointerId);
+    onDragStart?.();
 
     function handleMove(moveEvent: PointerEvent) {
       const local = clientPointToLocalFraction(target, moveEvent.clientX, moveEvent.clientY, VB);
@@ -35,6 +40,7 @@ export function VertexHandle({
     function handleUp() {
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
+      onDragEnd?.();
     }
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);

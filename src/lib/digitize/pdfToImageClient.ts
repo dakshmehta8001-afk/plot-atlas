@@ -1,14 +1,12 @@
-// Renders a PDF's first page to a real <canvas> entirely in the browser —
-// deliberately separate from src/lib/pdfToImage.ts, which does the
-// equivalent job server-side (using @napi-rs/canvas, a native binary) for
-// the existing plan-image upload flow. This feature's whole pipeline
-// (OpenCV, Tesseract) runs client-side, so PDF rendering needs to as well;
-// a browser <canvas> is a standard Web API, no native binary needed here.
+// Renders a PDF's first page to a real <canvas> entirely in the browser.
+// Used for all three plan-image upload paths (new project, replace plan
+// image, add floor) and for the digitizer pipeline — PDF rendering happens
+// client-side with a standard browser <canvas>, so no native binary is
+// needed on the server.
 //
 // Uses pdfjs-dist's plain browser entrypoint (`pdfjs-dist`, which resolves
-// to build/pdf.mjs) rather than the `legacy/build/pdf.mjs` Node entrypoint
-// pdfToImage.ts imports — that's the one difference between the two files;
-// everything else about calling pdfjs is the same across both.
+// to build/pdf.mjs). The worker script is served from a static file rather
+// than the asset-module pattern to avoid bundler version quirks.
 //
 // The worker script is served from a plain static path (public/pdf.worker.
 // min.mjs, copied from node_modules/pdfjs-dist/build/pdf.worker.min.mjs) —
@@ -21,10 +19,12 @@ import * as pdfjsLib from "pdfjs-dist";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
-// Cap matches imagePrep.ts's resize step — no reason to rasterize a PDF
-// bigger than the resolution the detection pipeline will immediately
-// downscale to.
-const MAX_EDGE_PX = 1600;
+// Raised from 1600 to 2400 to match the plan-image upload path — a
+// rasterized PDF used as a plan image is stored at this resolution and then
+// zoomed into by viewers, so the extra detail is worth the larger file.
+// The detection pipeline's own downscale cap (MAX_SOURCE_EDGE_PX in
+// useDetectionPipeline.ts) still applies when the image is fed into OpenCV.
+const MAX_EDGE_PX = 2400;
 
 export async function renderPdfFirstPageToCanvas(
   file: File,

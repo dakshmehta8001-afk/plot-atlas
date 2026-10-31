@@ -16,6 +16,7 @@
 // produce a wrong plot size.
 import { useMemo, useState } from "react";
 import type { DetectedShape } from "@/lib/digitize/types";
+import { pointInPolygon } from "@/lib/map/svgPolygon";
 
 interface ColorCluster {
   color: string; // "rgb(r,g,b)", also used directly as the swatch's own background
@@ -40,20 +41,47 @@ interface ColorCluster {
 // silent source of truth for anything persisted.
 const CLUSTER_DISTANCE = 55;
 
+function medianChannel(values: number[]): number {
+  return [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
+}
+
+// Samples 8 points arranged in an ellipse at 60% of the bounding-box
+// half-extents from the center, then returns the per-channel median.
+// 25% was too close to the center — wide plot-number text (which is
+// typically centered on the plot) would dominate the sample. At 60%,
+// samples land in the filled color body away from the label. Any sample
+// that falls outside the polygon's actual boundary is dropped (narrow or
+// irregular plots whose ellipse clips a neighbor's boundary). The
+// existing pointInPolygon helper handles that check.
 function sampleColor(sourceCanvas: HTMLCanvasElement, shape: DetectedShape): [number, number, number] | null {
   if (shape.points.length < 3) return null;
   const xs = shape.points.map((p) => p.x);
   const ys = shape.points.map((p) => p.y);
-  const centerX = (Math.min(...xs) + Math.max(...xs)) / 2;
-  const centerY = (Math.min(...ys) + Math.max(...ys)) / 2;
-  const px = Math.round(centerX * sourceCanvas.width);
-  const py = Math.round(centerY * sourceCanvas.height);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  const radiusX = (maxX - minX) * 0.6;
+  const radiusY = (maxY - minY) * 0.6;
+
   const ctx = sourceCanvas.getContext("2d");
   if (!ctx) return null;
-  const inBounds = px >= 0 && py >= 0 && px < sourceCanvas.width && py < sourceCanvas.height;
-  if (!inBounds) return null;
-  const [r, g, b] = ctx.getImageData(px, py, 1, 1).data;
-  return [r, g, b];
+
+  const rs: number[] = [], gs: number[] = [], bs: number[] = [];
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * 2 * Math.PI;
+    const sampleX = centerX + Math.cos(angle) * radiusX;
+    const sampleY = centerY + Math.sin(angle) * radiusY;
+    if (!pointInPolygon({ x: sampleX, y: sampleY }, shape.points)) continue;
+    const px = Math.round(sampleX * sourceCanvas.width);
+    const py = Math.round(sampleY * sourceCanvas.height);
+    if (px < 0 || py < 0 || px >= sourceCanvas.width || py >= sourceCanvas.height) continue;
+    const [r, g, b] = ctx.getImageData(px, py, 1, 1).data;
+    rs.push(r); gs.push(g); bs.push(b);
+  }
+
+  if (rs.length === 0) return null;
+  return [medianChannel(rs), medianChannel(gs), medianChannel(bs)];
 }
 
 function colorDistance(a: [number, number, number], b: [number, number, number]): number {

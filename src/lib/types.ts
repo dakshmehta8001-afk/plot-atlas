@@ -16,14 +16,19 @@ export interface AppUser {
   created_at: string;
 }
 
-// A lat/lng rectangle the project's plan image is aligned to on a satellite
-// map (see lib/geo.ts). Null until the sub-admin runs the satellite
-// alignment step in the dashboard.
-export interface MapBounds {
-  north: number;
-  south: number;
-  east: number;
-  west: number;
+// Satellite alignment stored in project.map_bounds. Encodes where the plan
+// sits on real-world imagery as center + rotation + per-axis scale, which
+// maps cleanly to a drag/rotate/resize UI and lets any plan point be
+// projected to lat/lng in one step (see lib/map/geo.ts).
+export interface SatelliteAlignment {
+  /** Geo location of plan centre (plan fractional point 0.5, 0.5). */
+  center: { lat: number; lng: number };
+  /** Clockwise degrees from true north to the plan's UP direction (−y axis). */
+  northAngle: number;
+  /** Metres corresponding to 1.0 plan x-unit (full image width). */
+  mppX: number;
+  /** Metres corresponding to 1.0 plan y-unit (full image height). */
+  mppY: number;
 }
 
 export type ProjectStatus = "draft" | "published";
@@ -57,7 +62,7 @@ export interface Project {
   /** Pixel size of the plan image, stored at upload so the map has the right shape from the first render. Null until known. */
   plan_image_width: number | null;
   plan_image_height: number | null;
-  map_bounds: MapBounds | null;
+  map_bounds: SatelliteAlignment | null;
   map_calibration: MapCalibration | null;
   status: ProjectStatus;
   // The developer's own published business contact info (opt-in, shown as

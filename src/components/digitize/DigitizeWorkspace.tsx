@@ -16,7 +16,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MAP_VIEWBOX_SIZE, type MapCalibration, type PolygonPoint } from "@/lib/types";
-import { uploadPlanImage, setProjectCalibration } from "@/lib/actions/projects";
+import { setPlanImage, setProjectCalibration } from "@/lib/actions/projects";
+import { uploadFromBrowser } from "@/lib/storage/uploadFromBrowser";
 import { saveDigitizedShapes } from "@/lib/actions/digitize";
 import { useDetectionPipeline, loadFileToCanvas, loadUrlToCanvas } from "@/lib/digitize/useDetectionPipeline";
 import type { DetectedShape } from "@/lib/digitize/types";
@@ -56,6 +57,9 @@ export function DigitizeWorkspace({
   hasExistingPlanImage,
   planImageUrl,
   initialCalibration,
+  existingPlotNumbers,
+  existingRoadCount,
+  existingFeatureCount,
 }: {
   projectId: string;
   projectName: string;
@@ -63,6 +67,10 @@ export function DigitizeWorkspace({
   /** The project's already-saved plan image, if it has one — auto-loaded on mount so a sub-admin who already uploaded a plan (at project creation, or via PlanImageUpload) never has to pick the same file again just to run detection on it. `null` for a project with no plan image yet, which falls through to the ordinary upload dropzone below. */
   planImageUrl: string | null;
   initialCalibration: MapCalibration | null;
+  /** Plot numbers already saved for this project — used to warn the sub-admin and optionally skip duplicates before saving again. */
+  existingPlotNumbers: string[];
+  existingRoadCount: number;
+  existingFeatureCount: number;
 }) {
   const router = useRouter();
   const { stage: pipelineStage, error: pipelineError, run, reset } = useDetectionPipeline();
@@ -74,6 +82,13 @@ export function DigitizeWorkspace({
   const [warnings, setWarnings] = useState<string[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedCount, setSavedCount] = useState(0);
+  const [savedSkippedCount, setSavedSkippedCount] = useState(0);
+  const [savedSkipNotes, setSavedSkipNotes] = useState<string[]>([]);
+  const [saveConfirmed, setSaveConfirmed] = useState(false);
+  const [skipExistingPlots, setSkipExistingPlots] = useState(true);
+  const [skipWarpNote, setSkipWarpNote] = useState(false);
+
+  const hasExisting = existingPlotNumbers.length > 0 || existingRoadCount > 0 || existingFeatureCount > 0;
   const [calibration, setCalibration] = useState<MapCalibration | null>(initialCalibration);
   const [calibrationError, setCalibrationError] = useState<string | null>(null);
   // The SAME aspect-ratio correction the two public viewers use (vbHeight
@@ -99,11 +114,26 @@ export function DigitizeWorkspace({
   const canvasRef = useRef<ReviewCanvasHandle>(null);
   const selectedShape = shapesState.value.find((s) => s.localId === selectedId) ?? null;
 
+  // Tracks whether the sub-admin applied the corner-warp step (vs. skipping
+  // it). When a project already has a plan image BUT the sub-admin straightened
+  // it in the warp step, handleSave must replace the stored image with the
+  // warped one — the shapes are traced against the warped canvas, so the
+  // original (unwarped) image would show them in the wrong place.
+  const warpApplied = useRef(false);
+
   async function handleStart(file: File) {
+    warpApplied.current = false;
+    setSaveConfirmed(false);
+    setSkipWarpNote(false);
     try {
       const canvas = await loadFileToCanvas(file);
       setPreviewCanvas(canvas);
-      setStage("warp");
+      if (hasExisting) {
+        setSkipWarpNote(true);
+        runDetection(canvas);
+      } else {
+        setStage("warp");
+      }
     } catch (err) {
       setPreviewCanvas(null);
       setStage("upload");
@@ -129,7 +159,12 @@ export function DigitizeWorkspace({
     loadUrlToCanvas(planImageUrl)
       .then((canvas) => {
         setPreviewCanvas(canvas);
-        setStage("warp");
+        if (existingPlotNumbers.length > 0 || existingRoadCount > 0 || existingFeatureCount > 0) {
+          setSkipWarpNote(true);
+          runDetection(canvas);
+        } else {
+          setStage("warp");
+        }
       })
       .catch((err) => {
         // Falls back to the ordinary upload dropzone (stage stays "upload")
@@ -140,6 +175,7 @@ export function DigitizeWorkspace({
         setAutoLoadError(err instanceof Error ? err.message : "Could not load the saved plan image.");
         console.error(err);
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed only on planImageUrl; the autoLoadStarted.current guard means it runs at most once regardless of dep changes; existingCounts/runDetection are stable across the one run that matters
   }, [planImageUrl]);
 
   async function runDetection(canvas: HTMLCanvasElement) {
@@ -177,6 +213,32 @@ export function DigitizeWorkspace({
         return { ...s, points, ...computeDimensionFields(points, calibration, VB, vbHeight) };
       }),
     );
+  }
+
+  // Snapshot of shapes at drag-start — on pointer-up it becomes the history
+  // entry so one Undo restores the pre-drag state, not the last-pixel state.
+  const beforeDragRef = useRef<DetectedShape[] | null>(null);
+  const dragMovedRef = useRef(false);
+
+  function handleUpdatePointsSilent(id: string, points: PolygonPoint[]) {
+    dragMovedRef.current = true;
+    shapesState.silentUpdate(
+      shapesState.value.map((s) => {
+        if (s.localId !== id) return s;
+        if (s.kind !== "plot") return { ...s, points };
+        return { ...s, points, ...computeDimensionFields(points, calibration, VB, vbHeight) };
+      }),
+    );
+  }
+  function handleDragStart() {
+    beforeDragRef.current = shapesState.value;
+    dragMovedRef.current = false;
+  }
+  function handleDragEnd() {
+    if (beforeDragRef.current !== null && dragMovedRef.current) {
+      shapesState.pushToHistory(beforeDragRef.current);
+    }
+    beforeDragRef.current = null;
   }
   function handleChangeShape(next: DetectedShape) {
     shapesState.set(shapesState.value.map((s) => (s.localId === next.localId ? next : s)));
@@ -291,19 +353,70 @@ export function DigitizeWorkspace({
     setSaveError(null);
     setStage("saving");
     try {
-      if (!hasExistingPlanImage) {
+      if (!hasExistingPlanImage || warpApplied.current) {
+        // Upload the canvas PNG from the browser so Vercel's 4.5 MB request
+        // body cap doesn't apply. canvasToFile produces a File (which is a
+        // Blob) with type "image/png", accepted by plan-images.
         const file = await canvasToFile(sourceCanvas, "digitized-plan.png");
-        const uploadResult = await uploadPlanImage(projectId, file);
-        if (uploadResult.error) {
+        const uploadResult = await uploadFromBrowser("plan-images", file, "digitized-plan.png");
+        if ("error" in uploadResult) {
           setSaveError(`Saving the plan image failed: ${uploadResult.error}`);
+          setStage("review");
+          return;
+        }
+        const planResult = await setPlanImage(projectId, {
+          path: uploadResult.path,
+          width: uploadResult.width,
+          height: uploadResult.height,
+        });
+        if (planResult.error) {
+          setSaveError(`Saving the plan image failed: ${planResult.error}`);
           setStage("review");
           return;
         }
       }
 
+      // Build the set of already-saved plot numbers using the same normalisation
+      // as the 1.5 migration index: lower(trim(unit_number)), excluding "unlabeled".
+      const existingNumberSet = new Set(
+        existingPlotNumbers.map((n) => n.trim().toLowerCase()).filter((n) => n && n !== "unlabeled"),
+      );
+
+      // De-duplicate plot numbers within this batch — keep the first occurrence,
+      // skip the rest. Uses the same normalisation so "A1" and "a1" count as one.
+      const batchSeen = new Set<string>();
+      const batchSkipped: string[] = [];
+      const deduped = shapesState.value.filter((s) => {
+        if (s.kind !== "plot") return true;
+        const key = (s.label || "").trim().toLowerCase();
+        if (!key || key === "unlabeled") return true; // unlabeled shapes are always kept
+        if (batchSeen.has(key)) {
+          batchSkipped.push(s.label!);
+          return false;
+        }
+        batchSeen.add(key);
+        return true;
+      });
+
+      // Optionally skip plots whose number is already in the project.
+      const existingSkipped: string[] = [];
+      const shapesToSave =
+        skipExistingPlots && existingNumberSet.size > 0
+          ? deduped.filter((s) => {
+              if (s.kind !== "plot") return true;
+              const key = (s.label || "").trim().toLowerCase();
+              if (!key || key === "unlabeled") return true;
+              if (existingNumberSet.has(key)) {
+                existingSkipped.push(s.label!);
+                return false;
+              }
+              return true;
+            })
+          : deduped;
+
       const result = await saveDigitizedShapes({
         projectId,
-        shapes: shapesState.value.map((s) => ({
+        shapes: shapesToSave.map((s) => ({
           kind: s.kind,
           points: s.points,
           label: s.label || (s.kind === "road" ? "Road" : s.kind === "feature" ? "Area" : "Unlabeled"),
@@ -320,7 +433,15 @@ export function DigitizeWorkspace({
         setStage("review");
         return;
       }
-      setSavedCount(result.created ?? shapesState.value.length);
+
+      const skipNotes: string[] = [];
+      if (batchSkipped.length > 0)
+        skipNotes.push(`Skipped ${batchSkipped.length} within-batch duplicate(s): ${batchSkipped.join(", ")}`);
+      if (existingSkipped.length > 0)
+        skipNotes.push(`Skipped ${existingSkipped.length} already-saved number(s): ${existingSkipped.join(", ")}`);
+      setSavedSkipNotes(skipNotes);
+      setSavedSkippedCount(shapesState.value.length - shapesToSave.length);
+      setSavedCount(result.created ?? shapesToSave.length);
       setStage("done");
       router.refresh();
     } catch (err) {
@@ -351,8 +472,8 @@ export function DigitizeWorkspace({
     return (
       <CornerWarpTool
         sourceCanvas={previewCanvas}
-        onComplete={(warped) => runDetection(warped)}
-        onSkip={() => runDetection(previewCanvas)}
+        onComplete={(warped) => { warpApplied.current = true; runDetection(warped); }}
+        onSkip={() => { warpApplied.current = false; runDetection(previewCanvas); }}
       />
     );
   }
@@ -382,6 +503,12 @@ export function DigitizeWorkspace({
     return (
       <div className="flex min-h-[500px] flex-col items-center justify-center gap-3 rounded-lg border border-gray-200 bg-white p-10 text-center dark:border-gray-800 dark:bg-gray-900">
         <p className="text-lg font-medium">Saved {savedCount} shape(s) to the project.</p>
+        {savedSkippedCount > 0 && (
+          <p className="text-sm text-gray-500">({savedSkippedCount} skipped — see notes below.)</p>
+        )}
+        {savedSkipNotes.map((note) => (
+          <p key={note} className="text-sm text-gray-500">{note}</p>
+        ))}
         <p className="text-sm text-gray-500">They now appear alongside anything traced manually — from here they work exactly the same way.</p>
         <a href={`/dashboard/projects/${projectId}`} className="mt-2 rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-gray-900">
           Back to project
@@ -401,6 +528,37 @@ export function DigitizeWorkspace({
         <CountsHeader shapes={shapesState.value} />
         <SearchPlotNumber shapes={shapesState.value} onFound={handleFound} />
       </div>
+
+      {skipWarpNote && (
+        <p className="rounded-md bg-blue-50 p-3 text-sm text-blue-800 dark:bg-blue-950 dark:text-blue-200">
+          Straightening is off — this project already has{" "}
+          {existingPlotNumbers.length + existingRoadCount + existingFeatureCount} shape(s) on the current plan.
+        </p>
+      )}
+
+      {hasExisting && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+          <p className="font-medium">This project already has {existingPlotNumbers.length} plot(s), {existingRoadCount} road(s), and {existingFeatureCount} feature(s) saved.</p>
+          <label className="mt-2 flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={skipExistingPlots}
+              onChange={(e) => setSkipExistingPlots(e.target.checked)}
+              className="accent-amber-700"
+            />
+            Skip plot numbers that are already saved (recommended)
+          </label>
+          <label className="mt-1.5 flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={saveConfirmed}
+              onChange={(e) => setSaveConfirmed(e.target.checked)}
+              className="accent-amber-700"
+            />
+            I understand — save these shapes anyway
+          </label>
+        </div>
+      )}
 
       {warnings.length > 0 && (
         <div className="rounded-md bg-yellow-50 p-3 text-sm text-yellow-800 dark:bg-yellow-950 dark:text-yellow-200">
@@ -470,6 +628,9 @@ export function DigitizeWorkspace({
           onSelect={setSelectedId}
           mode={mode}
           onUpdateShape={handleUpdatePoints}
+          onUpdateShapeSilent={handleUpdatePointsSilent}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
           onAddShape={handleAddShape}
           onSplitShape={handleSplitShape}
           onModeChange={setMode}
@@ -494,7 +655,7 @@ export function DigitizeWorkspace({
         <ExportMenu shapes={shapesState.value} projectName={projectName} />
         <button
           type="button"
-          disabled={stage === "saving" || shapesState.value.length === 0}
+          disabled={stage === "saving" || shapesState.value.length === 0 || (hasExisting && !saveConfirmed)}
           onClick={handleSave}
           className="rounded-md bg-gray-900 px-5 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-gray-900"
         >

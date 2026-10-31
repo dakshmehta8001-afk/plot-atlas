@@ -1,10 +1,22 @@
 "use client";
 
-// Form for adding a floor to a building: floor number/name plus that
-// floor's own plate layout image, which flats on it get traced against
-// (separate from the project's master site-plan image).
+// Form for adding a floor to a building. Uploads the floor plan image from
+// the browser (PDF→PNG if needed) before calling createFloor, so Vercel's
+// 4.5 MB request body cap doesn't apply to plan images.
 import { useState } from "react";
 import { createFloor } from "@/lib/actions/floors";
+import { uploadFromBrowser } from "@/lib/storage/uploadFromBrowser";
+import { renderPdfFirstPageToCanvas } from "@/lib/digitize/pdfToImageClient";
+import { ACCEPT } from "@/lib/storage/limits";
+
+function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) reject(new Error("Could not export the PDF page as an image."));
+      else resolve(blob);
+    }, "image/png");
+  });
+}
 
 export function FloorFormModal({
   buildingId,
@@ -23,6 +35,39 @@ export function FloorFormModal({
   async function handleSubmit(formData: FormData) {
     setSaving(true);
     setError(null);
+
+    const file = formData.get("plan_image");
+    if (file instanceof File && file.size > 0) {
+      let blob: Blob = file;
+      let filename = file.name;
+
+      if (file.type === "application/pdf" || filename.toLowerCase().endsWith(".pdf")) {
+        try {
+          const { canvas } = await renderPdfFirstPageToCanvas(file);
+          blob = await canvasToBlob(canvas);
+          filename = filename.replace(/\.pdf$/i, ".png");
+        } catch (err) {
+          setSaving(false);
+          setError(`Could not convert that PDF: ${err instanceof Error ? err.message : "unknown error"}`);
+          return;
+        }
+      }
+
+      const uploadResult = await uploadFromBrowser("plan-images", blob, filename);
+      if ("error" in uploadResult) {
+        setSaving(false);
+        setError(uploadResult.error);
+        return;
+      }
+
+      // Replace the file with the storage path so createFloor only receives
+      // a path string, not the file bytes.
+      formData.delete("plan_image");
+      formData.set("plan_image_path", uploadResult.path);
+    } else {
+      formData.delete("plan_image");
+    }
+
     const result = await createFloor(buildingId, projectId, formData);
     setSaving(false);
     if (result.error) {
@@ -73,7 +118,7 @@ export function FloorFormModal({
           <input
             type="file"
             name="plan_image"
-            accept="image/*,application/pdf"
+            accept={ACCEPT["plan-images"]}
             className="mt-1 w-full text-sm"
           />
         </label>

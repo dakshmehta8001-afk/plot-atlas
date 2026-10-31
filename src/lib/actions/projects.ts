@@ -9,8 +9,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { uploadPlanImageFile } from "@/lib/image/uploadPlanImage";
-import type { MapBounds, MapCalibration } from "@/lib/types";
+import { getValidatedPublicUrl } from "@/lib/storage/serverPaths";
+import type { SatelliteAlignment, MapCalibration } from "@/lib/types";
 import type { ActionResult } from "./auth";
 
 function slugify(name: string): string {
@@ -32,7 +32,6 @@ export async function createProject(formData: FormData): Promise<ActionResult> {
   const description = String(formData.get("description") ?? "").trim() || null;
   const location = String(formData.get("location") ?? "").trim() || null;
   const developerName = String(formData.get("developer_name") ?? "").trim() || null;
-  const planImage = formData.get("plan_image");
 
   if (!name) return { error: "Project name is required." };
 
@@ -42,15 +41,19 @@ export async function createProject(formData: FormData): Promise<ActionResult> {
   // slug by hand.
   const slug = `${slugify(name)}-${Math.random().toString(36).slice(2, 7)}`;
 
+  // The browser uploaded the plan image before calling this action and sent
+  // back a storage path. The server validates the path (must start with the
+  // user's own id prefix and contain no traversal) before building the URL.
+  const planImagePath = String(formData.get("plan_image_path") ?? "").trim() || null;
   let planImageUrl: string | null = null;
   let planImageWidth: number | null = null;
   let planImageHeight: number | null = null;
-  if (planImage instanceof File && planImage.size > 0) {
-    const result = await uploadPlanImageFile(supabase, user.id, planImage);
-    if (result.error) return { error: `Plan image upload failed: ${result.error}` };
-    planImageUrl = result.url!;
-    planImageWidth = result.width ?? null;
-    planImageHeight = result.height ?? null;
+  if (planImagePath) {
+    const validated = getValidatedPublicUrl(supabase, "plan-images", planImagePath, user.id);
+    if ("error" in validated) return { error: validated.error };
+    planImageUrl = validated.url;
+    planImageWidth = Number(formData.get("plan_image_width")) || null;
+    planImageHeight = Number(formData.get("plan_image_height")) || null;
   }
 
   const { data: project, error } = await supabase
@@ -167,24 +170,29 @@ export async function setProjectStatus(projectId: string, status: "draft" | "pub
   return {};
 }
 
-// Separate from createProject because a sub-admin can also add/replace the
-// plan image later (e.g. they created the project before the final plan
-// was ready).
-export async function uploadPlanImage(projectId: string, file: File): Promise<ActionResult> {
+// Sets the plan image on an existing project using a storage path the
+// browser already uploaded (via uploadFromBrowser). Replaces the old
+// uploadPlanImage server action, which accepted a File and uploaded server-
+// side — files now go straight to Storage from the browser so Vercel's
+// 4.5 MB request body cap no longer applies.
+export async function setPlanImage(
+  projectId: string,
+  { path, width, height }: { path: string; width?: number; height?: number },
+): Promise<ActionResult> {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { error: "You must be signed in." };
 
-  const result = await uploadPlanImageFile(supabase, user.id, file);
-  if (result.error) return { error: result.error };
+  const validated = getValidatedPublicUrl(supabase, "plan-images", path, user.id);
+  if ("error" in validated) return { error: validated.error };
 
   const { error } = await supabase
     .from("projects")
-    // A replaced image gets its new size too (null if it could not be read:
+    // A replaced image gets its new size too (null if it could not be read —
     // the map then falls back to measuring the image in the browser).
-    .update({ plan_image_url: result.url, plan_image_width: result.width ?? null, plan_image_height: result.height ?? null })
+    .update({ plan_image_url: validated.url, plan_image_width: width ?? null, plan_image_height: height ?? null })
     .eq("id", projectId);
   if (error) return { error: error.message };
 
@@ -192,17 +200,16 @@ export async function uploadPlanImage(projectId: string, file: File): Promise<Ac
   return {};
 }
 
-// Saves the satellite alignment a sub-admin sets up in SatelliteLayoutEditor
-// (drag the plan image's two corners onto real satellite imagery). Setting
-// this switches both the sub-admin's tracer and every viewer's map over to
-// the satellite-based rendering; it's what lib/geo.ts projects each
-// building/unit's existing fractional polygon into for lat/lng rendering.
-export async function updateMapBounds(projectId: string, bounds: MapBounds): Promise<ActionResult> {
+// Saves the 2-point satellite alignment a sub-admin sets up in the
+// "Place on map" dashboard page. Once saved, the public map shows a
+// Plan | Satellite switch and plot outlines on the satellite photo.
+export async function saveSatelliteAlignment(
+  projectId: string,
+  alignment: SatelliteAlignment,
+): Promise<ActionResult> {
   const supabase = await createClient();
-
-  const { error } = await supabase.from("projects").update({ map_bounds: bounds }).eq("id", projectId);
+  const { error } = await supabase.from("projects").update({ map_bounds: alignment }).eq("id", projectId);
   if (error) return { error: error.message };
-
   revalidatePath(`/dashboard/projects/${projectId}`);
   revalidatePath("/projects", "layout");
   return {};

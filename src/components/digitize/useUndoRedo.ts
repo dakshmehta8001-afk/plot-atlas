@@ -22,6 +22,25 @@ export function useUndoRedo<T>(initial: T) {
   const [pastLength, setPastLength] = useState(0);
   const [futureLength, setFutureLength] = useState(0);
 
+  // Updates the present without touching the past/future stacks — used for
+  // every intermediate pointermove during a vertex drag so the history stack
+  // doesn't accumulate one entry per pixel. A single history entry is then
+  // pushed on pointer-up via pushToHistory.
+  const silentUpdate = useCallback((next: T) => {
+    setPresent(next);
+  }, []);
+
+  // Pushes `prev` (the state that existed BEFORE a drag started) onto the
+  // history stack WITHOUT changing present. Called on pointer-up after a
+  // sequence of silentUpdate calls so that one Undo step restores the
+  // pre-drag position, not just the last-but-one pixel.
+  const pushToHistory = useCallback((prev: T) => {
+    past.current.push(prev);
+    future.current = [];
+    setPastLength(past.current.length);
+    setFutureLength(0);
+  }, []);
+
   const set = useCallback((next: T) => {
     past.current.push(present);
     future.current = [];
@@ -51,6 +70,8 @@ export function useUndoRedo<T>(initial: T) {
   return {
     value: present,
     set,
+    silentUpdate,
+    pushToHistory,
     undo,
     redo,
     canUndo: pastLength > 0,

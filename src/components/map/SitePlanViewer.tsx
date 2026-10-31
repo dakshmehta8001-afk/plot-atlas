@@ -918,6 +918,10 @@ export function SitePlanViewer({
   // pinch-zoom gesture instead.
   const activePointers = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinchState = useRef<{ distance: number } | null>(null);
+  // Euclidean distance the primary pointer has moved since the last pointerdown.
+  // Used to distinguish a tap (small movement) from a drag (large movement) so
+  // we don't open a plot's detail panel when the user was actually panning.
+  const pointerMovedRef = useRef(0);
   // Styled hover tooltip for plots, replacing the native browser <title> —
   // (x, y) are relative to containerRef's own box, not the viewport, so the
   // tooltip can be positioned with plain `left`/`top` regardless of where
@@ -1022,9 +1026,10 @@ export function SitePlanViewer({
       const factor = Math.min(1.35, Math.max(1 / 1.35, Math.exp(-dy * (e.ctrlKey ? 0.012 : 0.0016))));
       setView((prev) => {
         const nextScale = Math.min(MAX_FREE_ZOOM, Math.max(1, prev.scale * factor));
-        // Keep the point under the cursor fixed on screen while zooming.
-        const px = rawLocal.x;
-        const py = rawLocal.y;
+        // Convert the cursor from local (post-transform) space to parent space:
+        // P = t + s × local. Then keep P fixed on screen as scale changes.
+        const px = prev.tx + rawLocal.x * prev.scale;
+        const py = prev.ty + rawLocal.y * prev.scale;
         const tx = px - ((px - prev.tx) / prev.scale) * nextScale;
         const ty = py - ((py - prev.ty) / prev.scale) * nextScale;
         return { tx, ty, scale: nextScale };
@@ -1067,6 +1072,7 @@ export function SitePlanViewer({
     if (zoomedId) return;
     activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     (e.target as Element).setPointerCapture(e.pointerId);
+    pointerMovedRef.current = 0;
 
     if (activePointers.current.size === 2) {
       // A second finger just landed — hand off from single-finger pan (if
@@ -1104,8 +1110,8 @@ export function SitePlanViewer({
       if (!rawLocal) return;
       setView((prev) => {
         const nextScale = Math.min(MAX_FREE_ZOOM, Math.max(1, prev.scale * factor));
-        const px = rawLocal.x;
-        const py = rawLocal.y;
+        const px = prev.tx + rawLocal.x * prev.scale;
+        const py = prev.ty + rawLocal.y * prev.scale;
         const tx = px - ((px - prev.tx) / prev.scale) * nextScale;
         const ty = py - ((py - prev.ty) / prev.scale) * nextScale;
         return { tx, ty, scale: nextScale };
@@ -1116,13 +1122,16 @@ export function SitePlanViewer({
     if (!panState.current) return;
     const dx = e.clientX - panState.current.startX;
     const dy = e.clientY - panState.current.startY;
+    pointerMovedRef.current = Math.hypot(dx, dy);
     // Copied out BEFORE the state update: React runs the updater function
     // later, and by then pointer-up may already have cleared panState — which
     // crashed the whole page ("Cannot read properties of null (reading
     // 'origTx')") whenever a drag ended quickly. Confirmed from the
     // production crash log, not guessed.
     const { origTx, origTy } = panState.current;
-    setView((prev) => ({ ...prev, tx: origTx + dx, ty: origTy + dy }));
+    // Divide by pxPerUnit to convert the CSS-pixel delta into SVG map units,
+    // matching the coordinate space that tx/ty are stored in.
+    setView((prev) => ({ ...prev, tx: origTx + dx / pxPerUnit.current, ty: origTy + dy / pxPerUnit.current }));
   }
 
   function handleBackgroundPointerUp(e: React.PointerEvent<SVGSVGElement>) {
@@ -1246,7 +1255,13 @@ export function SitePlanViewer({
   }, [view.scale, scriptedScale]);
   useLayoutEffect(() => {
     applyK();
-  }, [applyK]);
+    // Apply the pan/zoom transform imperatively so the CSS string can multiply
+    // tx/ty by pxPerUnit (a ref) without triggering the react-hooks/refs lint
+    // rule (refs must not be read in JSX/render).
+    if (panGroupRef.current) {
+      panGroupRef.current.style.transform = `translate(${view.tx * pxPerUnit.current}px, ${view.ty * pxPerUnit.current}px) scale(${view.scale})`;
+    }
+  }, [applyK, view]);
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg || typeof ResizeObserver === "undefined") return;
@@ -1269,7 +1284,7 @@ export function SitePlanViewer({
 
   const handlePlotClick = useCallback(
     (unit: Unit) => {
-      setZoomedId(unit.id);
+      if (pointerMovedRef.current > 6) return;
       setHoveredUnit(null);
       onPlotClick(unit);
     },
@@ -1278,6 +1293,7 @@ export function SitePlanViewer({
 
   const handleBuildingClick = useCallback(
     (building: Building) => {
+      if (pointerMovedRef.current > 6) return;
       setZoomedId(building.id);
       // Let the zoom-in transition play out before telling the parent to
       // swap to the floor selector, so the building visually "opens up"
@@ -1321,7 +1337,7 @@ export function SitePlanViewer({
               zoomed-in via the scripted animation below) wraps the existing
               scripted zoom-to-shape group unchanged, so the two compose
               without either needing to know about the other. */}
-          <g ref={panGroupRef} style={{ transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`, transformOrigin: "0 0" }}>
+          <g ref={panGroupRef} style={{ transformOrigin: "0 0" }}>
           <g
             style={{
               transform,

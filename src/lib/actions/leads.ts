@@ -40,6 +40,8 @@ export async function createLead(unitId: string, message: string): Promise<Actio
     message: message || null,
   });
 
+  // 23505 = unique_violation: the one-lead-per-viewer-per-unit index.
+  if (error?.code === "23505") return { error: "You've already enquired about this unit." };
   if (error) return { error: error.message };
 
   revalidatePath("/dashboard", "layout");
