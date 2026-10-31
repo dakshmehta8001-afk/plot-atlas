@@ -1,19 +1,27 @@
 // Email/password login for admins and sub-admins (per spec, viewers never
 // use this page — they sign in with Google directly from the enquiry
-// flow). A thin Client Component wraps the form so it can show the
-// server action's returned error inline without a full page reload.
+// flow). useSearchParams() lives in a Suspense-wrapped child: Next.js
+// requires that boundary or the page can't be statically prerendered.
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { login } from "@/lib/actions/auth";
 
+function CallbackErrorNotice() {
+  const searchParams = useSearchParams();
+  if (!searchParams.get("error")) return null;
+  return (
+    <p className="mb-5 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">
+      Sign-in failed. Please try again.
+    </p>
+  );
+}
+
 export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const searchParams = useSearchParams();
-  const callbackError = searchParams.get("error");
 
   async function handleSubmit(formData: FormData) {
     setSubmitting(true);
@@ -23,51 +31,66 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-sm px-4 py-16">
-      <h1 className="mb-6 text-2xl font-semibold">Sub-admin / admin login</h1>
+    <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-16">
+      <div className="rounded-3xl border border-white/10 bg-[var(--map-panel)] p-8 shadow-[0_8px_40px_rgba(0,0,0,0.4)] backdrop-blur-xl">
+        <h1 className="mb-1 text-2xl font-bold tracking-tight text-white">Sign in</h1>
+        <p className="mb-6 text-sm text-white/50">Admin and sub-admin access</p>
 
-      {callbackError && (
-        <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
-          Sign-in failed. Please try again.
+        <Suspense fallback={null}>
+          <CallbackErrorNotice />
+        </Suspense>
+
+        <form action={handleSubmit} className="space-y-4">
+          <label className="block">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-white/40">
+              Email
+            </span>
+            <input
+              name="email"
+              type="email"
+              required
+              autoComplete="email"
+              className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white shadow-inner transition-colors placeholder:text-white/25 focus:border-white/30 focus:outline-none"
+              placeholder="you@company.com"
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-white/40">
+              Password
+            </span>
+            <input
+              name="password"
+              type="password"
+              required
+              autoComplete="current-password"
+              className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white shadow-inner transition-colors placeholder:text-white/25 focus:border-white/30 focus:outline-none"
+              placeholder="••••••••"
+            />
+          </label>
+
+          {error && (
+            <p className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">
+              {error}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full rounded-xl bg-white px-4 py-3 text-sm font-bold text-[#030712] shadow-[0_0_20px_rgba(255,255,255,0.15)] transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
+          >
+            {submitting ? "Signing in…" : "Sign in"}
+          </button>
+        </form>
+
+        <p className="mt-6 border-t border-white/10 pt-5 text-center text-sm text-white/40">
+          Own or manage a project?{" "}
+          <Link href="/signup" className="font-medium text-white/70 underline-offset-4 transition-colors hover:text-white hover:underline">
+            Request access
+          </Link>
         </p>
-      )}
-
-      <form action={handleSubmit} className="space-y-3">
-        <label className="block text-sm">
-          Email
-          <input
-            name="email"
-            type="email"
-            required
-            className="mt-1 w-full rounded-md border border-gray-300 p-2 dark:border-gray-700 dark:bg-gray-900"
-          />
-        </label>
-        <label className="block text-sm">
-          Password
-          <input
-            name="password"
-            type="password"
-            required
-            className="mt-1 w-full rounded-md border border-gray-300 p-2 dark:border-gray-700 dark:bg-gray-900"
-          />
-        </label>
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-60 dark:bg-white dark:text-gray-900"
-        >
-          {submitting ? "Signing in…" : "Sign in"}
-        </button>
-      </form>
-
-      <p className="mt-4 text-sm text-gray-500">
-        Own or manage a project?{" "}
-        <Link href="/signup" className="underline">
-          Request a sub-admin account
-        </Link>
-        .
-      </p>
+      </div>
     </main>
   );
 }

@@ -266,121 +266,123 @@ export function ProjectMapClient({
       </div>
 
       {showMapChrome && (
-        // pointer-events-none on the container + wrapper so the map stays
-        // fully clickable underneath. Only the actual interactive leaf
-        // elements opt back in with pointer-events-auto, so empty chrome
-        // space never swallows a plot click.
-        <div className="pointer-events-none absolute left-0 right-0 top-0 z-[500] p-3 sm:p-4">
-          <div className="pointer-events-none flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-[var(--map-panel)]/90 px-3 py-2 shadow-2xl backdrop-blur-xl sm:gap-3 sm:px-5 sm:py-3">
+        // No card box — a gradient veil makes text readable while letting
+        // the map show through. Every interactive element is an independent
+        // pill with pointer-events-auto; the surrounding space stays
+        // pointer-events-none so the map beneath is always clickable.
+        <div className="pointer-events-none absolute left-0 right-0 top-0 z-[500]">
+          {/* Gradient veil — fades from black to transparent so map bleeds through */}
+          <div className="h-28 bg-gradient-to-b from-black/75 via-black/30 to-transparent sm:h-24" />
 
-            {/* Back to browse */}
+          {/* Row 1: back + title + plan/satellite toggle */}
+          <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-2 px-3 pt-3 sm:px-5 sm:pt-4">
             <a
               href="/"
-              className="pointer-events-auto flex shrink-0 items-center gap-1 rounded-full border border-white/15 bg-black/20 px-2.5 py-1 text-[11px] font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white"
-              aria-label="Back to projects"
+              className="pointer-events-auto flex shrink-0 items-center gap-1 rounded-full bg-black/40 px-2.5 py-1 text-[11px] font-medium text-white/80 backdrop-blur-sm transition-colors hover:bg-black/60 hover:text-white border border-white/10"
             >
-              ← Browse
+              ← Back
             </a>
 
-            {/* Project title */}
             <div className="pointer-events-none min-w-0 flex-1">
               {ownerName && (
-                <p className="truncate text-[9px] font-semibold uppercase tracking-widest text-blue-300/80">{ownerName}</p>
+                <p className="truncate text-[9px] font-semibold uppercase tracking-widest text-blue-300/70 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+                  {ownerName}
+                </p>
               )}
-              <h1 className="truncate text-sm font-semibold text-white sm:text-base">{project.name}</h1>
-              {project.location && <p className="hidden truncate text-[10px] text-white/50 sm:block">{project.location}</p>}
+              <h1 className="truncate text-sm font-bold text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)] sm:text-base">
+                {project.name}
+              </h1>
             </div>
 
-            {/* Plan / Satellite toggle */}
             {hasSatellite && (
-              <div className="pointer-events-auto flex shrink-0 rounded-full border border-white/15 bg-black/20 p-0.5">
+              <div className="pointer-events-auto flex shrink-0 rounded-full border border-white/15 bg-black/40 p-0.5 backdrop-blur-sm">
                 <button
                   type="button"
                   onClick={() => setMapView("plan")}
-                  className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-all ${mapView === "plan" ? "bg-white/15 text-white" : "text-white/50 hover:text-white"}`}
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-all ${mapView === "plan" ? "bg-white/20 text-white" : "text-white/50 hover:text-white"}`}
                 >
                   Plan
                 </button>
                 <button
                   type="button"
                   onClick={() => setMapView("satellite")}
-                  className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-all ${mapView === "satellite" ? "bg-white/15 text-white" : "text-white/50 hover:text-white"}`}
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-all ${mapView === "satellite" ? "bg-white/20 text-white" : "text-white/50 hover:text-white"}`}
                 >
-                  Satellite
+                  Sat
                 </button>
               </div>
             )}
+          </div>
 
-            {/* Status chips — scrollable row on phones */}
-            <div className="pointer-events-none flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
-              <Pill label="Total" value={counts.total} tone="neutral" />
-              <StatusChip label="Available" value={counts.available} tone="green" active={statusFilter === "available"} onClick={() => toggleStatus("available")} />
-              <StatusChip label="Hold" value={counts.hold} tone="yellow" active={statusFilter === "hold"} onClick={() => toggleStatus("hold")} />
-              <StatusChip label="Booked" value={counts.booked} tone="blue" active={statusFilter === "booked"} onClick={() => toggleStatus("booked")} />
-              <StatusChip label="Sold" value={counts.sold} tone="red" active={statusFilter === "sold"} onClick={() => toggleStatus("sold")} />
-            </div>
+          {/* Row 2: status chips — scrollable, each chip has its own backdrop */}
+          <div className="pointer-events-none absolute inset-x-0 top-10 flex gap-1.5 overflow-x-auto px-3 pb-1 [scrollbar-width:none] sm:top-11 sm:flex-wrap sm:overflow-visible sm:px-5 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
+            <Pill label="Total" value={counts.total} tone="neutral" />
+            <StatusChip label="Avail" value={counts.available} tone="green" active={statusFilter === "available"} onClick={() => toggleStatus("available")} />
+            <StatusChip label="Hold" value={counts.hold} tone="yellow" active={statusFilter === "hold"} onClick={() => toggleStatus("hold")} />
+            <StatusChip label="Booked" value={counts.booked} tone="blue" active={statusFilter === "booked"} onClick={() => toggleStatus("booked")} />
+            <StatusChip label="Sold" value={counts.sold} tone="red" active={statusFilter === "sold"} onClick={() => toggleStatus("sold")} />
 
-            {/* Zone / feature legend */}
+            {/* Zone toggle + chips (desktop) — inline with stats */}
             {(zones.length > 0 || featureKindsPresent.length > 0) && (
-              <>
-                {/* Phone: one "Zones" button opens the sheet */}
-                <div className="pointer-events-none sm:hidden">
-                  <button
-                    type="button"
-                    onClick={() => setZonesOpen(true)}
-                    className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-white/20 bg-black/20 px-3 py-1.5 text-[12px] font-medium text-white/80"
-                  >
+              <div className="pointer-events-none hidden items-center gap-1.5 sm:flex">
+                <span className="text-white/20">|</span>
+                {zones.length > 0 && (
+                  <label className="pointer-events-auto flex cursor-pointer items-center gap-1 rounded-full bg-black/30 px-2 py-1 text-[10px] text-white/60 backdrop-blur-sm border border-white/10">
+                    <input
+                      type="checkbox"
+                      checked={zoneColourMode}
+                      onChange={(e) => setZoneColourMode(e.target.checked)}
+                      className="accent-blue-400 h-2.5 w-2.5"
+                    />
                     Zones
-                    {selectedZone ? <span className="rounded-full bg-blue-500/30 px-1.5 text-[10px] text-blue-200">1</span> : null}
-                    {zoneColourMode ? <span className="text-[10px] text-blue-300">on</span> : null}
+                  </label>
+                )}
+                {zones.map((zone) => (
+                  <button
+                    key={zone}
+                    onClick={() => toggleZone(zone)}
+                    className="pointer-events-auto flex items-center gap-1 rounded-full border bg-black/30 px-2 py-1 text-[10px] font-medium backdrop-blur-sm transition-opacity"
+                    style={{
+                      borderColor: zoneColorFor(zone, zones),
+                      color: zoneColorFor(zone, zones),
+                      opacity: selectedZone && selectedZone !== zone ? 0.35 : 1,
+                    }}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: zoneColorFor(zone, zones) }} />
+                    {zone}
                   </button>
-                </div>
-                <div className="pointer-events-none hidden flex-wrap items-center gap-1.5 sm:flex">
-                  {zones.length > 0 && (
-                    <>
-                      <label className="pointer-events-auto mr-0.5 flex items-center gap-1.5 rounded-full bg-black/20 px-2 py-1 text-[10px] text-white/70">
-                        <input
-                          type="checkbox"
-                          checked={zoneColourMode}
-                          onChange={(e) => setZoneColourMode(e.target.checked)}
-                          className="accent-blue-500"
-                        />
-                        Zone
-                      </label>
-                      {zones.map((zone) => (
-                        <button
-                          key={zone}
-                          onClick={() => toggleZone(zone)}
-                          className="pointer-events-auto flex items-center gap-1.5 rounded-full border bg-black/20 px-2 py-1 text-[11px] font-medium transition-opacity"
-                          style={{
-                            borderColor: zoneColorFor(zone, zones),
-                            color: zoneColorFor(zone, zones),
-                            opacity: selectedZone && selectedZone !== zone ? 0.4 : 1,
-                          }}
-                        >
-                          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: zoneColorFor(zone, zones) }} />
-                          {zone}
-                        </button>
-                      ))}
-                    </>
-                  )}
-                  {featureKindsPresent.map((kind) => {
-                    const style = SITE_FEATURE_STYLES[kind];
-                    return (
-                      <span
-                        key={kind}
-                        className="flex items-center gap-1.5 rounded-full border bg-black/20 px-2 py-1 text-[11px] font-medium"
-                        style={{ borderColor: style.border, color: style.border }}
-                      >
-                        <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: style.border }} />
-                        {style.label}
-                      </span>
-                    );
-                  })}
-                </div>
-              </>
+                ))}
+                {featureKindsPresent.map((kind) => {
+                  const style = SITE_FEATURE_STYLES[kind];
+                  return (
+                    <span
+                      key={kind}
+                      className="flex items-center gap-1 rounded-full border bg-black/30 px-2 py-1 text-[10px] font-medium backdrop-blur-sm"
+                      style={{ borderColor: style.border, color: style.border }}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: style.border }} />
+                      {style.label}
+                    </span>
+                  );
+                })}
+              </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Mobile-only: floating Zones button (bottom-left, above the tab bar) */}
+      {showMapChrome && (zones.length > 0 || featureKindsPresent.length > 0) && (
+        <div className="pointer-events-none absolute bottom-20 left-4 z-[500] sm:hidden">
+          <button
+            type="button"
+            onClick={() => setZonesOpen(true)}
+            className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-white/15 bg-black/50 px-3 py-1.5 text-[12px] font-medium text-white/80 backdrop-blur-md shadow-lg"
+          >
+            <span className="h-2 w-2 rounded-full bg-white/40" />
+            Zones
+            {selectedZone && <span className="rounded-full bg-blue-500/40 px-1.5 text-[10px] text-blue-200">1</span>}
+          </button>
         </div>
       )}
 
