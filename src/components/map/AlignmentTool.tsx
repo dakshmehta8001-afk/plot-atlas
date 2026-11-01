@@ -14,13 +14,16 @@ import { computeCorners, projectPoint, unprojectPoint, autoAlignFromCalibration 
 import { saveSatelliteAlignment } from "@/lib/actions/projects";
 import { resolveGoogleMapsCoords } from "@/lib/actions/satellite";
 import { ESRI_TILE_URL, ESRI_ATTRIBUTION } from "@/lib/satellite";
-import type { MapCalibration, SatelliteAlignment, Unit } from "@/lib/types";
+import type { MapCalibration, Road, SatelliteAlignment, SiteFeature, Unit } from "@/lib/types";
+import { buildFeaturesGeoJSON, buildPlotsGeoJSON, buildRoadsGeoJSON } from "@/lib/map/satelliteGeoJson";
 import { configureMaplibreWorker } from "@/lib/map/maplibreWorker";
 
 interface Props {
   projectId: string;
   planImageUrl: string;
   plots: Unit[];
+  roads?: Road[];
+  features?: SiteFeature[];
   existingAlignment: SatelliteAlignment | null;
   calibration: MapCalibration | null;
   imageWidth: number | null;
@@ -35,7 +38,7 @@ type DragTarget = "body" | "north" | "scale" | null;
 const HANDLE_PX = 14; // hit-target radius for HTML handles
 
 export function AlignmentTool({
-  projectId, planImageUrl, plots, existingAlignment,
+  projectId, planImageUrl, plots, roads = [], features = [], existingAlignment,
   calibration, imageWidth, imageHeight, projectLocation,
 }: Props) {
   const canAutoAlign = calibration !== null && imageWidth !== null && imageHeight !== null;
@@ -50,6 +53,10 @@ export function AlignmentTool({
   );
   const [linkError, setLinkError] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
+  // Default: line up the digitized layout (plots, roads) with the land. The
+  // original plan photo is optional, as a reference underneath.
+  const [showPlan, setShowPlan] = useState(false);
+  const showPlanRef = useRef(false);
   // Handle screen positions — updated on every map move/zoom
   const [handles, setHandles] = useState<{ center: [number, number]; north: [number, number]; scale: [number, number] } | null>(null);
 
@@ -59,6 +66,9 @@ export function AlignmentTool({
   const mapRef = useRef<any>(null);
   const alignRef = useRef(alignment);
   useEffect(() => { alignRef.current = alignment; }, [alignment]);
+
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const hasAlignment = alignment !== null;
 
   // Drag state
   const dragRef = useRef<{ target: DragTarget; startPx: [number, number]; startAlign: SatelliteAlignment } | null>(null);
@@ -74,7 +84,7 @@ export function AlignmentTool({
         container: containerRef.current,
         style: {
           version: 8,
-          sources: { esri: { type: "raster", tiles: [ESRI_TILE_URL], tileSize: 256, attribution: ESRI_ATTRIBUTION } },
+          sources: { esri: { type: "raster", tiles: [ESRI_TILE_URL], tileSize: 256, maxzoom: 18, attribution: ESRI_ATTRIBUTION } },
           layers: [{ id: "esri", type: "raster", source: "esri" }],
         },
         center: a ? [a.center.lng, a.center.lat] : [78.9629, 20.5937],
@@ -86,6 +96,8 @@ export function AlignmentTool({
       map.on("load", () => {
         if (!alignRef.current) return;
         addPlanLayer(map, planImageUrl, alignRef.current);
+        addDigitizedLayers(map, alignRef.current);
+        fitToLayout(map, alignRef.current);
         updateHandles(map, alignRef.current);
       });
 
@@ -97,25 +109,103 @@ export function AlignmentTool({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only on mount
   }, []);
 
-  // Sync plan image layer whenever alignment changes
+  // Sync plan image and digitized layers whenever alignment changes
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !map.loaded()) return;
-    if (!alignment) { if (map.getSource("plan")) { map.removeLayer("plan-layer"); map.removeSource("plan"); } return; }
+    if (!alignment) {
+      removeDigitizedLayers(map);
+      if (map.getSource("plan")) { map.removeLayer("plan-layer"); map.removeSource("plan"); }
+      return;
+    }
     if (map.getSource("plan")) {
       map.getSource("plan").setCoordinates(computeCorners(alignment));
+      updateDigitized(map, alignment);
     } else {
       addPlanLayer(map, planImageUrl, alignment);
+      addDigitizedLayers(map, alignment);
     }
     updateHandles(map, alignment);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [alignment]);
 
+  // The drag overlay sits above the map, so the scroll wheel never reaches
+  // MapLibre. Forward wheel events as zoom so the layout can be inspected.
+  useEffect(() => {
+    const el = overlayRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const m = mapRef.current;
+      if (m) m.easeTo({ zoom: m.getZoom() - e.deltaY * 0.0015, duration: 0 });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [hasAlignment]);
+
+  // Zoom the map so the whole layout fills the view (the layout is often only
+  // a few dozen metres across, far smaller than the default zoom shows).
+  function fitToLayout(map: unknown, a: SatelliteAlignment, duration = 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const m = map as any;
+    const pts = computeCorners(a);
+    const lngs = pts.map((p: number[]) => p[0]);
+    const lats = pts.map((p: number[]) => p[1]);
+    m.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: 70, maxZoom: 19, duration });
+  }
+
+  // Show or hide the original plan photo underneath the digitized layout
+  useEffect(() => {
+    showPlanRef.current = showPlan;
+    const map = mapRef.current;
+    if (map && map.getLayer("plan-layer")) map.setPaintProperty("plan-layer", "raster-opacity", showPlan ? 0.85 : 0);
+  }, [showPlan]);
+
   function addPlanLayer(map: unknown, url: string, a: SatelliteAlignment) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const m = map as any;
     m.addSource("plan", { type: "image", url, coordinates: computeCorners(a) });
-    m.addLayer({ id: "plan-layer", type: "raster", source: "plan", paint: { "raster-opacity": 0.85 } });
+    m.addLayer({ id: "plan-layer", type: "raster", source: "plan", paint: { "raster-opacity": showPlanRef.current ? 0.85 : 0 } });
+  }
+
+  // Digitized layout: the same plots, roads and site features the public
+  // satellite view draws, re-projected on every drag, rotate or resize.
+  function addDigitizedLayers(map: unknown, a: SatelliteAlignment) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const m = map as any;
+    if (m.getSource("d-plots")) return;
+    m.addSource("d-features", { type: "geojson", data: buildFeaturesGeoJSON(features, a) });
+    m.addLayer({ id: "d-features-fill", type: "fill", source: "d-features", paint: { "fill-color": ["get", "fillColor"], "fill-opacity": 0.4 } });
+    m.addLayer({ id: "d-features-outline", type: "line", source: "d-features", paint: { "line-color": ["get", "borderColor"], "line-width": 1 } });
+    m.addSource("d-roads", { type: "geojson", data: buildRoadsGeoJSON(roads, a) });
+    m.addLayer({ id: "d-roads-line", type: "line", source: "d-roads", paint: { "line-color": "#e2c97e", "line-width": ["get", "lineWidth"], "line-opacity": 0.6 } });
+    m.addSource("d-plots", { type: "geojson", data: buildPlotsGeoJSON(plots, a, null) });
+    m.addLayer({ id: "d-plots-fill", type: "fill", source: "d-plots", paint: { "fill-color": ["get", "fillColor"], "fill-opacity": ["get", "fillOpacity"] } });
+    m.addLayer({ id: "d-plots-outline", type: "line", source: "d-plots", paint: { "line-color": ["get", "strokeColor"], "line-width": 1.5 } });
+    m.addLayer({
+      id: "d-plots-label", type: "symbol", source: "d-plots",
+      layout: { "text-field": ["get", "label"], "text-size": 10, "symbol-placement": "point", "text-allow-overlap": true },
+      paint: { "text-color": "#ffffff", "text-halo-color": "#000000", "text-halo-width": 1.5 },
+    });
+  }
+
+  function updateDigitized(map: unknown, a: SatelliteAlignment) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const m = map as any;
+    m.getSource("d-plots")?.setData(buildPlotsGeoJSON(plots, a, null));
+    m.getSource("d-roads")?.setData(buildRoadsGeoJSON(roads, a));
+    m.getSource("d-features")?.setData(buildFeaturesGeoJSON(features, a));
+  }
+
+  function removeDigitizedLayers(map: unknown) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const m = map as any;
+    for (const id of ["d-plots-label", "d-plots-outline", "d-plots-fill", "d-roads-line", "d-features-outline", "d-features-fill"]) {
+      if (m.getLayer(id)) m.removeLayer(id);
+    }
+    for (const id of ["d-plots", "d-roads", "d-features"]) {
+      if (m.getSource(id)) m.removeSource(id);
+    }
   }
 
   function updateHandles(map: unknown, a: SatelliteAlignment) {
@@ -203,17 +293,17 @@ export function AlignmentTool({
   }
 
   function applyGeoPoint(lat: number, lng: number) {
+    let next: SatelliteAlignment;
     if (canAutoAlign) {
-      const a = autoAlignFromCalibration(lat, lng, calibration!, imageWidth!, imageHeight!);
-      setAlignment(a);
-      mapRef.current?.flyTo({ center: [lng, lat], zoom: 17, duration: 1000 });
+      next = autoAlignFromCalibration(lat, lng, calibration!, imageWidth!, imageHeight!);
     } else {
-      // Just fly to the location; the sub-admin uses handles to finish
-      setAlignment((prev) => prev ? { ...prev, center: { lat, lng } } : {
-        center: { lat, lng }, northAngle: 0, mppX: 500, mppY: 400,
-      });
-      mapRef.current?.flyTo({ center: [lng, lat], zoom: 17, duration: 1000 });
+      // Just move to the location; the sub-admin uses handles to finish
+      next = alignRef.current
+        ? { ...alignRef.current, center: { lat, lng } }
+        : { center: { lat, lng }, northAngle: 0, mppX: 500, mppY: 400 };
     }
+    setAlignment(next);
+    if (mapRef.current) fitToLayout(mapRef.current, next, 1000);
     setSavedOk(false);
   }
 
@@ -240,7 +330,7 @@ export function AlignmentTool({
 
   const panelWidth = containerRef.current?.offsetWidth ?? 0;
   const panelHeight = (containerRef.current?.offsetHeight ?? 0);
-  void panelWidth; void panelHeight; void plots; // used by parent, kept in props for future label overlay
+  void panelWidth; void panelHeight;
 
   return (
     <div className="flex flex-col gap-4">
@@ -278,8 +368,14 @@ export function AlignmentTool({
       {/* Instruction */}
       {alignment && (
         <p className="text-xs text-white/50">
-          Drag the plan to reposition · drag the <span className="text-blue-300 font-medium">blue dot</span> to rotate · drag the <span className="text-amber-300 font-medium">amber dot</span> to resize.
+          Drag the layout to reposition · drag the <span className="text-blue-300 font-medium">blue dot</span> to rotate · drag the <span className="text-amber-300 font-medium">amber dot</span> to resize.
         </p>
+      )}
+      {alignment && (
+        <label className="flex w-fit cursor-pointer items-center gap-2 text-xs text-white/60">
+          <input type="checkbox" checked={showPlan} onChange={(e) => setShowPlan(e.target.checked)} className="accent-blue-500" />
+          Show original plan photo underneath
+        </label>
       )}
 
       {/* Map */}
@@ -289,12 +385,22 @@ export function AlignmentTool({
         {/* Drag overlay for the plan body (covers the whole map while a plan exists) */}
         {alignment && (
           <div
+            ref={overlayRef}
             className="absolute inset-0"
             style={{ cursor: "grab", zIndex: 5 }}
             onPointerDown={(e) => onPointerDown(e, "body")}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
           />
+        )}
+
+        {/* Zoom buttons (the drag overlay blocks MapLibre's own controls) */}
+        {alignment && (
+          <div className="absolute right-3 top-3 flex flex-col overflow-hidden rounded-lg border border-white/15 bg-black/60 backdrop-blur" style={{ zIndex: 30 }}>
+            <button type="button" aria-label="Zoom in" onClick={() => mapRef.current?.zoomIn()} className="h-9 w-9 text-lg text-white/80 hover:bg-white/10">+</button>
+            <button type="button" aria-label="Zoom out" onClick={() => mapRef.current?.zoomOut()} className="h-9 w-9 border-t border-white/15 text-lg text-white/80 hover:bg-white/10">−</button>
+            <button type="button" aria-label="Fit layout to view" onClick={() => alignment && mapRef.current && fitToLayout(mapRef.current, alignment, 400)} className="h-9 w-9 border-t border-white/15 text-xs text-white/80 hover:bg-white/10">Fit</button>
+          </div>
         )}
 
         {/* HTML handles positioned via map.project() */}

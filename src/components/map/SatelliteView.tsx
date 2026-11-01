@@ -12,9 +12,8 @@
 // Only the digitized shapes are drawn — not the raw plan image file.
 // Clicking a plot polygon fires onPlotClick so the caller opens UnitInfoCard.
 import { useEffect, useMemo, useRef } from "react";
-import { projectPoint, projectPolygon } from "@/lib/map/geo";
+import { buildFeaturesGeoJSON, buildPlotsGeoJSON, buildRoadsGeoJSON } from "@/lib/map/satelliteGeoJson";
 import { ESRI_TILE_URL, ESRI_ATTRIBUTION } from "@/lib/satellite";
-import { SITE_FEATURE_STYLES, UNIT_STATUS_STYLES } from "@/lib/types";
 import type { Road, SiteFeature, SatelliteAlignment, Unit, UnitStatus } from "@/lib/types";
 import { configureMaplibreWorker } from "@/lib/map/maplibreWorker";
 
@@ -63,7 +62,7 @@ export function SatelliteView({
         style: {
           version: 8,
           sources: {
-            esri: { type: "raster", tiles: [ESRI_TILE_URL], tileSize: 256, attribution: ESRI_ATTRIBUTION },
+            esri: { type: "raster", tiles: [ESRI_TILE_URL], tileSize: 256, maxzoom: 18, attribution: ESRI_ATTRIBUTION },
           },
           layers: [{ id: "esri-layer", type: "raster", source: "esri" }],
         },
@@ -156,65 +155,4 @@ export function SatelliteView({
   }, [plots, stableAlignment, highlightStatus]);
 
   return <div ref={containerRef} className="absolute inset-0" />;
-}
-
-// ---------- GeoJSON builders ----------
-
-function buildPlotsGeoJSON(plots: Unit[], a: SatelliteAlignment, highlightStatus: UnitStatus | null) {
-  const features = plots
-    .filter((u) => u.polygon_points.length >= 3)
-    .map((u) => {
-      const latlngs = projectPolygon(u.polygon_points, a);
-      const coords = [...latlngs.map((p) => [p.lng, p.lat]), [latlngs[0].lng, latlngs[0].lat]];
-      const style = UNIT_STATUS_STYLES[u.status];
-      const dimmed = highlightStatus !== null && u.status !== highlightStatus;
-      return {
-        type: "Feature" as const,
-        properties: {
-          unitId: u.id,
-          label: u.unit_number,
-          fillColor: style.fill,
-          strokeColor: style.border,
-          fillOpacity: dimmed ? 0.05 : 0.35,
-          outlineOpacity: dimmed ? 0.2 : 1,
-          labelOpacity: dimmed ? 0.2 : 1,
-        },
-        geometry: { type: "Polygon" as const, coordinates: [coords] },
-      };
-    });
-  return { type: "FeatureCollection" as const, features };
-}
-
-function buildRoadsGeoJSON(roads: Road[], a: SatelliteAlignment) {
-  const features = roads
-    .filter((r) => r.path_points.length >= 2)
-    .map((r) => {
-      const latlngs = r.path_points.map((p) => projectPoint(p, a));
-      const coords = latlngs.map((p) => [p.lng, p.lat]);
-      // Parse feet from label like "30 ft" → display-width ≈ ft × 0.1 px (rough scale at zoom 17)
-      const ft = parseFloat(r.width_label) || 30;
-      const lineWidth = Math.max(2, Math.round(ft * 0.08));
-      return {
-        type: "Feature" as const,
-        properties: { widthLabel: r.width_label, lineWidth },
-        geometry: { type: "LineString" as const, coordinates: coords },
-      };
-    });
-  return { type: "FeatureCollection" as const, features };
-}
-
-function buildFeaturesGeoJSON(features: SiteFeature[], a: SatelliteAlignment) {
-  const geoFeatures = features
-    .filter((f) => f.polygon_points.length >= 3)
-    .map((f) => {
-      const latlngs = projectPolygon(f.polygon_points, a);
-      const coords = [...latlngs.map((p) => [p.lng, p.lat]), [latlngs[0].lng, latlngs[0].lat]];
-      const style = SITE_FEATURE_STYLES[f.kind];
-      return {
-        type: "Feature" as const,
-        properties: { label: f.label, fillColor: style.fill, borderColor: style.border },
-        geometry: { type: "Polygon" as const, coordinates: [coords] },
-      };
-    });
-  return { type: "FeatureCollection" as const, features: geoFeatures };
 }
