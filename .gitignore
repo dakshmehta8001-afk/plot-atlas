@@ -48,3 +48,6 @@ next-env.d.ts
 
 # scratch staging area for one-off storage uploads/queries, not app source
 /.seed
+
+# generated from node_modules by scripts/copy-maplibre-worker.mjs
+/public/maplibre-gl-worker.mjs

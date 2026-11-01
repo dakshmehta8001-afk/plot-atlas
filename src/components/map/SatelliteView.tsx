@@ -16,6 +16,7 @@ import { projectPoint, projectPolygon } from "@/lib/map/geo";
 import { ESRI_TILE_URL, ESRI_ATTRIBUTION } from "@/lib/satellite";
 import { SITE_FEATURE_STYLES, UNIT_STATUS_STYLES } from "@/lib/types";
 import type { Road, SiteFeature, SatelliteAlignment, Unit, UnitStatus } from "@/lib/types";
+import { configureMaplibreWorker } from "@/lib/map/maplibreWorker";
 
 interface Props {
   alignment: SatelliteAlignment;
@@ -54,6 +55,7 @@ export function SatelliteView({
   useEffect(() => {
     if (!containerRef.current) return;
     import("maplibre-gl").then((mod) => {
+      configureMaplibreWorker(mod);
       if (!containerRef.current || mapRef.current) return;
       const center: [number, number] = [stableAlignment.center.lng, stableAlignment.center.lat];
       const map = new mod.Map({
