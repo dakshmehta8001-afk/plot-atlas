@@ -7,13 +7,17 @@
 import { ROAD_WIDTH_PRESETS, SITE_FEATURE_KIND_OPTIONS, SITE_FEATURE_STYLES, UNIT_STATUS_OPTIONS, UNIT_STATUS_STYLES, type SiteFeatureKind, type UnitStatus } from "@/lib/types";
 import { polygonAreaFraction } from "@/lib/map/svgPolygon";
 import type { DetectedShape } from "@/lib/digitize/types";
+import { LABEL_ISSUE_TEXT, type LabelIssue } from "@/lib/digitize/labelCheck";
 
 export function ShapeDetailsPanel({
   shape,
+  labelIssue,
   onChange,
   onDelete,
 }: {
   shape: DetectedShape;
+  /** Plots only: a problem with the number, found by plotLabelIssues. */
+  labelIssue?: LabelIssue;
   onChange: (next: DetectedShape) => void;
   onDelete: () => void;
 }) {
@@ -40,8 +44,13 @@ export function ShapeDetailsPanel({
           value={shape.label}
           onChange={(e) => onChange({ ...shape, label: e.target.value })}
           placeholder={shape.kind === "road" ? "e.g. 40 ft" : shape.kind === "feature" ? "e.g. Central Park" : "e.g. 38"}
-          className="mt-1 w-full rounded-md border border-gray-300 p-2 dark:border-gray-700 dark:bg-gray-950"
+          className={`mt-1 w-full rounded-md border p-2 dark:bg-gray-950 ${labelIssue && shape.kind === "plot" ? "border-amber-500" : "border-gray-300 dark:border-gray-700"}`}
         />
+        {labelIssue && shape.kind === "plot" && (
+          <span role="alert" className="mt-1.5 block text-xs text-amber-700 dark:text-amber-300">
+            {LABEL_ISSUE_TEXT[labelIssue]}
+          </span>
+        )}
       </label>
 
       {shape.kind === "road" && (

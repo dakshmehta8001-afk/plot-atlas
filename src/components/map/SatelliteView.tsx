@@ -12,9 +12,11 @@
 // Only the digitized shapes are drawn — not the raw plan image file.
 // Clicking a plot polygon fires onPlotClick so the caller opens UnitInfoCard.
 import { useEffect, useMemo, useRef } from "react";
+import { computeCorners } from "@/lib/map/geo";
 import { buildFeaturesGeoJSON, buildPlotsGeoJSON, buildRoadsGeoJSON } from "@/lib/map/satelliteGeoJson";
 import { ESRI_TILE_URL, ESRI_ATTRIBUTION } from "@/lib/satellite";
 import type { Road, SiteFeature, SatelliteAlignment, Unit, UnitStatus } from "@/lib/types";
+import "maplibre-gl/dist/maplibre-gl.css";
 import { configureMaplibreWorker } from "@/lib/map/maplibreWorker";
 
 interface Props {
@@ -72,8 +74,22 @@ export function SatelliteView({
       });
       mapRef.current = map;
 
+      // Scale bar so distances on the satellite photo mean something.
+      map.addControl(new mod.ScaleControl({ maxWidth: 90, unit: "metric" }), "bottom-right");
+
       map.on("load", () => {
         const a = stableAlignment;
+
+        // A layout is often only a few dozen metres across, so zoom to it
+        // instead of the default zoom, leaving room for the header and tabs.
+        const corners = computeCorners(a);
+        const lngs = corners.map((c) => c[0]);
+        const lats = corners.map((c) => c[1]);
+        map.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], {
+          padding: { top: 150, bottom: 110, left: 24, right: 24 },
+          maxZoom: 19,
+          duration: 0,
+        });
 
         // Roads
         if (roads.length > 0) {
@@ -123,9 +139,11 @@ export function SatelliteView({
           source: "plots",
           layout: {
             "text-field": ["get", "label"],
-            "text-size": 10,
+            // Grows as you zoom in. Overlapping labels hide until there is
+            // room, instead of piling on top of each other.
+            "text-size": ["interpolate", ["linear"], ["zoom"], 16, 9, 19, 14],
             "symbol-placement": "point",
-            "text-allow-overlap": true,
+            "text-allow-overlap": false,
           },
           paint: { "text-color": "#ffffff", "text-halo-color": "#000000", "text-halo-width": 1.5, "text-opacity": ["get", "labelOpacity"] },
         });
@@ -154,5 +172,12 @@ export function SatelliteView({
     if (src) src.setData(buildPlotsGeoJSON(plots, stableAlignment, highlightStatus));
   }, [plots, stableAlignment, highlightStatus]);
 
-  return <div ref={containerRef} className="absolute inset-0" />;
+  // maplibre-gl.css sets its container to position: relative, which would
+  // override absolute positioning here and collapse the map to zero height.
+  // So the sized box is the outer div and the map fills it.
+  return (
+    <div className="absolute inset-0">
+      <div ref={containerRef} className="sat-map h-full w-full" />
+    </div>
+  );
 }

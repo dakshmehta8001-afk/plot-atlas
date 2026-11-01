@@ -6,7 +6,7 @@
 // just flow through the same array).
 import type { DetectedShape } from "@/lib/digitize/types";
 
-export function CountsHeader({ shapes }: { shapes: DetectedShape[] }) {
+export function CountsHeader({ shapes, labelIssueCount = 0 }: { shapes: DetectedShape[]; labelIssueCount?: number }) {
   const plots = shapes.filter((s) => s.kind === "plot");
   const counts = {
     total: plots.length,
@@ -33,6 +33,14 @@ export function CountsHeader({ shapes }: { shapes: DetectedShape[] }) {
           {pill.label} <span className="font-bold">{pill.value}</span>
         </span>
       ))}
+      {labelIssueCount > 0 && (
+        <span
+          className="rounded-full border border-amber-500 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-700 dark:text-amber-300"
+          title="Plots whose number is missing, looks misread, or is used twice. Select a plot to fix it."
+        >
+          Check numbers <span className="font-bold">{labelIssueCount}</span>
+        </span>
+      )}
     </div>
   );
 }
