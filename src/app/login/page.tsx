@@ -13,7 +13,7 @@ function CallbackErrorNotice() {
   const searchParams = useSearchParams();
   if (!searchParams.get("error")) return null;
   return (
-    <p className="mb-5 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">
+    <p className="mb-5 rounded-xl border border-[#e8c3bd] bg-[#fbeeec] p-3 text-sm text-[#a2362a]">
       Sign-in failed. Please try again.
     </p>
   );
@@ -31,10 +31,11 @@ export default function LoginPage() {
   }
 
   return (
+    <div className="theme-paper flex flex-1 bg-[var(--paper)] text-[var(--ink)]">
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-16">
-      <div className="rounded-3xl border border-white/10 bg-[var(--map-panel)] p-8 shadow-[0_8px_40px_rgba(0,0,0,0.4)] backdrop-blur-xl">
-        <h1 className="mb-1 text-2xl font-bold tracking-tight text-white">Sign in</h1>
-        <p className="mb-6 text-sm text-white/50">Admin and sub-admin access</p>
+      <div className="rounded-3xl border border-[var(--line)] bg-white p-8 shadow-[0_1px_2px_rgba(27,42,34,0.05),0_20px_40px_-24px_rgba(27,42,34,0.3)]">
+        <h1 className="mb-1 font-display text-[28px] leading-tight tracking-tight text-[var(--ink)]">Sign in</h1>
+        <p className="mb-6 text-sm text-[var(--ink-2)]">Admin and sub-admin access</p>
 
         <Suspense fallback={null}>
           <CallbackErrorNotice />
@@ -42,7 +43,7 @@ export default function LoginPage() {
 
         <form action={handleSubmit} className="space-y-4">
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-white/40">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-3)]">
               Email
             </span>
             <input
@@ -50,13 +51,13 @@ export default function LoginPage() {
               type="email"
               required
               autoComplete="email"
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white shadow-inner transition-colors placeholder:text-white/25 focus:border-white/30 focus:outline-none"
+              className="w-full rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-[15px] text-[var(--ink)] transition-colors placeholder:text-[var(--ink-3)]/70 focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/20"
               placeholder="you@company.com"
             />
           </label>
 
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-white/40">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-3)]">
               Password
             </span>
             <input
@@ -64,13 +65,13 @@ export default function LoginPage() {
               type="password"
               required
               autoComplete="current-password"
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white shadow-inner transition-colors placeholder:text-white/25 focus:border-white/30 focus:outline-none"
+              className="w-full rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-[15px] text-[var(--ink)] transition-colors placeholder:text-[var(--ink-3)]/70 focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/20"
               placeholder="••••••••"
             />
           </label>
 
           {error && (
-            <p className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">
+            <p className="rounded-xl border border-[#e8c3bd] bg-[#fbeeec] p-3 text-sm text-[#a2362a]">
               {error}
             </p>
           )}
@@ -78,19 +79,20 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-xl bg-white px-4 py-3 text-sm font-bold text-[#030712] shadow-[0_0_20px_rgba(255,255,255,0.15)] transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
+            className="min-h-12 w-full rounded-xl bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-[var(--accent-ink)] transition-opacity hover:opacity-90 active:scale-[0.98] disabled:opacity-50"
           >
             {submitting ? "Signing in…" : "Sign in"}
           </button>
         </form>
 
-        <p className="mt-6 border-t border-white/10 pt-5 text-center text-sm text-white/40">
+        <p className="mt-6 border-t border-[var(--line)] pt-5 text-center text-sm text-[var(--ink-3)]">
           Own or manage a project?{" "}
-          <Link href="/signup" className="font-medium text-white/70 underline-offset-4 transition-colors hover:text-white hover:underline">
+          <Link href="/signup" className="font-medium text-[var(--accent)] underline-offset-4 hover:underline">
             Request access
           </Link>
         </p>
       </div>
     </main>
+    </div>
   );
 }

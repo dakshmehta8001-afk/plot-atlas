@@ -2,14 +2,15 @@
 
 // Client wrapper for the top bar: it only needs the current path, so the rest
 // of Nav (session and role lookups) can stay a server component. The Projects
-// page uses the light palette; maps, dashboards and auth screens stay dark.
+// page and the sign-in screens use the light palette; maps and dashboards stay dark.
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 export function NavShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const theme = pathname === "/" ? "light" : "dark";
+  const light = pathname === "/" || pathname.startsWith("/login") || pathname.startsWith("/signup");
+  const theme = light ? "light" : "dark";
   return (
     <header
       data-theme={theme}
