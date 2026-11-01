@@ -175,3 +175,18 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* The public satellite map sits under the header and above a floating tab bar,
+   so its bottom controls (scale bar, Esri attribution) need to clear that bar
+   to stay visible. */
+.sat-map .maplibregl-ctrl-bottom-left,
+.sat-map .maplibregl-ctrl-bottom-right {
+  margin-bottom: 96px;
+}
+/* Keep the (legally required) Esri attribution on the right and small, so it
+   does not run under the Zones button on the left. */
+.sat-map .maplibregl-ctrl-attrib {
+  max-width: 68vw;
+  font-size: 10px;
+  line-height: 1.35;
+}

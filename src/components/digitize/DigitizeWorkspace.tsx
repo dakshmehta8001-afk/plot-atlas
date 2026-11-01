@@ -13,7 +13,7 @@
 // this pass) a restored draft couldn't actually be re-displayed — a
 // "save" that can't be shown back is worse than no save at all. The
 // reviewer is warned on screen; "Save to project" is the only durable step.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MAP_VIEWBOX_SIZE, type MapCalibration, type PolygonPoint } from "@/lib/types";
 import { setPlanImage, setProjectCalibration } from "@/lib/actions/projects";
@@ -30,6 +30,7 @@ import { Toolbar, type ToolMode } from "./Toolbar";
 import { ShapeDetailsPanel } from "./ShapeDetailsPanel";
 import { ColorLegendAssist } from "./ColorLegendAssist";
 import { CountsHeader } from "./CountsHeader";
+import { plotLabelIssues } from "@/lib/digitize/labelCheck";
 import { Legend } from "./Legend";
 import { SearchPlotNumber } from "./SearchPlotNumber";
 import { ExportMenu } from "./ExportMenu";
@@ -113,6 +114,8 @@ export function DigitizeWorkspace({
 
   const canvasRef = useRef<ReviewCanvasHandle>(null);
   const selectedShape = shapesState.value.find((s) => s.localId === selectedId) ?? null;
+  // Number problems found during review: missing, misread, or duplicated.
+  const labelIssues = useMemo(() => plotLabelIssues(shapesState.value), [shapesState.value]);
 
   // Tracks whether the sub-admin applied the corner-warp step (vs. skipping
   // it). When a project already has a plan image BUT the sub-admin straightened
@@ -525,7 +528,7 @@ export function DigitizeWorkspace({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <CountsHeader shapes={shapesState.value} />
+        <CountsHeader shapes={shapesState.value} labelIssueCount={labelIssues.size} />
         <SearchPlotNumber shapes={shapesState.value} onFound={handleFound} />
       </div>
 
@@ -642,7 +645,7 @@ export function DigitizeWorkspace({
         />
         <div className="lg:h-full">
           {selectedShape ? (
-            <ShapeDetailsPanel shape={selectedShape} onChange={handleChangeShape} onDelete={handleDeleteSelected} />
+            <ShapeDetailsPanel shape={selectedShape} labelIssue={labelIssues.get(selectedShape.localId)} onChange={handleChangeShape} onDelete={handleDeleteSelected} />
           ) : (
             <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-400 dark:border-gray-700">
               Select a shape to edit its details, or use the toolbar to draw a new one.

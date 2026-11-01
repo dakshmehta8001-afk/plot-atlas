@@ -16,6 +16,7 @@ import { resolveGoogleMapsCoords } from "@/lib/actions/satellite";
 import { ESRI_TILE_URL, ESRI_ATTRIBUTION } from "@/lib/satellite";
 import type { MapCalibration, Road, SatelliteAlignment, SiteFeature, Unit } from "@/lib/types";
 import { buildFeaturesGeoJSON, buildPlotsGeoJSON, buildRoadsGeoJSON } from "@/lib/map/satelliteGeoJson";
+import "maplibre-gl/dist/maplibre-gl.css";
 import { configureMaplibreWorker } from "@/lib/map/maplibreWorker";
 
 interface Props {
@@ -380,7 +381,9 @@ export function AlignmentTool({
 
       {/* Map */}
       <div className="relative overflow-hidden rounded-xl border border-white/10" style={{ height: 500 }}>
-        <div ref={containerRef} className="absolute inset-0" />
+        <div className="absolute inset-0">
+          <div ref={containerRef} className="h-full w-full" />
+        </div>
 
         {/* Drag overlay for the plan body (covers the whole map while a plan exists) */}
         {alignment && (
