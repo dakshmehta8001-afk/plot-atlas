@@ -43,6 +43,51 @@
      its final position rather than the flat, slightly mechanical-feeling
      `ease` timing function they used before. */
   --ease-cinematic: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Navigation bar colours. The dark values are the default (map and
+     dashboard screens); NavShell sets data-theme="light" on the Projects
+     page, which swaps them for the paper palette below. */
+  --nav-bg: rgba(3, 7, 18, 0.8);
+  --nav-border: rgba(255, 255, 255, 0.06);
+  --nav-fg: #ffffff;
+  --nav-fg-muted: rgba(255, 255, 255, 0.7);
+  --nav-hover: rgba(255, 255, 255, 0.05);
+  --nav-btn-bg: #ffffff;
+  --nav-btn-fg: #030712;
+  --nav-mark-bg: #ffffff;
+  --nav-mark-fg: #030712;
+  --nav-ring: rgba(255, 255, 255, 0.45);
+}
+
+/* Light "paper" palette for buyer-facing browse screens. Warm off-white,
+   deep green ink and one accent colour. Plot status colours stay reserved
+   for plots. The maps and dashboards keep the dark palette above. */
+.theme-paper {
+  --paper: #faf8f4;
+  --paper-2: #f1ede4;
+  --ink: #1b2a22;
+  --ink-2: #4a5850;
+  --ink-3: #6f7b74;
+  --line: #e3ddd0;
+  --accent: #1e5b43;
+  --accent-ink: #ffffff;
+  --st-available: #2f8f5b;
+  --st-hold: #c98a12;
+  --st-booked: #3b73c4;
+  --st-sold: #c2503f;
+}
+
+header[data-theme="light"] {
+  --nav-bg: #faf8f4; /* opaque: the page behind the bar is dark, so a translucent cream would turn grey */
+  --nav-border: #e3ddd0;
+  --nav-fg: #1b2a22;
+  --nav-fg-muted: #4a5850;
+  --nav-hover: rgba(27, 42, 34, 0.06);
+  --nav-btn-bg: #1e5b43;
+  --nav-btn-fg: #ffffff;
+  --nav-mark-bg: #1e5b43;
+  --nav-mark-fg: #ffffff;
+  --nav-ring: rgba(30, 91, 67, 0.5);
 }
 
 @theme inline {
@@ -50,6 +95,7 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-fraunces), Georgia, serif;
 
   --color-available: var(--available);
   --color-hold: var(--hold);
