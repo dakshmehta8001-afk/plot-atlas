@@ -39,7 +39,7 @@ export function QuickContactIcons({
 }) {
   const label = `${unit.wing ? `${unit.wing}-` : ""}${unit.unit_number}`;
   const btn = large
-    ? "flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/75 hover:bg-white/15 hover:text-white [&>svg]:h-5 [&>svg]:w-5"
+    ? "flex h-12 w-12 items-center justify-center rounded-xl border border-[var(--line)] bg-white text-[var(--ink-2)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] [&>svg]:h-5 [&>svg]:w-5"
     : "flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-white/70 hover:bg-white/20 hover:text-white";
   const enquiryText = `Hi, I'm interested in ${label} at ${projectName}.`;
 
@@ -88,6 +88,14 @@ export function QuickContactIcons({
 
 // Returns the width label of the road whose centerline is nearest to the
 // plot boundary — used as "road ahead" on the info card.
+// Status colours for the light sheet (the neon map colours are too pale on cream).
+const STATUS_COLOR: Record<Unit["status"], string> = {
+  available: "var(--st-available)",
+  hold: "var(--st-hold)",
+  booked: "var(--st-booked)",
+  sold: "var(--st-sold)",
+};
+
 function nearestRoadWidth(unit: Unit, roads: Road[]): string | null {
   if (roads.length === 0 || unit.polygon_points.length < 3) return null;
   const pts = unit.polygon_points;
@@ -140,6 +148,10 @@ export function UnitInfoCard({
   const [dragY, setDragY] = useState(0);
   const dragStart = useRef<number | null>(null);
 
+  const statusColor = STATUS_COLOR[unit.status];
+  const fact = (value: React.ReactNode) =>
+    value ? value : <span className="text-[14px] font-normal text-[var(--ink-3)]">Not set</span>;
+
   return (
     <>
     <button
@@ -152,7 +164,7 @@ export function UnitInfoCard({
       role="dialog"
       aria-label={`${label} details`}
       style={dragY ? { transform: `translateY(${dragY}px)`, transition: "none" } : undefined}
-      className="absolute inset-x-0 bottom-0 z-[900] flex max-h-[80%] flex-col rounded-t-[28px] border-t border-white/10 bg-[#0b1220]/95 text-white shadow-[0_-12px_40px_rgba(0,0,0,0.55)] backdrop-blur-xl transition-transform duration-200 [animation:settleIn_260ms_var(--ease-cinematic)] motion-reduce:animate-none sm:inset-x-auto sm:right-4 sm:top-4 sm:bottom-auto sm:z-[800] sm:max-h-[calc(100%-2rem)] sm:w-[340px] sm:rounded-3xl sm:border sm:[animation:slideInRight_280ms_ease]"
+      className="theme-paper absolute inset-x-0 bottom-0 z-[900] flex max-h-[80%] flex-col rounded-t-[28px] border-t border-[var(--line)] bg-[var(--paper)] text-[var(--ink)] shadow-[0_-12px_40px_rgba(0,0,0,0.4)] transition-transform duration-200 [animation:settleIn_260ms_var(--ease-cinematic)] motion-reduce:animate-none sm:inset-x-auto sm:right-4 sm:top-4 sm:bottom-auto sm:z-[800] sm:max-h-[calc(100%-2rem)] sm:w-[340px] sm:rounded-3xl sm:border sm:[animation:slideInRight_280ms_ease]"
     >
       <div
         className="flex h-7 shrink-0 cursor-grab touch-none items-center justify-center sm:hidden"
@@ -161,27 +173,30 @@ export function UnitInfoCard({
         onPointerUp={() => { const d = dragY; dragStart.current = null; setDragY(0); if (d > 90) onClose(); }}
         onPointerCancel={() => { dragStart.current = null; setDragY(0); }}
       >
-        <span className="h-1 w-10 rounded-full bg-white/25" />
+        <span className="h-1 w-10 rounded-full bg-[var(--line)]" />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4 sm:pt-5">
       {/* Header: identity + status, close */}
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-2xl font-bold leading-tight tracking-tight">{label}</p>
-          <div className="mt-1.5 flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: statusStyle.border }} />
-            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: statusStyle.border }}>
+          <p className="font-display text-[28px] leading-tight tracking-tight">{label}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-semibold"
+              style={{ color: statusColor, backgroundColor: `color-mix(in srgb, ${statusColor} 12%, white)` }}
+            >
+              <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: statusColor }} />
               {statusStyle.label}
             </span>
-            {unit.category && <span className="text-xs text-white/40">· {unit.category}</span>}
+            {unit.category && <span className="text-[13px] text-[var(--ink-3)]">{unit.category}</span>}
           </div>
         </div>
         <button
           type="button"
           onClick={onClose}
           aria-label="Close"
-          className="-mr-2 -mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+          className="-mr-2 -mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[var(--ink-3)] transition-colors hover:bg-[var(--paper-2)] hover:text-[var(--ink)]"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-4 w-4">
             <path d="M6 6l12 12M18 6L6 18" />
@@ -189,45 +204,45 @@ export function UnitInfoCard({
         </button>
       </div>
 
-      {/* Key facts — one divided grid, numbers first */}
-      <dl className="mb-4 grid grid-cols-2 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] [&>div]:p-3.5 [&>div:nth-child(odd)]:border-r [&>div:nth-child(n+3)]:border-t [&>div]:border-white/10">
+      {/* Price first: it is what a buyer looks for */}
+      <div className="mb-4 rounded-2xl border border-[var(--line)] bg-white px-4 py-3.5">
+        {unit.total_price != null ? (
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="font-display text-[26px] leading-none tracking-tight">₹{unit.total_price.toLocaleString("en-IN")}</p>
+            {rate && <p className="text-[12px] text-[var(--ink-3)]">₹{rate.toLocaleString("en-IN")} / sqft</p>}
+          </div>
+        ) : (
+          <p className="text-[15px] text-[var(--ink-2)]">Price on request</p>
+        )}
+      </div>
+
+      {/* Key facts */}
+      <dl className="mb-4 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--line)] [&>div]:bg-white [&>div]:p-3.5">
         <div>
-          <dt className="text-[10px] font-semibold uppercase tracking-wider text-white/40">Size</dt>
-          <dd className="mt-1 text-[15px] font-semibold">{unit.dimensions ?? "—"}</dd>
+          <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-3)]">Size</dt>
+          <dd className="mt-1 text-[15px] font-semibold">{fact(unit.dimensions)}</dd>
         </div>
         <div>
-          <dt className="text-[10px] font-semibold uppercase tracking-wider text-white/40">Area</dt>
+          <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-3)]">Area</dt>
           <dd className="mt-1 text-[15px] font-semibold">
-            {areaSqft ? `${areaSqft.toLocaleString()} sqft` : "—"}
-            {areaSqm ? <span className="block text-xs font-normal text-white/45">{areaSqm.toLocaleString()} sqm</span> : null}
+            {fact(areaSqft ? `${areaSqft.toLocaleString()} sqft` : null)}
+            {areaSqm ? <span className="block text-xs font-normal text-[var(--ink-3)]">{areaSqm.toLocaleString()} sqm</span> : null}
           </dd>
         </div>
         <div>
-          <dt className="text-[10px] font-semibold uppercase tracking-wider text-white/40">Facing</dt>
-          <dd className="mt-1 text-[15px] font-semibold">{unit.facing ?? "—"}</dd>
+          <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-3)]">Facing</dt>
+          <dd className="mt-1 text-[15px] font-semibold">{fact(unit.facing ? <span className="capitalize">{unit.facing}</span> : null)}</dd>
         </div>
         <div>
-          <dt className="text-[10px] font-semibold uppercase tracking-wider text-white/40">Road ahead</dt>
-          <dd className="mt-1 text-[15px] font-semibold">{roadWidth ?? "—"}</dd>
+          <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-3)]">Road ahead</dt>
+          <dd className="mt-1 text-[15px] font-semibold">{fact(roadWidth)}</dd>
         </div>
       </dl>
 
-      {/* Tags */}
-      {unit.bhk_type && (
-        <p className="mb-4 text-sm text-white/60">{unit.bhk_type}</p>
-      )}
-
-      {(rate || unit.total_price != null) && (
-        <div className="mb-4 flex items-baseline justify-between gap-3">
-          {unit.total_price != null ? (
-            <p className="text-2xl font-bold tracking-tight">₹{unit.total_price.toLocaleString("en-IN")}</p>
-          ) : <span />}
-          {rate && <p className="text-xs text-white/45">₹{rate.toLocaleString("en-IN")} / sqft</p>}
-        </div>
-      )}
+      {unit.bhk_type && <p className="mb-4 text-sm text-[var(--ink-2)]">{unit.bhk_type}</p>}
 
       {unit.description && (
-        <p className="mb-4 whitespace-pre-wrap break-words text-sm leading-relaxed text-white/60">{unit.description}</p>
+        <p className="mb-4 whitespace-pre-wrap break-words text-sm leading-relaxed text-[var(--ink-2)]">{unit.description}</p>
       )}
 
       {state !== "sent" && (
@@ -236,17 +251,17 @@ export function UnitInfoCard({
           onChange={(e) => setMessage(e.target.value)}
           placeholder="Add a message (optional)"
           rows={2}
-          className="w-full resize-none rounded-xl border border-white/10 bg-black/30 p-3 text-sm text-white placeholder:text-white/30 transition-colors focus:border-white/30 focus:outline-none"
+          className="w-full resize-none rounded-xl border border-[var(--line)] bg-white p-3 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] transition-colors focus:border-[var(--accent)] focus:outline-none"
         />
       )}
       </div>
 
-      {/* Action bar — always visible at the bottom of the sheet */}
-      <div className="shrink-0 border-t border-white/10 px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 sm:pb-4">
-        {errorText && <p className="mb-2 text-xs text-red-400">{errorText}</p>}
+      {/* Action bar: always visible at the bottom of the sheet */}
+      <div className="shrink-0 border-t border-[var(--line)] px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 sm:pb-4">
+        {errorText && <p className="mb-2 text-xs text-[#b3382a]">{errorText}</p>}
         {state === "sent" ? (
-          <p className="rounded-xl bg-green-500/15 p-3 text-center text-sm text-green-300">
-            Thanks — your enquiry has been sent.
+          <p className="rounded-xl bg-[color-mix(in_srgb,var(--st-available)_14%,white)] p-3 text-center text-sm font-medium text-[var(--accent)]">
+            Thanks. Your enquiry has been sent.
           </p>
         ) : (
           <div className="flex items-center gap-2">
@@ -254,7 +269,7 @@ export function UnitInfoCard({
               type="button"
               onClick={submit}
               disabled={state === "submitting"}
-              className="min-h-[48px] flex-1 rounded-xl bg-white px-4 text-sm font-bold text-[#030712] transition-transform active:scale-[0.98] disabled:opacity-60"
+              className="min-h-[48px] flex-1 rounded-xl bg-[var(--accent)] px-4 text-sm font-semibold text-[var(--accent-ink)] transition-transform active:scale-[0.98] disabled:opacity-60"
             >
               {state === "submitting" ? "Sending…" : "I'm interested"}
             </button>
