@@ -15,6 +15,7 @@ import { saveSatelliteAlignment } from "@/lib/actions/projects";
 import { resolveGoogleMapsCoords } from "@/lib/actions/satellite";
 import { ESRI_TILE_URL, ESRI_ATTRIBUTION } from "@/lib/satellite";
 import type { MapCalibration, SatelliteAlignment, Unit } from "@/lib/types";
+import { configureMaplibreWorker } from "@/lib/map/maplibreWorker";
 
 interface Props {
   projectId: string;
@@ -66,6 +67,7 @@ export function AlignmentTool({
   useEffect(() => {
     if (!containerRef.current) return;
     import("maplibre-gl").then((mod) => {
+      configureMaplibreWorker(mod);
       if (!containerRef.current || mapRef.current) return;
       const a = alignRef.current;
       const map = new mod.Map({
