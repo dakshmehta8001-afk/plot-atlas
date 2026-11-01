@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Fraunces, Geist, Geist_Mono } from "next/font/google";
 import { Suspense } from "react";
 import "./globals.css";
 import { Nav } from "@/components/ui/Nav";
@@ -12,6 +12,14 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+// One heading weight only, to keep the font download small.
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
+  subsets: ["latin"],
+  weight: ["600"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -35,7 +43,7 @@ function NavSkeleton() {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}>
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} ${fraunces.variable} dark h-full antialiased`}>
       <body className="min-h-full flex flex-col font-sans">
         {/* Nav does auth + profile DB calls — Suspense lets the page
             content (including loading.tsx skeletons) stream immediately
