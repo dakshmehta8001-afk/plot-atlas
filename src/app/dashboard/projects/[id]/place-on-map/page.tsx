@@ -7,15 +7,17 @@ import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { createClient } from "@/lib/supabase/server";
 import { AlignmentTool } from "@/components/map/AlignmentTool";
-import type { Project, Unit, SatelliteAlignment, MapCalibration } from "@/lib/types";
+import type { Project, Unit, Road, SiteFeature, SatelliteAlignment, MapCalibration } from "@/lib/types";
 
 export default async function PlaceOnMapPage(props: PageProps<"/dashboard/projects/[id]/place-on-map">) {
   const { id } = await props.params;
   const supabase = await createClient();
 
-  const [{ data: project }, { data: units }] = await Promise.all([
+  const [{ data: project }, { data: units }, { data: roadRows }, { data: featureRows }] = await Promise.all([
     supabase.from("projects").select("*").eq("id", id).single(),
     supabase.from("units").select("*").eq("project_id", id).eq("unit_type", "plot"),
+    supabase.from("roads").select("*").eq("project_id", id),
+    supabase.from("site_features").select("*").eq("project_id", id),
   ]);
 
   if (!project || !project.plan_image_url) notFound();
@@ -39,6 +41,8 @@ export default async function PlaceOnMapPage(props: PageProps<"/dashboard/projec
         projectId={id}
         planImageUrl={typedProject.plan_image_url!}
         plots={plots}
+        roads={(roadRows ?? []) as Road[]}
+        features={(featureRows ?? []) as SiteFeature[]}
         existingAlignment={typedProject.map_bounds as SatelliteAlignment | null}
         calibration={typedProject.map_calibration as MapCalibration | null}
         imageWidth={typedProject.plan_image_width}
