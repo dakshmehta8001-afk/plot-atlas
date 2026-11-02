@@ -61,12 +61,12 @@ export default async function HomePage(props: PageProps<"/">) {
   const showSearch = q !== "" || projects.length >= SEARCH_MIN_PROJECTS;
 
   return (
-    <div className="theme-paper flex-1 bg-[var(--paper)] text-[var(--ink)]">
+    <div className="theme-survey paper-grid flex-1 text-[var(--ink)]">
       <main className="mx-auto w-full max-w-6xl px-4 pb-20 pt-8 sm:px-6 sm:pt-14">
         <header className="mb-8 sm:mb-10">
-          <h1 className="font-display text-[34px] leading-[1.1] tracking-tight sm:text-[44px]">Browse projects</h1>
-          <p className="mt-2.5 max-w-xl text-[16px] leading-relaxed text-[var(--ink-2)]">
-            Open a project, tap any plot, and see its size, facing and price.
+          <h1 className="font-display text-[32px] font-bold leading-[1.1] tracking-tight sm:text-[42px]">Projects</h1>
+          <p className="mt-2 font-label text-[12px] font-medium uppercase tracking-[0.08em] text-[var(--ink-2)]">
+            {projects.length} {projects.length === 1 ? "project" : "projects"} · tap one to open its plan
           </p>
         </header>
 
@@ -85,11 +85,11 @@ export default async function HomePage(props: PageProps<"/">) {
                 name="q"
                 defaultValue={q}
                 placeholder="Search by name or location"
-                className="h-12 w-full rounded-full border border-[var(--line)] bg-white pl-11 pr-24 text-[15px] text-[var(--ink)] placeholder:text-[var(--ink-3)] transition-colors focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/25"
+                className="h-12 w-full border-2 border-[var(--ink)] bg-white pl-11 pr-24 text-[15px] text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:outline-none focus-visible:ring-4 focus-visible:ring-[var(--signal)]"
               />
               <button
                 type="submit"
-                className="absolute right-1.5 top-1/2 h-9 -translate-y-1/2 rounded-full bg-[var(--accent)] px-4 text-[13px] font-semibold text-[var(--accent-ink)] transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+                className="absolute right-1.5 top-1/2 h-9 -translate-y-1/2 bg-[var(--accent)] px-4 font-label text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--accent-ink)] hover:bg-[var(--ink-2)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--signal)]"
               >
                 Search
               </button>
@@ -98,13 +98,13 @@ export default async function HomePage(props: PageProps<"/">) {
         )}
 
         {q && (
-          <p className="mb-4 text-[13px] text-[var(--ink-3)]">
+          <p className="mb-4 font-label text-[12px] uppercase tracking-[0.06em] text-[var(--ink-3)]">
             {projects.length} {projects.length === 1 ? "result" : "results"} for &ldquo;{q}&rdquo;
           </p>
         )}
 
         {projects.length === 0 ? (
-          <div className="rounded-[20px] border border-dashed border-[var(--line)] px-6 py-16 text-center">
+          <div className="border-2 border-dashed border-[var(--ink-3)] bg-white px-6 py-16 text-center">
             <p className="text-[15px] font-medium text-[var(--ink-2)]">{q ? "No projects match your search" : "No projects published yet"}</p>
             {q && (
               <Link href="/" className="mt-3 inline-flex min-h-11 items-center text-[13px] text-[var(--accent)] underline underline-offset-4">
@@ -113,7 +113,7 @@ export default async function HomePage(props: PageProps<"/">) {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-x-7 gap-y-9 sm:grid-cols-2 lg:grid-cols-3">
             {projects.map((project, i) => (
               <ProjectCard key={project.id} project={project} stats={stats.get(project.id)} index={i} />
             ))}

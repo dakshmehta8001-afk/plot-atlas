@@ -1,5 +1,6 @@
-// One project on the public browse page: plan image, name, locality, how many
-// plots are open and the starting price. Light "paper" palette (see globals.css).
+// One project on the public browse page, laid out like the title block on a
+// survey drawing: the plan on top, then fixed rows of facts. Square edges,
+// navy ink, one orange tag for what is open. See .theme-survey in globals.css.
 import Link from "next/link";
 import { formatInrShort } from "@/lib/format";
 import type { Project } from "@/lib/types";
@@ -30,18 +31,26 @@ const SEGMENTS = [
   { key: "sold", color: "var(--st-sold)", label: "sold" },
 ] as const;
 
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 border-t border-[var(--line)] px-3 py-2 first:border-t-0">
+      <dt className="font-label text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--ink-3)]">{label}</dt>
+      <dd className="min-w-0 truncate text-right font-label text-[12px] font-medium text-[var(--ink)]">{children}</dd>
+    </div>
+  );
+}
+
 export function ProjectCard({ project, stats, index = 0 }: { project: Project; stats?: ProjectStats; index?: number }) {
   const location = displayLocation(project.location);
-  const meta = [location, project.developer_name].filter(Boolean).join(" · ");
   const hasStats = !!stats && stats.total > 0;
   return (
     <Link
       href={`/projects/${project.slug}`}
-      className="group block rounded-[20px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--paper)] motion-safe:animate-[settleIn_420ms_var(--ease-cinematic)_backwards]"
+      className="group block focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--signal)] motion-safe:animate-[settleIn_420ms_var(--ease-cinematic)_backwards]"
       style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }}
     >
-      <div className="overflow-hidden rounded-[20px] border border-[var(--line)] bg-white shadow-[0_1px_2px_rgba(27,42,34,0.05),0_12px_28px_-16px_rgba(27,42,34,0.25)] transition-shadow duration-300 group-hover:shadow-[0_2px_4px_rgba(27,42,34,0.06),0_18px_36px_-16px_rgba(27,42,34,0.32)]">
-        <div className="relative aspect-[4/3] overflow-hidden bg-[var(--paper-2)]">
+      <div className="border-2 border-[var(--ink)] bg-white shadow-[var(--hard)] transition-transform duration-150 group-hover:-translate-x-0.5 group-hover:-translate-y-0.5 group-active:translate-x-0.5 group-active:translate-y-0.5">
+        <div className="relative aspect-[4/3] overflow-hidden border-b-2 border-[var(--ink)] bg-white">
           {project.plan_image_url ? (
             // eslint-disable-next-line @next/next/no-img-element -- Supabase Storage thumbnail, not worth next/image optimisation
             <img
@@ -49,49 +58,49 @@ export function ProjectCard({ project, stats, index = 0 }: { project: Project; s
               alt={`Layout plan of ${project.name}`}
               loading="lazy"
               decoding="async"
-              className="h-full w-full object-cover object-center transition-transform duration-500 motion-safe:group-hover:scale-[1.03]"
+              className="h-full w-full object-cover object-center"
             />
           ) : (
-            <div className="grid h-full w-full place-items-center text-xs text-[var(--ink-3)]">No plan yet</div>
+            <div className="grid h-full w-full place-items-center font-label text-xs uppercase tracking-wider text-[var(--ink-3)]">No plan yet</div>
           )}
-        </div>
-
-        <div className="px-4 pb-4 pt-3.5">
-          <div className="flex items-start justify-between gap-3">
-            <h3 className="font-display text-[19px] leading-snug text-[var(--ink)]">{project.name}</h3>
-            <span aria-hidden className="mt-0.5 shrink-0 text-[var(--ink-3)] transition-transform motion-safe:group-hover:translate-x-0.5">
-              →
+          {hasStats && stats.available > 0 && (
+            <span className="absolute right-0 top-0 bg-[var(--signal)] px-2.5 py-1 font-label text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--signal-ink)]">
+              {stats.available} open
             </span>
-          </div>
-          {meta && <p className="mt-0.5 truncate text-[13px] text-[var(--ink-2)]">{meta}</p>}
-
-          {hasStats && (
-            <div className="mt-3.5">
-              <div
-                role="img"
-                aria-label={SEGMENTS.filter((s) => stats[s.key] > 0)
-                  .map((s) => `${stats[s.key]} ${s.label}`)
-                  .join(", ")}
-                className="flex h-1.5 gap-px overflow-hidden rounded-full bg-[var(--paper-2)]"
-              >
-                {SEGMENTS.filter((s) => stats[s.key] > 0).map((s) => (
-                  <span key={s.key} style={{ width: `${(stats[s.key] / stats.total) * 100}%`, background: s.color }} />
-                ))}
-              </div>
-              <div className="mt-2.5 flex items-baseline justify-between gap-3 text-[13px]">
-                <span className="text-[var(--ink-2)]">
-                  {stats.available} of {stats.total} {stats.noun} open
-                </span>
-                {stats.fromPrice !== null && (
-                  <span className="font-semibold text-[var(--ink)]">
-                    <span className="mr-1 font-normal text-[var(--ink-3)]">From</span>
-                    {formatInrShort(stats.fromPrice)}
-                  </span>
-                )}
-              </div>
-            </div>
           )}
         </div>
+
+        <div className="flex items-center justify-between gap-3 border-b-2 border-[var(--ink)] px-3 py-2.5">
+          <h3 className="truncate font-display text-[18px] font-bold leading-tight tracking-tight text-[var(--ink)]">{project.name}</h3>
+          <span aria-hidden className="shrink-0 font-label text-[var(--signal)] transition-transform group-hover:translate-x-0.5">
+            →
+          </span>
+        </div>
+
+        <dl>
+          {location && <Row label="Location">{location}</Row>}
+          {project.developer_name && <Row label="Developer">{project.developer_name}</Row>}
+          {hasStats && (
+            <Row label={stats.noun}>
+              {stats.total} · {stats.available} open
+            </Row>
+          )}
+          {hasStats && stats.fromPrice !== null && <Row label="From">{formatInrShort(stats.fromPrice)}</Row>}
+        </dl>
+
+        {hasStats && (
+          <div
+            role="img"
+            aria-label={SEGMENTS.filter((s) => stats[s.key] > 0)
+              .map((s) => `${stats[s.key]} ${s.label}`)
+              .join(", ")}
+            className="flex h-2 border-t-2 border-[var(--ink)]"
+          >
+            {SEGMENTS.filter((s) => stats[s.key] > 0).map((s) => (
+              <span key={s.key} style={{ width: `${(stats[s.key] / stats.total) * 100}%`, background: s.color }} />
+            ))}
+          </div>
+        )}
       </div>
     </Link>
   );
@@ -99,12 +108,14 @@ export function ProjectCard({ project, stats, index = 0 }: { project: Project; s
 
 export function ProjectCardSkeleton() {
   return (
-    <div className="animate-pulse overflow-hidden rounded-[20px] border border-[var(--line)] bg-white motion-reduce:animate-none">
+    <div className="animate-pulse border-2 border-[var(--line)] bg-white motion-reduce:animate-none">
       <div className="aspect-[4/3] bg-[var(--paper-2)]" />
-      <div className="px-4 pb-4 pt-3.5">
-        <div className="h-5 w-2/3 rounded bg-[var(--paper-2)]" />
-        <div className="mt-2 h-3.5 w-1/3 rounded bg-[var(--paper-2)]" />
-        <div className="mt-4 h-1.5 w-full rounded-full bg-[var(--paper-2)]" />
+      <div className="border-t-2 border-[var(--line)] px-3 py-3">
+        <div className="h-5 w-2/3 bg-[var(--paper-2)]" />
+      </div>
+      <div className="space-y-2 border-t border-[var(--line)] px-3 py-3">
+        <div className="h-3 w-full bg-[var(--paper-2)]" />
+        <div className="h-3 w-5/6 bg-[var(--paper-2)]" />
       </div>
     </div>
   );

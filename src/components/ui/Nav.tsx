@@ -25,9 +25,9 @@ export async function Nav() {
       <nav className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
         <Link
           href="/"
-          className="flex min-h-11 items-center gap-2 rounded-full pr-2 font-display text-[17px] tracking-tight text-[var(--nav-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--nav-ring)]"
+          className="flex min-h-11 items-center gap-2 rounded-full pr-2 font-label text-[13px] font-semibold uppercase tracking-[0.16em] text-[var(--nav-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--nav-ring)]"
         >
-          <span aria-hidden className="grid h-6 w-6 place-items-center rounded-md bg-[var(--nav-mark-bg)] font-sans text-[11px] font-bold text-[var(--nav-mark-fg)]">
+          <span aria-hidden className="grid h-6 w-6 place-items-center bg-[var(--nav-mark-bg)] font-sans text-[11px] font-bold text-[var(--nav-mark-fg)]">
             P
           </span>
           PlotAtlas

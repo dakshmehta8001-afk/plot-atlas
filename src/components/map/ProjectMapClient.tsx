@@ -266,7 +266,7 @@ export function ProjectMapClient({
             )}
           </div>
 
-          <div className="absolute bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 z-[600] flex -translate-x-1/2 gap-0.5 rounded-full border border-white/10 bg-black/45 p-1 shadow-lg backdrop-blur-md">
+          <div className="absolute bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 z-[600] flex -translate-x-1/2 gap-0.5 border border-white/40 bg-black/65 p-1 shadow-lg backdrop-blur-md">
             <TabButton label="Map" active={activeTab === "map"} onClick={() => setActiveTab("map")} />
             <TabButton label="Media" active={activeTab === "media"} onClick={() => toggleTab("media")} />
             <TabButton label="About" active={activeTab === "about"} onClick={() => toggleTab("about")} />
@@ -319,18 +319,18 @@ export function ProjectMapClient({
             </div>
 
             {hasSatellite && (
-              <div className="pointer-events-auto flex shrink-0 rounded-full border border-white/15 bg-black/40 p-0.5 backdrop-blur-sm">
+              <div className="pointer-events-auto flex shrink-0 border border-white/40 bg-black/60 p-0.5 backdrop-blur-sm">
                 <button
                   type="button"
                   onClick={() => setMapView("plan")}
-                  className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-all ${mapView === "plan" ? "bg-white/20 text-white" : "text-white/50 hover:text-white"}`}
+                  className={`rounded-full px-2.5 py-1 font-label text-[11px] font-semibold uppercase tracking-[0.08em] transition-all ${mapView === "plan" ? "bg-white/20 text-white" : "text-white/50 hover:text-white"}`}
                 >
                   Plan
                 </button>
                 <button
                   type="button"
                   onClick={() => setMapView("satellite")}
-                  className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-all ${mapView === "satellite" ? "bg-white/20 text-white" : "text-white/50 hover:text-white"}`}
+                  className={`rounded-full px-2.5 py-1 font-label text-[11px] font-semibold uppercase tracking-[0.08em] transition-all ${mapView === "satellite" ? "bg-white/20 text-white" : "text-white/50 hover:text-white"}`}
                 >
                   Sat
                 </button>
@@ -339,7 +339,7 @@ export function ProjectMapClient({
           </div>
 
           {/* Row 2: status chips — scrollable, each chip has its own backdrop */}
-          <div className="pointer-events-none absolute inset-x-0 top-[52px] flex gap-1.5 overflow-x-auto px-3 pb-1 [scrollbar-width:none] sm:top-[56px]sm:flex-wrap sm:overflow-visible sm:px-5 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
+          <div className="pointer-events-none absolute inset-x-0 top-[52px] flex gap-1 overflow-x-auto px-3 pb-1 [scrollbar-width:none] sm:top-[56px] sm:gap-1.5 sm:flex-wrap sm:overflow-visible sm:px-5 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
             <Pill label="Total" value={counts.total} tone="neutral" />
             <StatusChip label="Avail" value={counts.available} tone="green" active={statusFilter === "available"} onClick={() => toggleStatus("available")} />
             <StatusChip label="Hold" value={counts.hold} tone="yellow" active={statusFilter === "hold"} onClick={() => toggleStatus("hold")} />
@@ -401,7 +401,7 @@ export function ProjectMapClient({
           <button
             type="button"
             onClick={() => setZonesOpen(true)}
-            className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-white/15 bg-black/50 px-3 py-1.5 text-[12px] font-medium text-white/80 backdrop-blur-md shadow-lg"
+            className="pointer-events-auto flex items-center gap-1.5 border border-white/40 bg-black/65 px-3 py-1.5 font-label text-[11px] font-medium uppercase tracking-[0.08em] text-white/90 backdrop-blur-md shadow-lg"
           >
             <span className="h-2 w-2 rounded-full bg-white/40" />
             Zones
@@ -435,7 +435,7 @@ function Pill({ label, value, tone }: { label: string; value: number; tone: "neu
   };
   const displayValue = useCountUp(value);
   return (
-    <span className={`rounded-full border border-white/10 bg-black/35 px-2.5 py-1 text-[11px] font-medium backdrop-blur-sm ${toneClasses[tone]}`}>
+    <span className={`border border-white/30 bg-black/55 px-2 py-1 font-label text-[10px] font-medium uppercase tracking-[0.03em] backdrop-blur-sm ${toneClasses[tone]}`}>
       {label} <span className="font-bold tabular-nums ml-1">{displayValue}</span>
     </span>
   );
@@ -469,7 +469,7 @@ function StatusChip({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`pointer-events-auto rounded-full border px-2.5 py-1 text-[11px] font-medium backdrop-blur-sm transition-colors active:scale-95 ${toneClasses[tone]} ${
+      className={`pointer-events-auto border px-2 py-1 font-label text-[10px] font-medium uppercase tracking-[0.03em] backdrop-blur-sm transition-colors active:scale-95 ${toneClasses[tone]} ${
         active ? "bg-white/20 ring-1 ring-white/50" : "border-white/10 bg-black/35 hover:bg-black/55"
       }`}
     >
@@ -484,7 +484,7 @@ function TabButton({ label, active, onClick }: { label: string; active: boolean;
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`min-h-[40px] rounded-full px-4 text-[12px] font-semibold tracking-wide transition-colors ${
+      className={`min-h-[40px] px-4 font-label text-[12px] font-semibold uppercase tracking-[0.1em] transition-colors ${
         active ? "bg-white/90 text-[#030712]" : "text-white/65 hover:bg-white/10 hover:text-white"
       }`}
     >

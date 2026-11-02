@@ -59,35 +59,66 @@
   --nav-ring: rgba(255, 255, 255, 0.45);
 }
 
-/* Light "paper" palette for buyer-facing browse screens. Warm off-white,
-   deep green ink and one accent colour. Plot status colours stay reserved
-   for plots. The maps and dashboards keep the dark palette above. */
-.theme-paper {
-  --paper: #faf8f4;
-  --paper-2: #f1ede4;
-  --ink: #1b2a22;
-  --ink-2: #4a5850;
-  --ink-3: #6f7b74;
-  --line: #e3ddd0;
-  --accent: #1e5b43;
+/* "Survey sheet" palette for buyer-facing browse screens: graph-paper white,
+   survey blue ink and one orange signal colour. Hard edges, no rounding.
+   Plot status colours stay reserved for plots. The maps and dashboards keep
+   the dark palette above. */
+.theme-survey {
+  --paper: #f7f9fa;
+  --paper-2: #eaf1f5;
+  --ink: #0f2a3d;
+  --ink-2: #3a5a70;
+  --ink-3: #4f6b80;
+  --line: #c3d4dd;
+  --accent: #0f2a3d;
   --accent-ink: #ffffff;
-  --st-available: #2f8f5b;
-  --st-hold: #c98a12;
-  --st-booked: #3b73c4;
-  --st-sold: #c2503f;
+  --signal: #ff5a1f;
+  --signal-ink: #0f2a3d;
+  --st-available: #1f7a4d;
+  --st-hold: #b7791f;
+  --st-booked: #2f5d8a;
+  --st-sold: #c2410c;
+  --hard: 4px 4px 0 #0f2a3d;
+}
+
+/* Graph-paper ground for survey screens. */
+.paper-grid {
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(rgba(15, 42, 61, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 42, 61, 0.07) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Square UI everywhere: no rounded corners. Tailwind's rounded-* sizes read
+   these theme variables; rounded-full and arbitrary radii are overridden
+   below. */
+@theme inline {
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-4xl: 0px;
+}
+.rounded-full,
+[class*="rounded-["] {
+  border-radius: 0 !important;
 }
 
 header[data-theme="light"] {
-  --nav-bg: #faf8f4; /* opaque: the page behind the bar is dark, so a translucent cream would turn grey */
-  --nav-border: #e3ddd0;
-  --nav-fg: #1b2a22;
-  --nav-fg-muted: #4a5850;
-  --nav-hover: rgba(27, 42, 34, 0.06);
-  --nav-btn-bg: #1e5b43;
+  --nav-bg: #f7f9fa;
+  --nav-border: #0f2a3d;
+  --nav-fg: #0f2a3d;
+  --nav-fg-muted: #3a5a70;
+  --nav-hover: rgba(15, 42, 61, 0.07);
+  --nav-btn-bg: #0f2a3d;
   --nav-btn-fg: #ffffff;
-  --nav-mark-bg: #1e5b43;
+  --nav-mark-bg: #0f2a3d;
   --nav-mark-fg: #ffffff;
-  --nav-ring: rgba(30, 91, 67, 0.5);
+  --nav-ring: rgba(255, 90, 31, 0.9);
 }
 
 @theme inline {
@@ -95,7 +126,8 @@ header[data-theme="light"] {
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  --font-display: var(--font-fraunces), Georgia, serif;
+  --font-display: var(--font-geist-sans), system-ui, sans-serif;
+  --font-label: var(--font-plex-mono), ui-monospace, monospace;
 
   --color-available: var(--available);
   --color-hold: var(--hold);

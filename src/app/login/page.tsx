@@ -13,7 +13,7 @@ function CallbackErrorNotice() {
   const searchParams = useSearchParams();
   if (!searchParams.get("error")) return null;
   return (
-    <p className="mb-5 rounded-xl border border-[#e8c3bd] bg-[#fbeeec] p-3 text-sm text-[#a2362a]">
+    <p className="mb-5 border-2 border-[#b3382a] bg-[#fbeeec] p-3 text-sm text-[#8f2a1f]">
       Sign-in failed. Please try again.
     </p>
   );
@@ -31,11 +31,11 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="theme-paper flex flex-1 bg-[var(--paper)] text-[var(--ink)]">
+    <div className="theme-survey paper-grid flex flex-1 text-[var(--ink)]">
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-16">
-      <div className="rounded-3xl border border-[var(--line)] bg-white p-8 shadow-[0_1px_2px_rgba(27,42,34,0.05),0_20px_40px_-24px_rgba(27,42,34,0.3)]">
-        <h1 className="mb-1 font-display text-[28px] leading-tight tracking-tight text-[var(--ink)]">Sign in</h1>
-        <p className="mb-6 text-sm text-[var(--ink-2)]">Admin and sub-admin access</p>
+      <div className="border-2 border-[var(--ink)] bg-white p-7 shadow-[var(--hard)]">
+        <h1 className="mb-1 font-display font-bold text-[28px] leading-tight tracking-tight text-[var(--ink)]">Sign in</h1>
+        <p className="mb-6 font-label text-[12px] uppercase tracking-[0.06em] text-[var(--ink-2)]">Admin and sub-admin access</p>
 
         <Suspense fallback={null}>
           <CallbackErrorNotice />
@@ -43,7 +43,7 @@ export default function LoginPage() {
 
         <form action={handleSubmit} className="space-y-4">
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-3)]">
+            <span className="mb-1.5 block font-label text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--ink-3)]">
               Email
             </span>
             <input
@@ -51,13 +51,13 @@ export default function LoginPage() {
               type="email"
               required
               autoComplete="email"
-              className="w-full rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-[15px] text-[var(--ink)] transition-colors placeholder:text-[var(--ink-3)]/70 focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/20"
+              className="w-full border-2 border-[var(--ink)] bg-white px-4 py-3 text-[15px] text-[var(--ink)] placeholder:text-[var(--ink-3)]/70 focus:outline-none focus-visible:ring-4 focus-visible:ring-[var(--signal)]"
               placeholder="you@company.com"
             />
           </label>
 
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-3)]">
+            <span className="mb-1.5 block font-label text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--ink-3)]">
               Password
             </span>
             <input
@@ -65,13 +65,13 @@ export default function LoginPage() {
               type="password"
               required
               autoComplete="current-password"
-              className="w-full rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-[15px] text-[var(--ink)] transition-colors placeholder:text-[var(--ink-3)]/70 focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/20"
+              className="w-full border-2 border-[var(--ink)] bg-white px-4 py-3 text-[15px] text-[var(--ink)] placeholder:text-[var(--ink-3)]/70 focus:outline-none focus-visible:ring-4 focus-visible:ring-[var(--signal)]"
               placeholder="••••••••"
             />
           </label>
 
           {error && (
-            <p className="rounded-xl border border-[#e8c3bd] bg-[#fbeeec] p-3 text-sm text-[#a2362a]">
+            <p className="border-2 border-[#b3382a] bg-[#fbeeec] p-3 text-sm text-[#8f2a1f]">
               {error}
             </p>
           )}
@@ -79,15 +79,16 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="min-h-12 w-full rounded-xl bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-[var(--accent-ink)] transition-opacity hover:opacity-90 active:scale-[0.98] disabled:opacity-50"
+            className="flex min-h-12 w-full items-center justify-between bg-[var(--accent)] px-4 py-3 font-label text-[13px] font-semibold uppercase tracking-[0.08em] text-[var(--accent-ink)] transition-colors hover:bg-[var(--ink-2)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--signal)] disabled:opacity-50"
           >
             {submitting ? "Signing in…" : "Sign in"}
+            <span aria-hidden className="text-[var(--signal)]">→</span>
           </button>
         </form>
 
-        <p className="mt-6 border-t border-[var(--line)] pt-5 text-center text-sm text-[var(--ink-3)]">
+        <p className="mt-6 border-t-2 border-[var(--ink)] pt-5 text-center font-label text-[12px] uppercase tracking-[0.06em] text-[var(--ink-3)]">
           Own or manage a project?{" "}
-          <Link href="/signup" className="font-medium text-[var(--accent)] underline-offset-4 hover:underline">
+          <Link href="/signup" className="font-semibold text-[var(--ink)] underline decoration-[var(--signal)] decoration-2 underline-offset-4">
             Request access
           </Link>
         </p>

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Fraunces, Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, IBM_Plex_Mono } from "next/font/google";
 import { Suspense } from "react";
 import "./globals.css";
 import { Nav } from "@/components/ui/Nav";
@@ -14,11 +14,12 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// One heading weight only, to keep the font download small.
-const fraunces = Fraunces({
-  variable: "--font-fraunces",
+// Labels, numbers and plot tags use a mono face (two weights only, to keep the
+// download small). Headings use the Geist sans that is already loaded.
+const plexMono = IBM_Plex_Mono({
+  variable: "--font-plex-mono",
   subsets: ["latin"],
-  weight: ["600"],
+  weight: ["500", "600"],
   display: "swap",
 });
 
@@ -43,7 +44,7 @@ function NavSkeleton() {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} ${fraunces.variable} dark h-full antialiased`}>
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} ${plexMono.variable} dark h-full antialiased`}>
       <body className="min-h-full flex flex-col font-sans">
         {/* Nav does auth + profile DB calls — Suspense lets the page
             content (including loading.tsx skeletons) stream immediately

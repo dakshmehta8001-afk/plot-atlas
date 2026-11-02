@@ -39,7 +39,7 @@ export function QuickContactIcons({
 }) {
   const label = `${unit.wing ? `${unit.wing}-` : ""}${unit.unit_number}`;
   const btn = large
-    ? "flex h-12 w-12 items-center justify-center rounded-xl border border-[var(--line)] bg-white text-[var(--ink-2)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] [&>svg]:h-5 [&>svg]:w-5"
+    ? "flex h-12 w-12 items-center justify-center border-2 border-[var(--ink)] bg-white text-[var(--ink)] transition-colors hover:bg-[var(--paper-2)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--signal)] [&>svg]:h-5 [&>svg]:w-5"
     : "flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-white/70 hover:bg-white/20 hover:text-white";
   const enquiryText = `Hi, I'm interested in ${label} at ${projectName}.`;
 
@@ -150,7 +150,16 @@ export function UnitInfoCard({
 
   const statusColor = STATUS_COLOR[unit.status];
   const fact = (value: React.ReactNode) =>
-    value ? value : <span className="text-[14px] font-normal text-[var(--ink-3)]">Not set</span>;
+    value ? value : <span className="font-normal text-[var(--ink-3)]">not set</span>;
+  const spec = [
+    { k: "Size", v: fact(unit.dimensions) },
+    {
+      k: "Area",
+      v: fact(areaSqft ? `${areaSqft.toLocaleString()} sq ft${areaSqm ? ` (${areaSqm.toLocaleString()} sq m)` : ""}` : null),
+    },
+    { k: "Facing", v: fact(unit.facing ? <span className="capitalize">{unit.facing}</span> : null) },
+    { k: "Road", v: fact(roadWidth) },
+  ];
 
   return (
     <>
@@ -164,85 +173,73 @@ export function UnitInfoCard({
       role="dialog"
       aria-label={`${label} details`}
       style={dragY ? { transform: `translateY(${dragY}px)`, transition: "none" } : undefined}
-      className="theme-paper absolute inset-x-0 bottom-0 z-[900] flex max-h-[80%] flex-col rounded-t-[28px] border-t border-[var(--line)] bg-[var(--paper)] text-[var(--ink)] shadow-[0_-12px_40px_rgba(0,0,0,0.4)] transition-transform duration-200 [animation:settleIn_260ms_var(--ease-cinematic)] motion-reduce:animate-none sm:inset-x-auto sm:right-4 sm:top-4 sm:bottom-auto sm:z-[800] sm:max-h-[calc(100%-2rem)] sm:w-[340px] sm:rounded-3xl sm:border sm:[animation:slideInRight_280ms_ease]"
+      className="theme-survey absolute inset-x-0 bottom-0 z-[900] flex max-h-[82%] flex-col border-t-[3px] border-[var(--ink)] bg-white text-[var(--ink)] transition-transform duration-200 [animation:settleIn_260ms_var(--ease-cinematic)] motion-reduce:animate-none sm:inset-x-auto sm:right-4 sm:top-4 sm:bottom-auto sm:z-[800] sm:max-h-[calc(100%-2rem)] sm:w-[348px] sm:border-2 sm:shadow-[var(--hard)] sm:[animation:slideInRight_280ms_ease]"
     >
       <div
-        className="flex h-7 shrink-0 cursor-grab touch-none items-center justify-center sm:hidden"
+        className="flex h-6 shrink-0 cursor-grab touch-none items-center justify-center sm:hidden"
         onPointerDown={(e) => { dragStart.current = e.clientY; (e.target as HTMLElement).setPointerCapture(e.pointerId); }}
         onPointerMove={(e) => { if (dragStart.current !== null) setDragY(Math.max(0, e.clientY - dragStart.current)); }}
         onPointerUp={() => { const d = dragY; dragStart.current = null; setDragY(0); if (d > 90) onClose(); }}
         onPointerCancel={() => { dragStart.current = null; setDragY(0); }}
       >
-        <span className="h-1 w-10 rounded-full bg-[var(--line)]" />
+        <span className="h-1 w-10 bg-[var(--line)]" />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4 sm:pt-5">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 sm:pt-4">
       {/* Header: identity + status, close */}
-      <div className="mb-4 flex items-start justify-between gap-3">
+      <div className="mb-3 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-display text-[28px] leading-tight tracking-tight">{label}</p>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
+          <p className="font-label text-[26px] font-semibold uppercase leading-none tracking-tight">{label}</p>
+          <div className="mt-2.5 flex flex-wrap items-center gap-2">
             <span
-              className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-semibold"
-              style={{ color: statusColor, backgroundColor: `color-mix(in srgb, ${statusColor} 12%, white)` }}
+              className="inline-flex items-center gap-1.5 border-[1.5px] border-current px-2 py-0.5 font-label text-[11px] font-semibold uppercase tracking-[0.1em]"
+              style={{ color: statusColor }}
             >
-              <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: statusColor }} />
+              <span aria-hidden className="h-2 w-2" style={{ backgroundColor: statusColor }} />
               {statusStyle.label}
             </span>
-            {unit.category && <span className="text-[13px] text-[var(--ink-3)]">{unit.category}</span>}
+            {unit.category && <span className="font-label text-[11px] uppercase tracking-[0.06em] text-[var(--ink-3)]">{unit.category}</span>}
           </div>
         </div>
         <button
           type="button"
           onClick={onClose}
           aria-label="Close"
-          className="-mr-2 -mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[var(--ink-3)] transition-colors hover:bg-[var(--paper-2)] hover:text-[var(--ink)]"
+          className="-mr-2 -mt-1 flex h-11 w-11 shrink-0 items-center justify-center text-[var(--ink)] transition-colors hover:bg-[var(--paper-2)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--signal)]"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-4 w-4">
-            <path d="M6 6l12 12M18 6L6 18" />
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="square" className="h-4 w-4">
+            <path d="M5 5l14 14M19 5L5 19" />
           </svg>
         </button>
       </div>
 
-      {/* Price first: it is what a buyer looks for */}
-      <div className="mb-4 rounded-2xl border border-[var(--line)] bg-white px-4 py-3.5">
-        {unit.total_price != null ? (
-          <div className="flex items-baseline justify-between gap-3">
-            <p className="font-display text-[26px] leading-none tracking-tight">₹{unit.total_price.toLocaleString("en-IN")}</p>
-            {rate && <p className="text-[12px] text-[var(--ink-3)]">₹{rate.toLocaleString("en-IN")} / sqft</p>}
+      {/* Spec table: same rows, same order, on every plot */}
+      <dl className="mb-3 border-2 border-[var(--ink)]">
+        {spec.map((r) => (
+          <div key={r.k} className="flex items-baseline justify-between gap-4 border-t border-[var(--line)] px-3 py-2 first:border-t-0">
+            <dt className="font-label text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--ink-3)]">{r.k}</dt>
+            <dd className="text-right font-label text-[13px] font-medium">{r.v}</dd>
           </div>
-        ) : (
-          <p className="text-[15px] text-[var(--ink-2)]">Price on request</p>
-        )}
-      </div>
-
-      {/* Key facts */}
-      <dl className="mb-4 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--line)] [&>div]:bg-white [&>div]:p-3.5">
-        <div>
-          <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-3)]">Size</dt>
-          <dd className="mt-1 text-[15px] font-semibold">{fact(unit.dimensions)}</dd>
-        </div>
-        <div>
-          <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-3)]">Area</dt>
-          <dd className="mt-1 text-[15px] font-semibold">
-            {fact(areaSqft ? `${areaSqft.toLocaleString()} sqft` : null)}
-            {areaSqm ? <span className="block text-xs font-normal text-[var(--ink-3)]">{areaSqm.toLocaleString()} sqm</span> : null}
+        ))}
+        <div className="flex items-baseline justify-between gap-4 border-t-2 border-[var(--ink)] bg-[var(--paper-2)] px-3 py-2.5">
+          <dt className="font-label text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--ink-3)]">Price</dt>
+          <dd className="text-right">
+            {unit.total_price != null ? (
+              <>
+                <span className="font-label text-[20px] font-semibold leading-none">₹{unit.total_price.toLocaleString("en-IN")}</span>
+                {rate && <span className="mt-1 block font-label text-[11px] text-[var(--ink-3)]">₹{rate.toLocaleString("en-IN")} / sq ft</span>}
+              </>
+            ) : (
+              <span className="font-label text-[13px] font-medium text-[var(--ink-2)]">on request</span>
+            )}
           </dd>
-        </div>
-        <div>
-          <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-3)]">Facing</dt>
-          <dd className="mt-1 text-[15px] font-semibold">{fact(unit.facing ? <span className="capitalize">{unit.facing}</span> : null)}</dd>
-        </div>
-        <div>
-          <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-3)]">Road ahead</dt>
-          <dd className="mt-1 text-[15px] font-semibold">{fact(roadWidth)}</dd>
         </div>
       </dl>
 
-      {unit.bhk_type && <p className="mb-4 text-sm text-[var(--ink-2)]">{unit.bhk_type}</p>}
+      {unit.bhk_type && <p className="mb-3 font-label text-[12px] uppercase tracking-[0.06em] text-[var(--ink-2)]">{unit.bhk_type}</p>}
 
       {unit.description && (
-        <p className="mb-4 whitespace-pre-wrap break-words text-sm leading-relaxed text-[var(--ink-2)]">{unit.description}</p>
+        <p className="mb-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-[var(--ink-2)]">{unit.description}</p>
       )}
 
       {state !== "sent" && (
@@ -251,27 +248,28 @@ export function UnitInfoCard({
           onChange={(e) => setMessage(e.target.value)}
           placeholder="Add a message (optional)"
           rows={2}
-          className="w-full resize-none rounded-xl border border-[var(--line)] bg-white p-3 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] transition-colors focus:border-[var(--accent)] focus:outline-none"
+          className="w-full resize-none border-2 border-[var(--ink)] bg-white p-3 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:outline-none focus-visible:ring-4 focus-visible:ring-[var(--signal)]"
         />
       )}
       </div>
 
       {/* Action bar: always visible at the bottom of the sheet */}
-      <div className="shrink-0 border-t border-[var(--line)] px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 sm:pb-4">
-        {errorText && <p className="mb-2 text-xs text-[#b3382a]">{errorText}</p>}
+      <div className="shrink-0 border-t-2 border-[var(--ink)] px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 sm:pb-4">
+        {errorText && <p role="alert" className="mb-2 font-label text-xs text-[#b3382a]">{errorText}</p>}
         {state === "sent" ? (
-          <p className="rounded-xl bg-[color-mix(in_srgb,var(--st-available)_14%,white)] p-3 text-center text-sm font-medium text-[var(--accent)]">
-            Thanks. Your enquiry has been sent.
+          <p className="border-2 border-[var(--st-available)] p-3 text-center font-label text-[13px] font-medium uppercase tracking-[0.04em] text-[var(--st-available)]">
+            Enquiry sent. Thank you.
           </p>
         ) : (
-          <div className="flex items-center gap-2">
+          <div className="flex items-stretch gap-2">
             <button
               type="button"
               onClick={submit}
               disabled={state === "submitting"}
-              className="min-h-[48px] flex-1 rounded-xl bg-[var(--accent)] px-4 text-sm font-semibold text-[var(--accent-ink)] transition-transform active:scale-[0.98] disabled:opacity-60"
+              className="flex min-h-[48px] flex-1 items-center justify-between bg-[var(--accent)] px-4 font-label text-[13px] font-semibold uppercase tracking-[0.08em] text-[var(--accent-ink)] transition-colors hover:bg-[var(--ink-2)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--signal)] disabled:opacity-60"
             >
               {state === "submitting" ? "Sending…" : "I'm interested"}
+              <span aria-hidden className="text-[var(--signal)]">→</span>
             </button>
             <QuickContactIcons
               contactPhone={project.contact_phone}

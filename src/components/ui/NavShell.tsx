@@ -14,7 +14,7 @@ export function NavShell({ children }: { children: ReactNode }) {
   return (
     <header
       data-theme={theme}
-      className="sticky top-0 z-[1000] border-b border-[var(--nav-border)] bg-[var(--nav-bg)] backdrop-blur-xl"
+      className="sticky top-0 z-[1000] border-b-2 border-[var(--nav-border)] bg-[var(--nav-bg)] backdrop-blur-xl"
     >
       {children}
     </header>
