@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { ProjectCard, type ProjectStats } from "@/components/ui/ProjectCard";
-import type { Project, UnitStatus } from "@/lib/types";
+import type { ThumbLayout } from "@/components/ui/ProjectThumb";
+import type { PolygonPoint, Project, UnitStatus } from "@/lib/types";
 
 // Search only earns its place once there is something to search through.
 const SEARCH_MIN_PROJECTS = 6;
@@ -32,13 +33,28 @@ export default async function HomePage(props: PageProps<"/">) {
   // request, so once a catalogue outgrows that this should become a database
   // view or RPC that aggregates per project.
   const stats = new Map<string, ProjectStats>();
+  // The digitized shapes for each card thumbnail.
+  const layouts = new Map<string, ThumbLayout>();
   if (projects.length > 0) {
     const { data: unitRows } = await supabase
       .from("units")
-      .select("project_id, unit_type, status, total_price")
+      .select("project_id, unit_type, status, total_price, polygon_points")
       .in("project_id", projects.map((p) => p.id));
+    const { data: roadRows } = await supabase
+      .from("roads")
+      .select("project_id, path_points")
+      .in("project_id", projects.map((p) => p.id));
+    for (const r of (roadRows ?? []) as { project_id: string; path_points: PolygonPoint[] }[]) {
+      if (r.path_points.length < 2) continue;
+      if (!layouts.has(r.project_id)) layouts.set(r.project_id, { plots: [], roads: [] });
+      layouts.get(r.project_id)!.roads.push(r.path_points);
+    }
     const kinds = new Map<string, Set<string>>();
-    for (const u of (unitRows ?? []) as { project_id: string; unit_type: string; status: UnitStatus; total_price: number | null }[]) {
+    for (const u of (unitRows ?? []) as { project_id: string; unit_type: string; status: UnitStatus; total_price: number | null; polygon_points: PolygonPoint[] }[]) {
+      if (u.unit_type === "plot" && u.polygon_points?.length >= 3) {
+        if (!layouts.has(u.project_id)) layouts.set(u.project_id, { plots: [], roads: [] });
+        layouts.get(u.project_id)!.plots.push({ points: u.polygon_points, status: u.status });
+      }
       let st = stats.get(u.project_id);
       if (!st) {
         st = { total: 0, available: 0, hold: 0, booked: 0, sold: 0, fromPrice: null, noun: "units" };
@@ -115,7 +131,7 @@ export default async function HomePage(props: PageProps<"/">) {
         ) : (
           <div className="grid grid-cols-1 gap-x-7 gap-y-9 sm:grid-cols-2 lg:grid-cols-3">
             {projects.map((project, i) => (
-              <ProjectCard key={project.id} project={project} stats={stats.get(project.id)} index={i} />
+              <ProjectCard key={project.id} project={project} stats={stats.get(project.id)} layout={layouts.get(project.id)} index={i} />
             ))}
           </div>
         )}

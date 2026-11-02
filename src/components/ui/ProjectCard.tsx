@@ -3,6 +3,7 @@
 // navy ink, one orange tag for what is open. See .theme-survey in globals.css.
 import Link from "next/link";
 import { formatInrShort } from "@/lib/format";
+import { ProjectThumb, type ThumbLayout } from "@/components/ui/ProjectThumb";
 import type { Project } from "@/lib/types";
 
 // The location field is free text and sometimes holds a pasted Maps link.
@@ -40,7 +41,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-export function ProjectCard({ project, stats, index = 0 }: { project: Project; stats?: ProjectStats; index?: number }) {
+export function ProjectCard({ project, stats, layout, index = 0 }: { project: Project; stats?: ProjectStats; layout?: ThumbLayout; index?: number }) {
   const location = displayLocation(project.location);
   const hasStats = !!stats && stats.total > 0;
   return (
@@ -50,8 +51,12 @@ export function ProjectCard({ project, stats, index = 0 }: { project: Project; s
       style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }}
     >
       <div className="border-2 border-[var(--ink)] bg-white shadow-[var(--hard)] transition-transform duration-150 group-hover:-translate-x-0.5 group-hover:-translate-y-0.5 group-active:translate-x-0.5 group-active:translate-y-0.5">
-        <div className="relative aspect-[4/3] overflow-hidden border-b-2 border-[var(--ink)] bg-white">
-          {project.plan_image_url ? (
+        <div className="paper-grid relative aspect-[4/3] overflow-hidden border-b-2 border-[var(--ink)]">
+          {layout && layout.plots.length > 0 ? (
+            <div className="absolute inset-3">
+              <ProjectThumb layout={layout} width={project.plan_image_width ?? 1000} height={project.plan_image_height ?? 1000} />
+            </div>
+          ) : project.plan_image_url ? (
             // eslint-disable-next-line @next/next/no-img-element -- Supabase Storage thumbnail, not worth next/image optimisation
             <img
               src={project.plan_image_url}
@@ -61,8 +66,13 @@ export function ProjectCard({ project, stats, index = 0 }: { project: Project; s
               className="h-full w-full object-cover object-center"
             />
           ) : (
-            <div className="grid h-full w-full place-items-center font-label text-xs uppercase tracking-wider text-[var(--ink-3)]">No plan yet</div>
+            <div className="grid h-full w-full place-items-center font-label text-5xl font-semibold text-[var(--ink)]/25">
+              {project.name.slice(0, 1).toUpperCase()}
+            </div>
           )}
+          <span className="absolute bottom-0 left-0 bg-[var(--ink)] px-2.5 py-1 font-label text-[10px] font-medium uppercase tracking-[0.1em] text-white">
+            Open map <span aria-hidden className="text-[var(--signal)]">→</span>
+          </span>
           {hasStats && stats.available > 0 && (
             <span className="absolute right-0 top-0 bg-[var(--signal)] px-2.5 py-1 font-label text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--signal-ink)]">
               {stats.available} open

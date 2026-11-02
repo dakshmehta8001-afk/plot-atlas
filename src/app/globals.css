@@ -222,3 +222,15 @@ body {
   font-size: 10px;
   line-height: 1.35;
 }
+
+/* Project card thumbnail: open plots light up one after another on hover. */
+@keyframes plotLight {
+  0%, 100% { opacity: 1; }
+  40% { opacity: 0.25; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .group:hover .thumb-open {
+    animation: plotLight 700ms ease-in-out both;
+    animation-delay: calc(var(--i) * 28ms);
+  }
+}
