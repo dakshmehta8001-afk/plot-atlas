@@ -7,10 +7,14 @@
 // only render when present. The enquiry logic itself (Google sign-in
 // handoff, submit) lives in useEnquiryFlow so it isn't duplicated between
 // UI styles.
+import dynamic from "next/dynamic";
 import { useRef, useState } from "react";
 import { useEnquiryFlow } from "@/lib/hooks/useEnquiryFlow";
 import { UNIT_STATUS_STYLES, type Project, type Road, type Unit } from "@/lib/types";
 import { PlotVisualizer } from "@/components/ui/PlotVisualizer";
+
+// MapLibre is large, so the flight screen is only fetched when someone taps it.
+const FlyToPlot = dynamic(() => import("@/components/map/FlyToPlot").then((m) => m.FlyToPlot), { ssr: false });
 import { parsePlotSize } from "@/lib/plotVisual";
 
 // Kept to digits (and a leading +) since wa.me/tel: links don't tolerate
@@ -149,6 +153,8 @@ export function UnitInfoCard({
   // only so scrolling the sheet body never closes it by accident.
   const [dragY, setDragY] = useState(0);
   const [visual, setVisual] = useState(false);
+  const [fly, setFly] = useState(false);
+  const canFly = unit.unit_type === "plot" && !!project.map_bounds && unit.polygon_points.length >= 3;
   const canVisualise = unit.unit_type === "plot" && parsePlotSize(unit) !== null;
   const dragStart = useRef<number | null>(null);
 
@@ -266,6 +272,16 @@ export function UnitInfoCard({
           </p>
         ) : (
           <>
+          {canFly && (
+            <button
+              type="button"
+              onClick={() => setFly(true)}
+              className="mb-2 flex min-h-11 w-full items-center justify-between border-2 border-[var(--ink)] bg-white px-4 font-label text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--ink)] transition-colors hover:bg-[var(--paper-2)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--signal)]"
+            >
+              Fly to this plot
+              <span aria-hidden className="text-[var(--signal)]">✈</span>
+            </button>
+          )}
           {canVisualise && (
             <button
               type="button"
@@ -299,6 +315,18 @@ export function UnitInfoCard({
         )}
       </div>
     </div>
+    {fly && project.map_bounds && (
+      <FlyToPlot
+        unit={unit}
+        project={project}
+        alignment={project.map_bounds}
+        onClose={() => setFly(false)}
+        onVisualise={() => {
+          setFly(false);
+          setVisual(true);
+        }}
+      />
+    )}
     {visual && (
       <PlotVisualizer
         unit={unit}
