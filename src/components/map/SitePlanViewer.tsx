@@ -48,7 +48,6 @@ import { buildScene, type Scene } from "@/lib/map/mapScenery";
 import { roadLabelText } from "@/lib/map/roadWidth";
 import { feetPerUnit } from "@/lib/image/calibration";
 import { EDGE_INSET, EDGE_LINE, GATE_ROAD_ID, cornerAsphaltRadius, roadMetrics } from "@/lib/map/mapTraffic";
-import { MapTraffic, usePrefersReducedMotion } from "@/components/map/MapTraffic";
 import { QuickContactIcons } from "@/components/ui/UnitInfoCard";
 import { clientPointToLocalFraction } from "@/lib/map/svgCoords";
 
@@ -134,12 +133,10 @@ function opaqueRgba(rgba: string): string {
 }
 
 // ---- Scenery (ground, wall, trees, road surface) ----
-// Cars and walkers are moved by <MapTraffic> (lib/mapTraffic.ts holds the
-// road graph and simulation); this file only draws their sprites (below) and
-// the road surface they drive on. Road cross-section constants (edge line,
-// pavement strip, lanes) live in lib/mapTraffic.ts so drawing and traffic
-// always agree.
-// Medium-grey asphalt (not black), so cars, walkers and the white road markings all read on it.
+// The road graph and cross-section constants (edge line, pavement strip,
+// lanes) live in lib/mapTraffic.ts; this file draws the sprites below and the
+// road surface.
+// Medium-grey asphalt (not black), so the white road markings read on it.
 const ROAD_COLOR = "#6b7078";
 const PAVEMENT_COLOR = "#c8ccd2";
 
@@ -293,7 +290,6 @@ function GateArch({ gate, name }: { gate: NonNullable<Scene["gate"]>; name: stri
 }
 
 const MapShapes = memo(function MapShapes({
-  roads,
   scene,
   projectName,
   plots,
@@ -310,9 +306,7 @@ const MapShapes = memo(function MapShapes({
   onBuildingClick,
   onPlotHover,
   onPlotHoverEnd,
-  playTraffic,
 }: {
-  roads: Road[];
   /** Roads, junctions, gate and streetlights, built once by SitePlanViewer. */
   scene: Scene;
   /** Shown on the entry gate's arch. */
@@ -334,7 +328,6 @@ const MapShapes = memo(function MapShapes({
   onBuildingClick: (building: Building) => void;
   onPlotHover: (unit: Unit, e: React.MouseEvent) => void;
   onPlotHoverEnd: (unitId: string) => void;
-  playTraffic?: boolean;
 }) {
   const plotGeoms = useMemo(() => {
     const map = new Map<string, { points: string; center: { x: number; y: number }; minDim: number }>();
@@ -553,12 +546,6 @@ const MapShapes = memo(function MapShapes({
             </text>
           </g>
         ))}
-      </g>
-
-      {/* Cars and walkers: one animation loop (see MapTraffic), not SVG
-          animateMotion, so they follow the road network and turn. */}
-      <g style={{ opacity: selectedId !== null ? 0.4 : 1, transition: "opacity 300ms ease" }}>
-        <MapTraffic network={scene.network} seedKey={roads.map((r) => r.id).join("|")} play={playTraffic} />
       </g>
 
       {/* Overhead things, drawn above the traffic: the entry gate's arch with the project name. */}
@@ -801,8 +788,6 @@ export function SitePlanViewer({
   resetSignal?: number;
 }) {
   const [zoomedId, setZoomedId] = useState<string | null>(null);
-  const [playTraffic, setPlayTraffic] = useState(false);
-  const prefersReducedMotion = usePrefersReducedMotion();
   const aspectRatio = useImageAspectRatio(planImageUrl, planImageSize);
   // The viewBox's own height, derived from the plan image's real aspect
   // ratio — keeping width fixed at VB (1000) and deriving height this way,
@@ -1381,7 +1366,6 @@ export function SitePlanViewer({
                 this app actually has. */}
 
             <MapShapes
-              roads={roads}
               scene={scene}
               projectName={projectName}
               plots={plots}
@@ -1398,7 +1382,6 @@ ftPerUnit={ftPerUnit}
               onBuildingClick={handleBuildingClick}
               onPlotHover={updateHoverPosition}
               onPlotHoverEnd={handlePlotHoverEnd}
-              playTraffic={playTraffic}
             />
           </g>
           </g>
@@ -1540,17 +1523,6 @@ ftPerUnit={ftPerUnit}
               </svg>
             </button>
           </div>
-          {prefersReducedMotion && !playTraffic && (
-            <button
-              type="button"
-              onClick={() => setPlayTraffic(true)}
-              aria-label="Play traffic"
-              title="Play traffic"
-              className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/45 text-[11px] text-white/85 shadow-lg backdrop-blur-md hover:bg-white/10"
-            >
-              ▶
-            </button>
-          )}
         </div>
       )}
     </div>

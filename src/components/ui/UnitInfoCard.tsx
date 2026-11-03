@@ -10,6 +10,8 @@
 import { useRef, useState } from "react";
 import { useEnquiryFlow } from "@/lib/hooks/useEnquiryFlow";
 import { UNIT_STATUS_STYLES, type Project, type Road, type Unit } from "@/lib/types";
+import { PlotVisualizer } from "@/components/ui/PlotVisualizer";
+import { parsePlotSize } from "@/lib/plotVisual";
 
 // Kept to digits (and a leading +) since wa.me/tel: links don't tolerate
 // spaces, dashes, or brackets in a phone number typed freeform in the
@@ -146,6 +148,8 @@ export function UnitInfoCard({
   // Swipe-down-to-dismiss on the mobile sheet, driven from the grab handle
   // only so scrolling the sheet body never closes it by accident.
   const [dragY, setDragY] = useState(0);
+  const [visual, setVisual] = useState(false);
+  const canVisualise = unit.unit_type === "plot" && parsePlotSize(unit) !== null;
   const dragStart = useRef<number | null>(null);
 
   const statusColor = STATUS_COLOR[unit.status];
@@ -261,6 +265,17 @@ export function UnitInfoCard({
             Enquiry sent. Thank you.
           </p>
         ) : (
+          <>
+          {canVisualise && (
+            <button
+              type="button"
+              onClick={() => setVisual(true)}
+              className="mb-2 flex min-h-11 w-full items-center justify-between border-2 border-[var(--ink)] bg-[var(--signal)] px-4 font-label text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--signal-ink)] transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--ink)]"
+            >
+              Visualise your home
+              <span aria-hidden>→</span>
+            </button>
+          )}
           <div className="flex items-stretch gap-2">
             <button
               type="button"
@@ -280,9 +295,22 @@ export function UnitInfoCard({
               large
             />
           </div>
+          </>
         )}
       </div>
     </div>
+    {visual && (
+      <PlotVisualizer
+        unit={unit}
+        project={project}
+        roadFt={roadWidth ? parseFloat(roadWidth) || null : null}
+        onClose={() => setVisual(false)}
+        onUsePlan={(summary) => {
+          setMessage((m) => (m.trim() ? `${m.trim()}\n${summary}` : summary));
+          setVisual(false);
+        }}
+      />
+    )}
     </>
   );
 }
