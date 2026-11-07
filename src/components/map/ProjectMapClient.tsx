@@ -28,7 +28,6 @@ import {
   type Road,
   type SiteFeature,
   type Unit,
-  UNIT_STATUS_STYLES,
   type UnitStatus,
 } from "@/lib/types";
 
@@ -206,7 +205,7 @@ export function ProjectMapClient({
         // the space below it, so no plot or control can sit underneath. The
         // chip row scrolls sideways instead of wrapping, which keeps the
         // band one fixed height at every width.
-        <div className="relative z-[500] shrink-0 border-b border-white/15 bg-[var(--map-background)]">
+        <div className="relative z-[500] shrink-0 bg-[var(--map-background)]">
           <div className="flex items-center gap-2 px-3 py-2 sm:px-5">
             <Link
               href="/"
@@ -226,14 +225,14 @@ export function ProjectMapClient({
             </div>
 
             {hasSatellite && (
-              <div className="flex shrink-0 border border-white/40">
+              <div className="flex shrink-0 border border-white/40 bg-black/60 p-0.5">
                 {(["plan", "satellite"] as const).map((view) => (
                   <button
                     key={view}
                     type="button"
                     onClick={() => setMapView(view)}
                     aria-pressed={mapView === view}
-                    className={`min-h-11 px-3 font-label text-[12px] font-semibold uppercase tracking-[0.08em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--signal)] ${mapView === view ? "bg-white text-[#030712]" : "text-white/75 hover:bg-white/10 hover:text-white"}`}
+                    className={`min-h-10 px-3 font-label text-[12px] font-semibold uppercase tracking-[0.08em] transition-colors pointer-coarse:min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--signal)] ${mapView === view ? "bg-white/20 text-white" : "text-white/60 hover:text-white"}`}
                   >
                     {view === "plan" ? "Plan" : "Sat"}
                   </button>
@@ -243,14 +242,14 @@ export function ProjectMapClient({
           </div>
 
           <div className="flex items-center gap-1.5 overflow-x-auto px-3 pb-2 [scrollbar-width:none] sm:px-5 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
-            <span className="flex min-h-9 items-center border border-white/30 px-2.5 font-label text-[12px] font-medium uppercase tracking-[0.04em] text-white/85">
+            <span className="flex min-h-9 items-center border border-white/30 bg-black/55 px-2.5 font-label text-[12px] font-medium uppercase tracking-[0.04em] text-white/85 pointer-coarse:min-h-11">
               Total <span className="ml-1.5 font-bold tabular-nums">{counts.total}</span>
             </span>
             {(["available", "hold", "booked", "sold"] as const).map((status) => (
               <StatusChip
                 key={status}
                 status={status}
-                label={status === "available" ? "Avail" : UNIT_STATUS_STYLES[status].label.replace("On hold", "Hold")}
+                label={status === "available" ? "Avail" : status === "hold" ? "Hold" : status === "booked" ? "Booked" : "Sold"}
                 value={counts[status]}
                 active={statusFilter === status}
                 onClick={() => toggleStatus(status)}
@@ -329,7 +328,7 @@ export function ProjectMapClient({
             )}
           </div>
 
-          <div className="absolute bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 z-[600] flex -translate-x-1/2 gap-0.5 border border-white/40 bg-[var(--map-background)] p-1">
+          <div className="absolute bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 z-[600] flex -translate-x-1/2 gap-0.5 border border-white/40 bg-black/65 p-1 shadow-lg backdrop-blur-md">
             <TabButton label="Map" active={activeTab === "map"} onClick={() => setActiveTab("map")} />
             <TabButton label="Media" active={activeTab === "media"} onClick={() => toggleTab("media")} />
             <TabButton label="About" active={activeTab === "about"} onClick={() => toggleTab("about")} />
@@ -354,23 +353,12 @@ export function ProjectMapClient({
   );
 }
 
-// Colour never carries status alone: booked gets a single hatch and sold a
-// cross-hatch, matching the plan, so the legend reads the same in grayscale.
-function StatusSwatch({ status }: { status: UnitStatus }) {
-  const hatch =
-    status === "booked"
-      ? "repeating-linear-gradient(45deg, rgba(255,255,255,0.65) 0 1.5px, transparent 1.5px 5px)"
-      : status === "sold"
-        ? "repeating-linear-gradient(45deg, rgba(255,255,255,0.65) 0 1.5px, transparent 1.5px 5px), repeating-linear-gradient(-45deg, rgba(255,255,255,0.65) 0 1.5px, transparent 1.5px 5px)"
-        : undefined;
-  return (
-    <span
-      aria-hidden
-      className="h-3 w-3 border border-white/40"
-      style={{ backgroundColor: UNIT_STATUS_STYLES[status].solid, backgroundImage: hatch }}
-    />
-  );
-}
+const STATUS_TONE: Record<UnitStatus, string> = {
+  available: "border-green-500/50 text-green-300",
+  hold: "border-yellow-500/50 text-yellow-300",
+  booked: "border-blue-500/50 text-blue-300",
+  sold: "border-red-500/50 text-red-300",
+};
 
 // Clickable chip that toggles the map's status filter (dims every plot that
 // doesn't match, via SitePlanViewer's highlightStatus prop).
@@ -393,12 +381,11 @@ function StatusChip({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`flex min-h-9 items-center gap-1.5 border px-2.5 font-label text-[12px] font-medium uppercase tracking-[0.04em] text-white/90 transition-colors pointer-coarse:min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--signal)] ${
-        active ? "border-white bg-white/20" : "border-white/30 hover:bg-white/10"
+      className={`flex min-h-9 items-center border px-2.5 font-label text-[12px] font-medium uppercase tracking-[0.04em] transition-colors pointer-coarse:min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--signal)] ${STATUS_TONE[status]} ${
+        active ? "bg-white/20 ring-1 ring-white/50" : "border-white/10 bg-black/35 hover:bg-black/55"
       }`}
     >
-      <StatusSwatch status={status} />
-      {label} <span className="font-bold tabular-nums">{displayValue}</span>
+      {label} <span className="ml-1.5 font-bold tabular-nums">{displayValue}</span>
     </button>
   );
 }

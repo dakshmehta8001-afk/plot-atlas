@@ -195,19 +195,7 @@ export function UnitInfoCard({
               className="inline-flex items-center gap-1.5 border-[1.5px] px-2 py-0.5 font-label text-[12px] font-semibold uppercase tracking-[0.1em] text-[var(--ink)]"
               style={{ borderColor: statusColor }}
             >
-              <span
-                aria-hidden
-                className="h-3 w-3"
-                style={{
-                  backgroundColor: statusColor,
-                  backgroundImage:
-                    unit.status === "sold"
-                      ? "repeating-linear-gradient(45deg, rgba(255,255,255,0.7) 0 1.5px, transparent 1.5px 5px), repeating-linear-gradient(-45deg, rgba(255,255,255,0.7) 0 1.5px, transparent 1.5px 5px)"
-                      : unit.status === "booked"
-                        ? "repeating-linear-gradient(45deg, rgba(255,255,255,0.7) 0 1.5px, transparent 1.5px 5px)"
-                        : undefined,
-                }}
-              />
+              <span aria-hidden className="h-3 w-3" style={{ backgroundColor: statusColor }} />
               {statusStyle.label}
             </span>
             {unit.category && <span className="font-label text-[12px] uppercase tracking-[0.06em] text-[var(--ink-3)]">{unit.category}</span>}

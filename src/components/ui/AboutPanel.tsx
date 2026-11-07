@@ -6,20 +6,8 @@
 import type { Project, UnitStatus } from "@/lib/types";
 import { UNIT_STATUS_STYLES } from "@/lib/types";
 
-const HATCH = "repeating-linear-gradient(45deg, rgba(255,255,255,0.75) 0 1.5px, transparent 1.5px 5px)";
-const HATCH_SOLD = `${HATCH}, repeating-linear-gradient(-45deg, rgba(255,255,255,0.75) 0 1.5px, transparent 1.5px 5px)`;
-
 function Swatch({ status }: { status: UnitStatus }) {
-  return (
-    <span
-      aria-hidden
-      className="h-4 w-4 shrink-0 border border-[var(--ink)]"
-      style={{
-        backgroundColor: UNIT_STATUS_STYLES[status].solid,
-        backgroundImage: status === "sold" ? HATCH_SOLD : status === "booked" ? HATCH : undefined,
-      }}
-    />
-  );
+  return <span aria-hidden className="h-4 w-4 shrink-0 border border-[var(--ink)]" style={{ backgroundColor: UNIT_STATUS_STYLES[status].border }} />;
 }
 
 export function AboutPanel({ project }: { project: Project }) {
