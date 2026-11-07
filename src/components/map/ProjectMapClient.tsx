@@ -275,7 +275,7 @@ export function ProjectMapClient({
       )}
 
       <div className="relative z-0 min-h-0 flex-1">
-        <div className="absolute inset-0 min-w-0">
+        <div className={`absolute inset-0 min-w-0 transition-[right] duration-200 ${selectedUnit ? "sm:right-[372px]" : ""}`}>
           {autoSentNotice && (
             <p className="absolute bottom-16 left-1/2 z-[700] -translate-x-1/2 rounded-md bg-green-500/20 px-4 py-2 text-sm font-medium text-green-300 backdrop-blur-md border border-green-500/20">
               {autoSentNotice}

@@ -149,17 +149,17 @@ export function UnitInfoCard({
   const dragStart = useRef<number | null>(null);
 
   const statusColor = STATUS_COLOR[unit.status];
-  const fact = (value: React.ReactNode) =>
-    value ? value : <span className="font-normal text-[var(--ink-3)]">not set</span>;
+  // Only rows that have a value: an empty plot sheet row says nothing.
   const spec = [
-    { k: "Size", v: fact(unit.dimensions) },
+    { k: "Size", v: unit.dimensions },
     {
       k: "Area",
-      v: fact(areaSqft ? `${areaSqft.toLocaleString()} sq ft${areaSqm ? ` (${areaSqm.toLocaleString()} sq m)` : ""}` : null),
+      v: areaSqft ? `${areaSqft.toLocaleString()} sq ft${areaSqm ? ` (${areaSqm.toLocaleString()} sq m)` : ""}` : null,
     },
-    { k: "Facing", v: fact(unit.facing ? <span className="capitalize">{unit.facing}</span> : null) },
-    { k: "Road", v: fact(roadWidth) },
-  ];
+    { k: "Facing", v: unit.facing ? <span className="capitalize">{unit.facing}</span> : null },
+    { k: "Road", v: roadWidth },
+  ].filter((r) => r.v);
+  const [messageOpen, setMessageOpen] = useState(false);
 
   return (
     <>
@@ -173,7 +173,7 @@ export function UnitInfoCard({
       role="dialog"
       aria-label={`${label} details`}
       style={dragY ? { transform: `translateY(${dragY}px)`, transition: "none" } : undefined}
-      className="theme-survey absolute inset-x-0 bottom-0 z-[900] flex max-h-[82%] flex-col border-t-[3px] border-[var(--ink)] bg-white text-[var(--ink)] transition-transform duration-200 [animation:settleIn_260ms_var(--ease-cinematic)] motion-reduce:animate-none sm:inset-x-auto sm:right-4 sm:top-4 sm:bottom-auto sm:z-[800] sm:max-h-[calc(100%-2rem)] sm:w-[348px] sm:border-2 sm:shadow-[var(--hard)] sm:[animation:slideInRight_280ms_ease]"
+      className="theme-survey absolute inset-x-0 bottom-0 z-[900] flex max-h-[62%] flex-col border-t-[3px] border-[var(--ink)] bg-white text-[var(--ink)] transition-transform duration-200 [animation:settleIn_260ms_var(--ease-cinematic)] motion-reduce:animate-none sm:inset-x-auto sm:right-4 sm:top-4 sm:bottom-auto sm:z-[800] sm:max-h-[calc(100%-2rem)] sm:w-[348px] sm:border-2 sm:shadow-[var(--hard)] sm:[animation:slideInRight_280ms_ease]"
     >
       <div
         className="flex h-6 shrink-0 cursor-grab touch-none items-center justify-center sm:hidden"
@@ -230,7 +230,7 @@ export function UnitInfoCard({
                 {rate && <span className="mt-1 block font-label text-[12px] text-[var(--ink-3)]">₹{rate.toLocaleString("en-IN")} / sq ft</span>}
               </>
             ) : (
-              <span className="font-label text-[13px] font-medium text-[var(--ink-2)]">on request</span>
+              <span className="font-label text-[13px] font-medium text-[var(--ink)]">On request<span className="mt-0.5 block text-[12px] font-normal text-[var(--ink-3)]">Ask the seller</span></span>
             )}
           </dd>
         </div>
@@ -242,15 +242,25 @@ export function UnitInfoCard({
         <p className="mb-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-[var(--ink-2)]">{unit.description}</p>
       )}
 
-      {state !== "sent" && (
-        <textarea
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder="Add a message (optional)"
-          rows={2}
-          className="w-full resize-none border-2 border-[var(--ink)] bg-white p-3 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:outline-none focus-visible:ring-4 focus-visible:ring-[var(--signal)]"
-        />
-      )}
+      {state !== "sent" &&
+        (messageOpen || message ? (
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Add a message (optional)"
+            rows={2}
+            autoFocus={messageOpen}
+            className="w-full resize-none border-2 border-[var(--ink)] bg-white p-3 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:outline-none focus-visible:ring-4 focus-visible:ring-[var(--signal)]"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setMessageOpen(true)}
+            className="min-h-11 font-label text-[12px] font-medium uppercase tracking-[0.06em] text-[var(--ink-2)] underline underline-offset-4 hover:text-[var(--ink)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--signal)]"
+          >
+            + Add a message
+          </button>
+        ))}
       </div>
 
       {/* Action bar: always visible at the bottom of the sheet */}

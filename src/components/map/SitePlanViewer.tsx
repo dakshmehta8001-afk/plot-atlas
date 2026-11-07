@@ -168,6 +168,16 @@ function SceneryDefs() {
       <pattern id="sp-stripe-hold" patternUnits="userSpaceOnUse" width="14" height="14" patternTransform="rotate(45)">
         <rect width="6" height="14" fill="#facc15" opacity="0.9" />
       </pattern>
+      {/* Status mode: a faint line pattern on booked (one direction) and sold
+          (crossed), so status is not colour alone. Kept light so the plan still reads
+          as plain colours. */}
+      <pattern id="sp-mark-booked" patternUnits="userSpaceOnUse" width="12" height="12" patternTransform="rotate(45)">
+        <rect width="1.3" height="12" fill="#ffffff" opacity="0.3" />
+      </pattern>
+      <pattern id="sp-mark-sold" patternUnits="userSpaceOnUse" width="12" height="12" patternTransform="rotate(45)">
+        <rect width="1.3" height="12" fill="#ffffff" opacity="0.3" />
+        <rect width="12" height="1.3" fill="#ffffff" opacity="0.3" />
+      </pattern>
       <g id="sp-tree-a">
         <circle cx="1.5" cy="2.5" r="10" fill="#000" opacity="0.22" />
         <circle r="10" fill="#2f7a3f" />
@@ -420,7 +430,6 @@ const MapShapes = memo(function MapShapes({
     const isSelected = selectedId === unit.id;
     const dimmedBySelection = selectedId !== null && !isSelected;
     const statusDimmed = highlightStatus !== null && unit.status !== highlightStatus;
-    const dimmed = dimmedBySelection || statusDimmed;
     // A commercial/office block reads as visually distinct regardless of
     // colorMode — the same idea as a building always rendering in a fixed
     // indigo "structure" color instead of status/zone color. Teal picked
@@ -428,7 +437,7 @@ const MapShapes = memo(function MapShapes({
     // palette color already in use. Checked before the zone/status branches
     // below so neither can override it.
     if (unit.category && /\b(commercial|office)\b/i.test(unit.category)) {
-      return { fill: "rgb(20,184,166)", border: "#0d9488", opacity: dimmed ? 0.25 : 1, isSelected };
+      return { fill: "rgb(20,184,166)", border: "#0d9488", opacity: statusDimmed ? 0.25 : dimmedBySelection ? 0.6 : 1, isSelected };
     }
     if (colorMode === "zone") {
       const dimmed = dimmedBySelection || (highlightZone !== null && unit.category !== highlightZone) || statusDimmed;
@@ -437,7 +446,7 @@ const MapShapes = memo(function MapShapes({
       return { fill: color, border: color, opacity: dimmed ? 0.25 : 1, isSelected };
     }
     const style = UNIT_STATUS_STYLES[unit.status];
-    return { fill: opaqueRgba(style.fill), border: style.border, opacity: dimmedBySelection || statusDimmed ? 0.25 : 1, isSelected };
+    return { fill: opaqueRgba(style.fill), border: style.border, opacity: statusDimmed ? 0.25 : dimmedBySelection ? 0.6 : 1, isSelected };
   }
 
   return (
@@ -475,7 +484,7 @@ const MapShapes = memo(function MapShapes({
       <g
         className="pointer-events-none"
         clipPath={roadClip ? "url(#sp-site-clip)" : undefined}
-        style={{ animation: "fadeIn 420ms ease-out backwards", opacity: selectedId !== null ? 0.4 : 1, transition: "opacity 300ms ease" }}
+        style={{ animation: "fadeIn 420ms ease-out backwards", opacity: selectedId !== null ? 0.9 : 1, transition: "opacity 300ms ease" }}
       >
         {scene.roads.map((r) => (
           <polyline key={`rim-${r.id}`} points={r.points} fill="none" stroke={ROAD_COLOR} strokeWidth={r.width} strokeLinejoin="round" />
@@ -544,7 +553,7 @@ const MapShapes = memo(function MapShapes({
       <g
         className="pointer-events-none"
         clipPath={roadClip ? "url(#sp-site-clip)" : undefined}
-        style={{ opacity: selectedId !== null ? 0.4 : 1, transition: "opacity 300ms ease" }}
+        style={{ opacity: selectedId !== null ? 0.9 : 1, transition: "opacity 300ms ease" }}
       >
         {painted.map((l) => (
           <g key={`paint-${l.id}`} style={l.css}>
@@ -557,12 +566,12 @@ const MapShapes = memo(function MapShapes({
 
       {/* Cars and walkers: one animation loop (see MapTraffic), not SVG
           animateMotion, so they follow the road network and turn. */}
-      <g style={{ opacity: selectedId !== null ? 0.4 : 1, transition: "opacity 300ms ease" }}>
+      <g style={{ opacity: selectedId !== null ? 0.9 : 1, transition: "opacity 300ms ease" }}>
         <MapTraffic network={scene.network} seedKey={roads.map((r) => r.id).join("|")} play={playTraffic} />
       </g>
 
       {/* Overhead things, drawn above the traffic: the entry gate's arch with the project name. */}
-      <g className="pointer-events-none" style={{ opacity: selectedId !== null ? 0.4 : 1, transition: "opacity 300ms ease" }}>
+      <g className="pointer-events-none" style={{ opacity: selectedId !== null ? 0.9 : 1, transition: "opacity 300ms ease" }}>
 
         {scene.gate && <GateArch gate={scene.gate} name={projectName} />}
       </g>
@@ -588,8 +597,8 @@ const MapShapes = memo(function MapShapes({
               // once it's actually selected (the glow effect below already
               // carries that colored accent); every other plot gets a
               // crisp, neutral, always-visible dark line instead.
-              stroke={style.isSelected ? style.border : "#0a0e16"}
-              strokeWidth={style.isSelected ? VB * 0.005 : VB * 0.003}
+              stroke={style.isSelected ? "#ffffff" : "#0a0e16"}
+              strokeWidth={style.isSelected ? VB * 0.006 : VB * 0.003}
               strokeOpacity={style.isSelected ? 1 : 0.85}
               opacity={style.opacity}
               className="cursor-pointer transition-[opacity,filter] duration-200 hover:brightness-125 hover:[filter:drop-shadow(0_0_8px_rgba(255,255,255,0.7))]"
@@ -613,6 +622,14 @@ const MapShapes = memo(function MapShapes({
                 over the zone colour so sale status stays readable. In status
                 mode (Zone off) plots are plain status colours with no zone
                 borders. Plot numbers are drawn in the labels layer at the end. */}
+            {colorMode === "status" && (unit.status === "sold" || unit.status === "booked") && (
+              <polygon
+                points={geom.points}
+                fill={`url(#sp-mark-${unit.status})`}
+                className="pointer-events-none"
+                style={{ opacity: style.opacity }}
+              />
+            )}
             {colorMode === "zone" && (unit.status === "sold" || unit.status === "booked" || unit.status === "hold") && (
               <polygon
                 points={geom.points}
@@ -686,7 +703,7 @@ const MapShapes = memo(function MapShapes({
             style={{
               animation: "fadeIn 420ms ease-out backwards",
               animationDelay: `${revealDelay(plots.length + buildings.length + index)}ms`,
-              opacity: selectedId !== null ? 0.4 : 1,
+              opacity: selectedId !== null ? 0.9 : 1,
               transition: "opacity 300ms ease",
             }}
           >
