@@ -31,6 +31,7 @@ import {
   type Road,
   type SiteFeature,
   type Unit,
+  UNIT_STATUS_STYLES,
   type UnitStatus,
 } from "@/lib/types";
 
@@ -212,8 +213,114 @@ export function ProjectMapClient({
       className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-[var(--map-background)]"
       style={{ animation: "settleIn 280ms var(--ease-cinematic)" }}
     >
-      <div className="absolute inset-0 z-0">
-        <div className="relative min-w-0 flex-1 h-full">
+      {showMapChrome && (
+        // A real row above the map, not an overlay: the plan is laid out in
+        // the space below it, so no plot or control can sit underneath. The
+        // chip row scrolls sideways instead of wrapping, which keeps the
+        // band one fixed height at every width.
+        <div className="relative z-[500] shrink-0 border-b border-white/15 bg-[var(--map-background)]">
+          <div className="flex items-center gap-2 px-3 py-2 sm:px-5">
+            <Link
+              href="/"
+              aria-label="Back to projects"
+              className="flex h-11 w-11 shrink-0 items-center justify-center border border-white/30 text-white/90 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--signal)]"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="square" className="h-4 w-4">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+            </Link>
+
+            <div className="min-w-0 flex-1">
+              {ownerName && (
+                <p className="truncate font-label text-[12px] font-medium uppercase tracking-[0.08em] text-white/70">{ownerName}</p>
+              )}
+              <h1 className="truncate text-base font-semibold text-white">{project.name}</h1>
+            </div>
+
+            {hasSatellite && (
+              <div className="flex shrink-0 border border-white/40">
+                {(["plan", "satellite"] as const).map((view) => (
+                  <button
+                    key={view}
+                    type="button"
+                    onClick={() => setMapView(view)}
+                    aria-pressed={mapView === view}
+                    className={`min-h-11 px-3 font-label text-[12px] font-semibold uppercase tracking-[0.08em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--signal)] ${mapView === view ? "bg-white text-[#030712]" : "text-white/75 hover:bg-white/10 hover:text-white"}`}
+                  >
+                    {view === "plan" ? "Plan" : "Sat"}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5 overflow-x-auto px-3 pb-2 [scrollbar-width:none] sm:px-5 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
+            <span className="flex min-h-9 items-center border border-white/30 px-2.5 font-label text-[12px] font-medium uppercase tracking-[0.04em] text-white/85">
+              Total <span className="ml-1.5 font-bold tabular-nums">{counts.total}</span>
+            </span>
+            {(["available", "hold", "booked", "sold"] as const).map((status) => (
+              <StatusChip
+                key={status}
+                status={status}
+                label={status === "available" ? "Avail" : UNIT_STATUS_STYLES[status].label.replace("On hold", "Hold")}
+                value={counts[status]}
+                active={statusFilter === status}
+                onClick={() => toggleStatus(status)}
+              />
+            ))}
+
+            {(zones.length > 0 || featureKindsPresent.length > 0) && (
+              <div className="hidden items-center gap-1.5 sm:flex">
+                <span aria-hidden className="h-5 w-px bg-white/25" />
+                {zones.length > 0 && (
+                  <label className="flex min-h-9 cursor-pointer items-center gap-1.5 border border-white/30 px-2.5 font-label text-[12px] uppercase tracking-[0.04em] text-white/85">
+                    <input
+                      type="checkbox"
+                      checked={zoneColourMode}
+                      onChange={(e) => setZoneColourMode(e.target.checked)}
+                      className="h-3.5 w-3.5 accent-[var(--signal)]"
+                    />
+                    Zone colours
+                  </label>
+                )}
+                {zones.map((zone) => (
+                  <button
+                    key={zone}
+                    type="button"
+                    onClick={() => toggleZone(zone)}
+                    aria-pressed={selectedZone === zone}
+                    className="flex min-h-9 items-center gap-1.5 border px-2.5 font-label text-[12px] font-medium uppercase tracking-[0.04em] transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--signal)]"
+                    style={{
+                      borderColor: zoneColorFor(zone, zones),
+                      color: zoneColorFor(zone, zones),
+                      opacity: selectedZone && selectedZone !== zone ? 0.4 : 1,
+                    }}
+                  >
+                    <span aria-hidden className="h-2 w-2" style={{ backgroundColor: zoneColorFor(zone, zones) }} />
+                    {zone}
+                  </button>
+                ))}
+                {featureKindsPresent.map((kind) => {
+                  const style = SITE_FEATURE_STYLES[kind];
+                  return (
+                    <span
+                      key={kind}
+                      className="flex min-h-9 items-center gap-1.5 border px-2.5 font-label text-[12px] font-medium uppercase tracking-[0.04em]"
+                      style={{ borderColor: style.border, color: style.border }}
+                    >
+                      <span aria-hidden className="h-2 w-2" style={{ backgroundColor: style.border }} />
+                      {style.label}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="relative z-0 min-h-0 flex-1">
+        <div className="absolute inset-0 min-w-0">
           {autoSentNotice && (
             <p className="absolute bottom-16 left-1/2 z-[700] -translate-x-1/2 rounded-md bg-green-500/20 px-4 py-2 text-sm font-medium text-green-300 backdrop-blur-md border border-green-500/20">
               {autoSentNotice}
@@ -266,7 +373,7 @@ export function ProjectMapClient({
             )}
           </div>
 
-          <div className="absolute bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 z-[600] flex -translate-x-1/2 gap-0.5 border border-white/40 bg-black/65 p-1 shadow-lg backdrop-blur-md">
+          <div className="absolute bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 z-[600] flex -translate-x-1/2 gap-0.5 border border-white/40 bg-[var(--map-background)] p-1">
             <TabButton label="Map" active={activeTab === "map"} onClick={() => setActiveTab("map")} />
             <TabButton label="Media" active={activeTab === "media"} onClick={() => toggleTab("media")} />
             <TabButton label="About" active={activeTab === "about"} onClick={() => toggleTab("about")} />
@@ -286,122 +393,13 @@ export function ProjectMapClient({
         )}
       </div>
 
-      {showMapChrome && (
-        // No card box — a gradient veil makes text readable while letting
-        // the map show through. Every interactive element is an independent
-        // pill with pointer-events-auto; the surrounding space stays
-        // pointer-events-none so the map beneath is always clickable.
-        <div className="pointer-events-none absolute left-0 right-0 top-0 z-[500]">
-          {/* Gradient veil — fades from black to transparent so map bleeds through */}
-          <div className="h-[88px] bg-gradient-to-b from-black/70 via-black/30 to-transparent" />
-
-          {/* Row 1: back + title + plan/satellite toggle */}
-          <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-2 px-3 pt-3 sm:px-5 sm:pt-4">
-            <Link
-              href="/"
-              aria-label="Back to projects"
-              className="pointer-events-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/40 text-white/85 backdrop-blur-sm transition-colors hover:bg-black/60 hover:text-white"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-                <path d="M15 18l-6-6 6-6" />
-              </svg>
-            </Link>
-
-            <div className="pointer-events-none min-w-0 flex-1">
-              {ownerName && (
-                <p className="truncate text-[9px] font-semibold uppercase tracking-widest text-blue-300/70 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
-                  {ownerName}
-                </p>
-              )}
-              <h1 className="truncate text-sm font-bold text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)] sm:text-base">
-                {project.name}
-              </h1>
-            </div>
-
-            {hasSatellite && (
-              <div className="pointer-events-auto flex shrink-0 border border-white/40 bg-black/60 p-0.5 backdrop-blur-sm">
-                <button
-                  type="button"
-                  onClick={() => setMapView("plan")}
-                  className={`rounded-full px-2.5 py-1 font-label text-[11px] font-semibold uppercase tracking-[0.08em] transition-all ${mapView === "plan" ? "bg-white/20 text-white" : "text-white/50 hover:text-white"}`}
-                >
-                  Plan
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMapView("satellite")}
-                  className={`rounded-full px-2.5 py-1 font-label text-[11px] font-semibold uppercase tracking-[0.08em] transition-all ${mapView === "satellite" ? "bg-white/20 text-white" : "text-white/50 hover:text-white"}`}
-                >
-                  Sat
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Row 2: status chips — scrollable, each chip has its own backdrop */}
-          <div className="pointer-events-none absolute inset-x-0 top-[52px] flex gap-1 overflow-x-auto px-3 pb-1 [scrollbar-width:none] sm:top-[56px] sm:gap-1.5 sm:flex-wrap sm:overflow-visible sm:px-5 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
-            <Pill label="Total" value={counts.total} tone="neutral" />
-            <StatusChip label="Avail" value={counts.available} tone="green" active={statusFilter === "available"} onClick={() => toggleStatus("available")} />
-            <StatusChip label="Hold" value={counts.hold} tone="yellow" active={statusFilter === "hold"} onClick={() => toggleStatus("hold")} />
-            <StatusChip label="Booked" value={counts.booked} tone="blue" active={statusFilter === "booked"} onClick={() => toggleStatus("booked")} />
-            <StatusChip label="Sold" value={counts.sold} tone="red" active={statusFilter === "sold"} onClick={() => toggleStatus("sold")} />
-
-            {/* Zone toggle + chips (desktop) — inline with stats */}
-            {(zones.length > 0 || featureKindsPresent.length > 0) && (
-              <div className="pointer-events-none hidden items-center gap-1.5 sm:flex">
-                <span className="text-white/20">|</span>
-                {zones.length > 0 && (
-                  <label className="pointer-events-auto flex cursor-pointer items-center gap-1 rounded-full bg-black/30 px-2 py-1 text-[10px] text-white/60 backdrop-blur-sm border border-white/10">
-                    <input
-                      type="checkbox"
-                      checked={zoneColourMode}
-                      onChange={(e) => setZoneColourMode(e.target.checked)}
-                      className="accent-blue-400 h-2.5 w-2.5"
-                    />
-                    Zones
-                  </label>
-                )}
-                {zones.map((zone) => (
-                  <button
-                    key={zone}
-                    onClick={() => toggleZone(zone)}
-                    className="pointer-events-auto flex items-center gap-1 rounded-full border bg-black/30 px-2 py-1 text-[10px] font-medium backdrop-blur-sm transition-opacity"
-                    style={{
-                      borderColor: zoneColorFor(zone, zones),
-                      color: zoneColorFor(zone, zones),
-                      opacity: selectedZone && selectedZone !== zone ? 0.35 : 1,
-                    }}
-                  >
-                    <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: zoneColorFor(zone, zones) }} />
-                    {zone}
-                  </button>
-                ))}
-                {featureKindsPresent.map((kind) => {
-                  const style = SITE_FEATURE_STYLES[kind];
-                  return (
-                    <span
-                      key={kind}
-                      className="flex items-center gap-1 rounded-full border bg-black/30 px-2 py-1 text-[10px] font-medium backdrop-blur-sm"
-                      style={{ borderColor: style.border, color: style.border }}
-                    >
-                      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: style.border }} />
-                      {style.label}
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Mobile-only: floating Zones button (bottom-left, above the tab bar) */}
       {showMapChrome && !selectedUnit && (zones.length > 0 || featureKindsPresent.length > 0) && (
         <div className="pointer-events-none absolute bottom-20 left-4 z-[500] sm:hidden">
           <button
             type="button"
             onClick={() => setZonesOpen(true)}
-            className="pointer-events-auto flex items-center gap-1.5 border border-white/40 bg-black/65 px-3 py-1.5 font-label text-[11px] font-medium uppercase tracking-[0.08em] text-white/90 backdrop-blur-md shadow-lg"
+            className="pointer-events-auto flex min-h-11 items-center gap-1.5 border border-white/40 bg-[var(--map-background)] px-3 font-label text-[12px] font-medium uppercase tracking-[0.08em] text-white/90"
           >
             <span className="h-2 w-2 rounded-full bg-white/40" />
             Zones
@@ -425,55 +423,51 @@ export function ProjectMapClient({
   );
 }
 
-function Pill({ label, value, tone }: { label: string; value: number; tone: "neutral" | "green" | "blue" | "yellow" | "red" }) {
-  const toneClasses: Record<typeof tone, string> = {
-    neutral: "border-white/20 text-white/80",
-    green: "border-green-500/50 text-green-300",
-    blue: "border-blue-500/50 text-blue-300",
-    yellow: "border-yellow-500/50 text-yellow-300",
-    red: "border-red-500/50 text-red-300",
-  };
-  const displayValue = useCountUp(value);
+// Colour never carries status alone: booked gets a single hatch and sold a
+// cross-hatch, matching the plan, so the legend reads the same in grayscale.
+function StatusSwatch({ status }: { status: UnitStatus }) {
+  const hatch =
+    status === "booked"
+      ? "repeating-linear-gradient(45deg, rgba(255,255,255,0.65) 0 1.5px, transparent 1.5px 5px)"
+      : status === "sold"
+        ? "repeating-linear-gradient(45deg, rgba(255,255,255,0.65) 0 1.5px, transparent 1.5px 5px), repeating-linear-gradient(-45deg, rgba(255,255,255,0.65) 0 1.5px, transparent 1.5px 5px)"
+        : undefined;
   return (
-    <span className={`border border-white/30 bg-black/55 px-2 py-1 font-label text-[10px] font-medium uppercase tracking-[0.03em] backdrop-blur-sm ${toneClasses[tone]}`}>
-      {label} <span className="font-bold tabular-nums ml-1">{displayValue}</span>
-    </span>
+    <span
+      aria-hidden
+      className="h-3 w-3 border border-white/40"
+      style={{ backgroundColor: UNIT_STATUS_STYLES[status].solid, backgroundImage: hatch }}
+    />
   );
 }
 
-// Like Pill, but clickable — toggles the map's status filter (dims every
-// plot that doesn't match, via SitePlanViewer's highlightStatus prop).
-// "Total" stays a plain Pill since there's no status value to filter by.
+// Clickable chip that toggles the map's status filter (dims every plot that
+// doesn't match, via SitePlanViewer's highlightStatus prop).
 function StatusChip({
+  status,
   label,
   value,
-  tone,
   active,
   onClick,
 }: {
+  status: UnitStatus;
   label: string;
   value: number;
-  tone: "green" | "blue" | "yellow" | "red";
   active: boolean;
   onClick: () => void;
 }) {
-  const toneClasses: Record<typeof tone, string> = {
-    green: "border-green-500/50 text-green-300",
-    blue: "border-blue-500/50 text-blue-300",
-    yellow: "border-yellow-500/50 text-yellow-300",
-    red: "border-red-500/50 text-red-300",
-  };
   const displayValue = useCountUp(value);
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`pointer-events-auto border px-2 py-1 font-label text-[10px] font-medium uppercase tracking-[0.03em] backdrop-blur-sm transition-colors active:scale-95 ${toneClasses[tone]} ${
-        active ? "bg-white/20 ring-1 ring-white/50" : "border-white/10 bg-black/35 hover:bg-black/55"
+      className={`flex min-h-9 items-center gap-1.5 border px-2.5 font-label text-[12px] font-medium uppercase tracking-[0.04em] text-white/90 transition-colors pointer-coarse:min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--signal)] ${
+        active ? "border-white bg-white/20" : "border-white/30 hover:bg-white/10"
       }`}
     >
-      {label} <span className="font-bold tabular-nums ml-1">{displayValue}</span>
+      <StatusSwatch status={status} />
+      {label} <span className="font-bold tabular-nums">{displayValue}</span>
     </button>
   );
 }
@@ -484,8 +478,8 @@ function TabButton({ label, active, onClick }: { label: string; active: boolean;
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`min-h-[40px] px-4 font-label text-[12px] font-semibold uppercase tracking-[0.1em] transition-colors ${
-        active ? "bg-white/90 text-[#030712]" : "text-white/65 hover:bg-white/10 hover:text-white"
+      className={`min-h-11 px-4 font-label text-[12px] font-semibold uppercase tracking-[0.1em] transition-colors ${
+        active ? "bg-white text-[#030712]" : "text-white/75 hover:bg-white/10 hover:text-white"
       }`}
     >
       {label}

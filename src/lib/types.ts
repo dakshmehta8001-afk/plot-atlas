@@ -201,11 +201,15 @@ export interface SiteVisit {
 // Color/label lookup shared by every place a unit's sale status is
 // rendered (map overlays, info cards, dashboard tables) so they can never
 // drift out of sync with each other.
-export const UNIT_STATUS_STYLES: Record<UnitStatus, { label: string; fill: string; border: string }> = {
-  available: { label: "Available", fill: "rgba(34, 197, 94, 0.15)", border: "#4ade80" },
-  hold: { label: "On hold", fill: "rgba(234, 179, 8, 0.15)", border: "#facc15" },
-  booked: { label: "Booked", fill: "rgba(59, 130, 246, 0.15)", border: "#60a5fa" },
-  sold: { label: "Sold", fill: "rgba(239, 68, 68, 0.15)", border: "#f87171" },
+// One status palette for the whole app. `solid` is the Survey Sheet token
+// colour (plan fills, legends, sheet badges); `border` is a lighter tint of
+// the same hue that stays readable on the dark map chrome. `fill` is kept for
+// the places that still draw a translucent overlay (dashboard previews).
+export const UNIT_STATUS_STYLES: Record<UnitStatus, { label: string; fill: string; border: string; solid: string }> = {
+  available: { label: "Available", fill: "rgba(31, 122, 77, 0.18)", border: "#5fd29a", solid: "#1f7a4d" },
+  hold: { label: "On hold", fill: "rgba(183, 121, 31, 0.18)", border: "#f0b84f", solid: "#b7791f" },
+  booked: { label: "Booked", fill: "rgba(47, 93, 138, 0.18)", border: "#7fb2e5", solid: "#2f5d8a" },
+  sold: { label: "Sold", fill: "rgba(194, 65, 12, 0.18)", border: "#ff9a6b", solid: "#c2410c" },
 };
 
 export const UNIT_STATUS_OPTIONS: UnitStatus[] = ["available", "hold", "booked", "sold"];

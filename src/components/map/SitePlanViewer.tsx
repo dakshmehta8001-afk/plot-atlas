@@ -168,6 +168,15 @@ function SceneryDefs() {
       <pattern id="sp-stripe-hold" patternUnits="userSpaceOnUse" width="14" height="14" patternTransform="rotate(45)">
         <rect width="6" height="14" fill="#facc15" opacity="0.9" />
       </pattern>
+      {/* Status mode: sold = cross-hatch, booked = single hatch, so status never
+          depends on colour alone. White lines read on every status fill. */}
+      <pattern id="sp-hatch-booked" patternUnits="userSpaceOnUse" width="10" height="10" patternTransform="rotate(45)">
+        <rect width="2.4" height="10" fill="#ffffff" opacity="0.6" />
+      </pattern>
+      <pattern id="sp-hatch-sold" patternUnits="userSpaceOnUse" width="10" height="10" patternTransform="rotate(45)">
+        <rect width="2.4" height="10" fill="#ffffff" opacity="0.6" />
+        <rect width="10" height="2.4" fill="#ffffff" opacity="0.6" />
+      </pattern>
       <g id="sp-tree-a">
         <circle cx="1.5" cy="2.5" r="10" fill="#000" opacity="0.22" />
         <circle r="10" fill="#2f7a3f" />
@@ -437,7 +446,7 @@ const MapShapes = memo(function MapShapes({
       return { fill: color, border: color, opacity: dimmed ? 0.25 : 1, isSelected };
     }
     const style = UNIT_STATUS_STYLES[unit.status];
-    return { fill: opaqueRgba(style.fill), border: style.border, opacity: dimmedBySelection || statusDimmed ? 0.25 : 1, isSelected };
+    return { fill: style.solid, border: style.border, opacity: dimmedBySelection || statusDimmed ? 0.25 : 1, isSelected };
   }
 
   return (
@@ -548,7 +557,7 @@ const MapShapes = memo(function MapShapes({
       >
         {painted.map((l) => (
           <g key={`paint-${l.id}`} style={l.css}>
-            <text textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={800} fill="#ffffff" fillOpacity={0.9} className="select-none">
+            <text textAnchor="middle" dominantBaseline="central" fontSize={12} fontWeight={800} fill="#ffffff" stroke="#0f2a3d" strokeWidth={2.4} strokeOpacity={0.55} paintOrder="stroke" fillOpacity={1} className="select-none">
               {l.text}
             </text>
           </g>
@@ -613,6 +622,14 @@ const MapShapes = memo(function MapShapes({
                 over the zone colour so sale status stays readable. In status
                 mode (Zone off) plots are plain status colours with no zone
                 borders. Plot numbers are drawn in the labels layer at the end. */}
+            {colorMode === "status" && (unit.status === "sold" || unit.status === "booked") && (
+              <polygon
+                points={geom.points}
+                fill={`url(#sp-hatch-${unit.status})`}
+                className="pointer-events-none"
+                style={{ opacity: style.opacity }}
+              />
+            )}
             {colorMode === "zone" && (unit.status === "sold" || unit.status === "booked" || unit.status === "hold") && (
               <polygon
                 points={geom.points}

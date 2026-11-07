@@ -39,14 +39,14 @@ export function QuickContactIcons({
 }) {
   const label = `${unit.wing ? `${unit.wing}-` : ""}${unit.unit_number}`;
   const btn = large
-    ? "flex h-12 w-12 items-center justify-center border-2 border-[var(--ink)] bg-white text-[var(--ink)] transition-colors hover:bg-[var(--paper-2)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--signal)] [&>svg]:h-5 [&>svg]:w-5"
+    ? "flex h-12 min-w-12 flex-1 items-center justify-center border-2 border-[var(--ink)] bg-white text-[var(--ink)] transition-colors hover:bg-[var(--paper-2)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--signal)] [&>svg]:h-5 [&>svg]:w-5"
     : "flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-white/70 hover:bg-white/20 hover:text-white";
   const enquiryText = `Hi, I'm interested in ${label} at ${projectName}.`;
 
   if (!contactPhone && !contactWhatsapp && !contactEmail) return null;
 
   return (
-    <div className="flex items-center gap-2">
+    <div className={`flex items-center gap-2 ${large ? "w-full" : ""}`}>
       {contactPhone && (
         <a
           href={`tel:${digitsOnly(contactPhone)}`}
@@ -192,13 +192,25 @@ export function UnitInfoCard({
           <p className="font-label text-[26px] font-semibold uppercase leading-none tracking-tight">{label}</p>
           <div className="mt-2.5 flex flex-wrap items-center gap-2">
             <span
-              className="inline-flex items-center gap-1.5 border-[1.5px] border-current px-2 py-0.5 font-label text-[11px] font-semibold uppercase tracking-[0.1em]"
-              style={{ color: statusColor }}
+              className="inline-flex items-center gap-1.5 border-[1.5px] px-2 py-0.5 font-label text-[12px] font-semibold uppercase tracking-[0.1em] text-[var(--ink)]"
+              style={{ borderColor: statusColor }}
             >
-              <span aria-hidden className="h-2 w-2" style={{ backgroundColor: statusColor }} />
+              <span
+                aria-hidden
+                className="h-3 w-3"
+                style={{
+                  backgroundColor: statusColor,
+                  backgroundImage:
+                    unit.status === "sold"
+                      ? "repeating-linear-gradient(45deg, rgba(255,255,255,0.7) 0 1.5px, transparent 1.5px 5px), repeating-linear-gradient(-45deg, rgba(255,255,255,0.7) 0 1.5px, transparent 1.5px 5px)"
+                      : unit.status === "booked"
+                        ? "repeating-linear-gradient(45deg, rgba(255,255,255,0.7) 0 1.5px, transparent 1.5px 5px)"
+                        : undefined,
+                }}
+              />
               {statusStyle.label}
             </span>
-            {unit.category && <span className="font-label text-[11px] uppercase tracking-[0.06em] text-[var(--ink-3)]">{unit.category}</span>}
+            {unit.category && <span className="font-label text-[12px] uppercase tracking-[0.06em] text-[var(--ink-3)]">{unit.category}</span>}
           </div>
         </div>
         <button
@@ -217,17 +229,17 @@ export function UnitInfoCard({
       <dl className="mb-3 border-2 border-[var(--ink)]">
         {spec.map((r) => (
           <div key={r.k} className="flex items-baseline justify-between gap-4 border-t border-[var(--line)] px-3 py-2 first:border-t-0">
-            <dt className="font-label text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--ink-3)]">{r.k}</dt>
+            <dt className="font-label text-[12px] font-medium uppercase tracking-[0.08em] text-[var(--ink-3)]">{r.k}</dt>
             <dd className="text-right font-label text-[13px] font-medium">{r.v}</dd>
           </div>
         ))}
         <div className="flex items-baseline justify-between gap-4 border-t-2 border-[var(--ink)] bg-[var(--paper-2)] px-3 py-2.5">
-          <dt className="font-label text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--ink-3)]">Price</dt>
+          <dt className="font-label text-[12px] font-medium uppercase tracking-[0.08em] text-[var(--ink-3)]">Price</dt>
           <dd className="text-right">
             {unit.total_price != null ? (
               <>
                 <span className="font-label text-[20px] font-semibold leading-none">₹{unit.total_price.toLocaleString("en-IN")}</span>
-                {rate && <span className="mt-1 block font-label text-[11px] text-[var(--ink-3)]">₹{rate.toLocaleString("en-IN")} / sq ft</span>}
+                {rate && <span className="mt-1 block font-label text-[12px] text-[var(--ink-3)]">₹{rate.toLocaleString("en-IN")} / sq ft</span>}
               </>
             ) : (
               <span className="font-label text-[13px] font-medium text-[var(--ink-2)]">on request</span>
@@ -261,12 +273,12 @@ export function UnitInfoCard({
             Enquiry sent. Thank you.
           </p>
         ) : (
-          <div className="flex items-stretch gap-2">
+          <div className="flex flex-col gap-2">
             <button
               type="button"
               onClick={submit}
               disabled={state === "submitting"}
-              className="flex min-h-[48px] flex-1 items-center justify-between bg-[var(--accent)] px-4 font-label text-[13px] font-semibold uppercase tracking-[0.08em] text-[var(--accent-ink)] transition-colors hover:bg-[var(--ink-2)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--signal)] disabled:opacity-60"
+              className="flex min-h-[48px] w-full items-center justify-between whitespace-nowrap bg-[var(--accent)] px-4 font-label text-[13px] font-semibold uppercase tracking-[0.08em] text-[var(--accent-ink)] transition-colors hover:bg-[var(--ink-2)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--signal)] disabled:opacity-60"
             >
               {state === "submitting" ? "Sending…" : "I'm interested"}
               <span aria-hidden className="text-[var(--signal)]">→</span>
