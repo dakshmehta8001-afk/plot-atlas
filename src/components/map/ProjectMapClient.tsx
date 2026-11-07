@@ -17,15 +17,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { BuildingDrilldown, type BuildingWithFloors } from "@/components/dashboard/BuildingDrilldown";
 import { MediaPanel } from "@/components/media/MediaPanel";
 import { AboutPanel } from "@/components/ui/AboutPanel";
-import { ZonesSheet } from "@/components/dashboard/ZonesSheet";
 import { UnitInfoCard } from "@/components/ui/UnitInfoCard";
 import { PENDING_ENQUIRY_KEY } from "@/lib/hooks/useEnquiryFlow";
 import { createLead } from "@/lib/actions/leads";
 import { useCountUp } from "@/lib/hooks/useCountUp";
 import {
-  distinctZones,
   SITE_FEATURE_STYLES,
-  zoneColorFor,
   type Project,
   type ProjectMedia,
   type Road,
@@ -73,10 +70,7 @@ export function ProjectMapClient({
   const [autoSentNotice, setAutoSentNotice] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("map");
   const [drilldownStage, setDrilldownStage] = useState<"site" | "floor-select" | "floor-view">("site");
-  const [zoneColourMode, setZoneColourMode] = useState(false);
-  const [selectedZone, setSelectedZone] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<UnitStatus | null>(null);
-  const [zonesOpen, setZonesOpen] = useState(false);
   const [mapView, setMapView] = useState<"plan" | "satellite">("plan");
   const hasSatellite = project.map_bounds !== null;
 
@@ -104,7 +98,6 @@ export function ProjectMapClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only run once on mount for this redirect-back case
   }, []);
 
-  const zones = distinctZones(allUnits);
   const featureKindsPresent = Array.from(new Set(features.map((f) => f.kind)));
   const counts = {
     total: allUnits.length,
@@ -116,11 +109,6 @@ export function ProjectMapClient({
 
   function toggleTab(tab: Tab) {
     setActiveTab((current) => (current === tab ? "map" : tab));
-  }
-
-  function toggleZone(zone: string) {
-    setSelectedZone((current) => (current === zone ? null : zone));
-    setZoneColourMode(true);
   }
 
   function toggleStatus(status: UnitStatus) {
@@ -269,52 +257,20 @@ export function ProjectMapClient({
               />
             ))}
 
-            {(zones.length > 0 || featureKindsPresent.length > 0) && (
-              <div className="hidden items-center gap-1.5 sm:flex">
-                <span aria-hidden className="h-5 w-px bg-white/25" />
-                {zones.length > 0 && (
-                  <label className="flex min-h-9 cursor-pointer items-center gap-1.5 border border-white/30 px-2.5 font-label text-[12px] uppercase tracking-[0.04em] text-white/85">
-                    <input
-                      type="checkbox"
-                      checked={zoneColourMode}
-                      onChange={(e) => setZoneColourMode(e.target.checked)}
-                      className="h-3.5 w-3.5 accent-[var(--signal)]"
-                    />
-                    Zone colours
-                  </label>
-                )}
-                {zones.map((zone) => (
-                  <button
-                    key={zone}
-                    type="button"
-                    onClick={() => toggleZone(zone)}
-                    aria-pressed={selectedZone === zone}
-                    className="flex min-h-9 items-center gap-1.5 border px-2.5 font-label text-[12px] font-medium uppercase tracking-[0.04em] transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--signal)]"
-                    style={{
-                      borderColor: zoneColorFor(zone, zones),
-                      color: zoneColorFor(zone, zones),
-                      opacity: selectedZone && selectedZone !== zone ? 0.4 : 1,
-                    }}
-                  >
-                    <span aria-hidden className="h-2 w-2" style={{ backgroundColor: zoneColorFor(zone, zones) }} />
-                    {zone}
-                  </button>
-                ))}
-                {featureKindsPresent.map((kind) => {
-                  const style = SITE_FEATURE_STYLES[kind];
-                  return (
-                    <span
-                      key={kind}
-                      className="flex min-h-9 items-center gap-1.5 border px-2.5 font-label text-[12px] font-medium uppercase tracking-[0.04em]"
-                      style={{ borderColor: style.border, color: style.border }}
-                    >
-                      <span aria-hidden className="h-2 w-2" style={{ backgroundColor: style.border }} />
-                      {style.label}
-                    </span>
-                  );
-                })}
-              </div>
-            )}
+            {featureKindsPresent.length > 0 && <span aria-hidden className="h-5 w-px bg-white/25" />}
+            {featureKindsPresent.map((kind) => {
+              const style = SITE_FEATURE_STYLES[kind];
+              return (
+                <span
+                  key={kind}
+                  className="flex min-h-9 items-center gap-1.5 border px-2.5 font-label text-[12px] font-medium uppercase tracking-[0.04em]"
+                  style={{ borderColor: style.border, color: style.border }}
+                >
+                  <span aria-hidden className="h-2 w-2" style={{ backgroundColor: style.border }} />
+                  {style.label}
+                </span>
+              );
+            })}
           </div>
         </div>
       )}
@@ -363,9 +319,9 @@ export function ProjectMapClient({
                 unitsByFloor={unitsByFloor}
                 onPlotClick={openUnit}
                 onFlatClick={openUnit}
-                colorMode={zoneColourMode ? "zone" : "status"}
-                zones={zones}
-                highlightZone={selectedZone}
+                colorMode="status"
+                zones={[]}
+                highlightZone={null}
                 highlightStatus={statusFilter}
                 calibration={project.map_calibration ?? null}
                 onStageChange={setDrilldownStage}
@@ -393,31 +349,6 @@ export function ProjectMapClient({
         )}
       </div>
 
-      {/* Mobile-only: floating Zones button (bottom-left, above the tab bar) */}
-      {showMapChrome && !selectedUnit && (zones.length > 0 || featureKindsPresent.length > 0) && (
-        <div className="pointer-events-none absolute bottom-20 left-4 z-[500] sm:hidden">
-          <button
-            type="button"
-            onClick={() => setZonesOpen(true)}
-            className="pointer-events-auto flex min-h-11 items-center gap-1.5 border border-white/40 bg-[var(--map-background)] px-3 font-label text-[12px] font-medium uppercase tracking-[0.08em] text-white/90"
-          >
-            <span className="h-2 w-2 rounded-full bg-white/40" />
-            Zones
-            {selectedZone && <span className="rounded-full bg-blue-500/40 px-1.5 text-[10px] text-blue-200">1</span>}
-          </button>
-        </div>
-      )}
-
-      <ZonesSheet
-        open={zonesOpen}
-        onClose={() => setZonesOpen(false)}
-        zones={zones}
-        featureKinds={featureKindsPresent}
-        zoneColourMode={zoneColourMode}
-        onZoneColourMode={setZoneColourMode}
-        selectedZone={selectedZone}
-        onToggleZone={toggleZone}
-      />
     </div>
     </>
   );
